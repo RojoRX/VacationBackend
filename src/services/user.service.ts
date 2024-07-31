@@ -1,29 +1,34 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from 'src/entities/user.entity';
+import { User } from 'src/interfaces/user.interface';
+import { HttpService } from '@nestjs/axios';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 @Injectable()
 export class UserService {
-  constructor(
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
-  ) {}
+  constructor(private httpService: HttpService) {}
 
-  findAll(): Promise<User[]> {
-    return this.usersRepository.find();
+  findAll(): Observable<User[]> {
+    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
+    return this.httpService.get<User[]>(apiUrl).pipe(
+      map(response => response.data)
+    );
   }
 
-  findOne(id: number): Promise<User> {
-    return this.usersRepository.findOneBy({ id });
+  findOne(id: number): Observable<User> {
+    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
+    return this.httpService.get<User>(`${apiUrl}/${id}`).pipe(
+      map(response => response.data)
+    );
   }
 
-  async remove(id: number): Promise<void> {
-    await this.usersRepository.delete(id);
-  }
-
-  // Nuevo método para crear un usuario
-  async create(user: User): Promise<User> {
-    return this.usersRepository.save(user);
+  findByCarnet(carnetIdentidad: string): Observable<User> {
+    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
+    return this.httpService.get<User[]>(`${apiUrl}?carnetIdentidad=${carnetIdentidad}`).pipe(
+      map(response => {
+        const user = response.data.find(user => user.carnetIdentidad === carnetIdentidad);
+        return user || null;
+      })
+    );
   }
 }

@@ -1,32 +1,32 @@
-import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
 import { UserService } from 'src/services/user.service';
-import { User } from 'src/entities/user.entity';
-import { CreateUserDto } from 'src/dto/create-user.dto';
+import { User } from 'src/interfaces/user.interface';
 
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
-  findAll(): Promise<User[]> {
-    return this.userService.findAll();
+  async findAll(): Promise<User[]> {
+    return this.userService.findAll().toPromise();
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string): Promise<User> {
-    return this.userService.findOne(Number(id));
+  async findOne(@Param('id') id: string): Promise<User> {
+    const userId = parseInt(id, 10); // Convert the id to a number
+    const user = await this.userService.findOne(userId).toPromise();
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+    return user;
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string): Promise<void> {
-    return this.userService.remove(Number(id));
-  }
-
-  @Post()
-  create(@Body() createUserDto: CreateUserDto): Promise<User> {
-    const user = new User();
-    user.name = createUserDto.name;
-    user.email = createUserDto.email;
-    return this.userService.create(user);
+  @Get('carnet/:carnetIdentidad')
+  async findByCarnet(@Param('carnetIdentidad') carnetIdentidad: string): Promise<User> {
+    const user = await this.userService.findByCarnet(carnetIdentidad).toPromise();
+    if (!user) {
+      throw new NotFoundException(`User with Carnet ${carnetIdentidad} not found`);
+    }
+    return user;
   }
 }
