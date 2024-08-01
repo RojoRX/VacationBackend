@@ -6,7 +6,7 @@ import { map } from 'rxjs/operators';
 
 @Injectable()
 export class UserService {
-  constructor(private httpService: HttpService) {}
+  constructor(private readonly httpService: HttpService) {}
 
   findAll(): Observable<User[]> {
     const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';

@@ -3,11 +3,13 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './modules/user.module';
 import { ConfigModule } from '@nestjs/config';
+import { HolidayPeriodModule } from './modules/holiday-period.module';
+import { VacationModule } from './modules/vacation.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    UserModule,
+    UserModule, HolidayPeriodModule,VacationModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DATABASE_HOST,
