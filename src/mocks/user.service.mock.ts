@@ -61,7 +61,7 @@ export class MockUserService {
       email: 'charlie.garcia@example.com',
       position: 'Marketing Manager',
       department: 'Marketing',
-      fechaIngreso: '2020-07-21',
+      fechaIngreso: '2000-07-21',
       permisos: 15,
       carnetIdentidad: '67890123', // Nuevo campo
     },

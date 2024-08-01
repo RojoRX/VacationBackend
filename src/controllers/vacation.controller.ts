@@ -7,7 +7,7 @@ export class VacationController {
 
   @Get(':carnetIdentidad')
   async getRemainingVacationDays(@Param('carnetIdentidad') carnetIdentidad: string): Promise<any> {
-    const result = await this.vacationService.calculateRemainingVacationDays(carnetIdentidad);
-    return result;
+    const vacationData = await this.vacationService.calculateRemainingVacationDays(carnetIdentidad);
+    return vacationData;
   }
 }
