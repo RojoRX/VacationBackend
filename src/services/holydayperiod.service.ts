@@ -11,10 +11,12 @@ export class HolidayPeriodService {
     private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
   ) {}
 
+  // Obtiene todos los períodos de receso
   async findAll(): Promise<HolidayPeriod[]> {
     return this.holidayPeriodRepository.find();
   }
 
+  // Crea un nuevo período de receso
   async createHolidayPeriod(holidayPeriod: Partial<HolidayPeriod>): Promise<HolidayPeriod> {
     const existingPeriod = await this.holidayPeriodRepository.findOne({
       where: { year: holidayPeriod.year, name: holidayPeriod.name },
@@ -26,16 +28,18 @@ export class HolidayPeriodService {
 
     holidayPeriod.startDate = DateTime.fromISO(holidayPeriod.startDate as any).toUTC().toJSDate();
     holidayPeriod.endDate = DateTime.fromISO(holidayPeriod.endDate as any).toUTC().toJSDate();
-    
+
     return this.holidayPeriodRepository.save(holidayPeriod);
   }
 
-  async getHolidayPeriods(year: number): Promise<HolidayPeriod[]> {  // Aquí está el nombre correcto del método
+  // Obtiene los períodos de receso para un año específico
+  async getHolidayPeriods(year: number): Promise<HolidayPeriod[]> {
     return this.holidayPeriodRepository.find({ where: { year } });
   }
 
+  // Actualiza un período de receso existente
   async updateHolidayPeriod(id: number, holidayPeriod: Partial<HolidayPeriod>): Promise<HolidayPeriod> {
-    const existingPeriod = await this.holidayPeriodRepository.findOne({where:{id: id}});
+    const existingPeriod = await this.holidayPeriodRepository.findOne({ where: { id } });
 
     if (!existingPeriod) {
       throw new BadRequestException(`No se encontró un receso con el ID ${id}`);
@@ -57,11 +61,12 @@ export class HolidayPeriodService {
     if (holidayPeriod.endDate) {
       holidayPeriod.endDate = DateTime.fromISO(holidayPeriod.endDate as any).toUTC().toJSDate();
     }
-    
+
     await this.holidayPeriodRepository.update(id, holidayPeriod);
-    return this.holidayPeriodRepository.findOne({where:{id: id}});
+    return this.holidayPeriodRepository.findOne({ where: { id } });
   }
 
+  // Elimina un período de receso por su id
   async deleteHolidayPeriod(id: number): Promise<void> {
     await this.holidayPeriodRepository.delete(id);
   }

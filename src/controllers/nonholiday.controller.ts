@@ -6,11 +6,13 @@ import { NonHoliday } from 'src/entities/nonholiday.entity';
 export class NonHolidayController {
   constructor(private readonly nonHolidayService: NonHolidayService) {}
 
+  // Devuelve los días no hábiles para un año específico
   @Get(':year')
-  async getNonHolidayDays(@Param('year') year: number): Promise<number> {
+  async getNonHolidayDays(@Param('year') year: number): Promise<NonHoliday[]> {
     return this.nonHolidayService.getNonHolidayDays(year);
   }
 
+  // Agrega un nuevo día no hábil
   @Post()
   async addNonHoliday(@Body() body: { year: number, days: number }): Promise<NonHoliday> {
     const { year, days } = body;
@@ -20,6 +22,7 @@ export class NonHolidayController {
     return this.nonHolidayService.addNonHoliday(nonHoliday);
   }
 
+  // Actualiza un día no hábil existente
   @Put(':id')
   async updateNonHoliday(@Param('id') id: number, @Body() body: { year: number, days: number }): Promise<NonHoliday> {
     const { year, days } = body;
@@ -27,6 +30,7 @@ export class NonHolidayController {
     return this.nonHolidayService.updateNonHoliday(id, nonHoliday);
   }
 
+  // Elimina un día no hábil por su id
   @Delete(':id')
   async deleteNonHoliday(@Param('id') id: number): Promise<void> {
     return this.nonHolidayService.deleteNonHoliday(id);

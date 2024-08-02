@@ -10,20 +10,23 @@ export class NonHolidayService {
     private readonly nonHolidayRepository: Repository<NonHoliday>
   ) {}
 
-  async getNonHolidayDays(year: number): Promise<number> {
-    const nonHoliday = await this.nonHolidayRepository.findOne({ where: { year } });
-    return nonHoliday ? nonHoliday.days : 0;
+  // Devuelve un arreglo de objetos NonHoliday para un año específico
+  async getNonHolidayDays(year: number): Promise<NonHoliday[]> {
+    return this.nonHolidayRepository.find({ where: { year } });
   }
 
+  // Agrega un nuevo día no hábil
   async addNonHoliday(nonHoliday: NonHoliday): Promise<NonHoliday> {
     return this.nonHolidayRepository.save(nonHoliday);
   }
 
+  // Actualiza un día no hábil existente
   async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
     await this.nonHolidayRepository.update(id, nonHoliday);
     return this.nonHolidayRepository.findOne({ where: { id } });
   }
 
+  // Elimina un día no hábil por su id
   async deleteNonHoliday(id: number): Promise<void> {
     await this.nonHolidayRepository.delete(id);
   }
