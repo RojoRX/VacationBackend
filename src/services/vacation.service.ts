@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserService } from 'src/services/user.service';
 import { HolidayPeriodService } from './holydayperiod.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { DateTime } from 'luxon';
-import { lastValueFrom } from 'rxjs';
+import { firstValueFrom, lastValueFrom } from 'rxjs';
 
 @Injectable()
 export class VacationService {
@@ -81,5 +81,71 @@ export class VacationService {
       currentDate = currentDate.plus({ days: 1 });
     }
     return count;
+  }
+  async getCurrentYearVacationData(carnetIdentidad: string, year: number): Promise<any> {
+    const user = await firstValueFrom(this.userService.findByCarnet(carnetIdentidad));
+    
+    if (!user) {
+      throw new BadRequestException(`Usuario con carnet de identidad ${carnetIdentidad} no encontrado`);
+    }
+
+    const startDate = DateTime.fromISO(user.fechaIngreso);
+    const today = DateTime.now();
+    const yearsOfService = today.year - startDate.year;
+    const monthsOfService = today.month - startDate.month;
+    const userVacationDays = 30; // Asignar según la antigüedad
+
+    const holidays = await this.holidayPeriodService.getHolidayPeriods(year);
+    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
+
+    let totalHolidayDays = 0;
+    const holidayDetails = holidays.map(holiday => {
+      let weekdays = 0;
+      const endDate = DateTime.fromJSDate(holiday.endDate);
+      if (endDate <= today) {
+        weekdays = this.countWeekdays(holiday.startDate, holiday.endDate);
+      } else if (DateTime.fromJSDate(holiday.startDate) <= today && endDate > today) {
+        weekdays = this.countWeekdays(holiday.startDate, today.toJSDate());
+      }
+      totalHolidayDays += weekdays;
+      return {
+        ...holiday,
+        weekdays
+      };
+    });
+
+    const totalNonHolidayDays = nonHolidays.reduce((sum, nh) => sum + nh.days, 0);
+
+    const availableVacationDays = userVacationDays - totalHolidayDays + totalNonHolidayDays;
+
+    return {
+      carnetIdentidad: user.carnetIdentidad,
+      name: user.name,
+      email: user.email,
+      position: user.position,
+      department: user.department,
+      yearsOfService,
+      monthsOfService,
+      userVacationDays,
+      totalHolidayDays,
+      totalNonHolidayDays,
+      availableVacationDays,
+      holidayDetails
+    };
+  }
+
+  private countWeekdays(startDate: Date, endDate: Date): number {
+    let weekdays = 0;
+    let currentDate = DateTime.fromJSDate(startDate).startOf('day');
+    const end = DateTime.fromJSDate(endDate).startOf('day');
+
+    while (currentDate <= end) {
+      if (currentDate.weekday >= 1 && currentDate.weekday <= 5) {
+        weekdays++;
+      }
+      currentDate = currentDate.plus({ days: 1 });
+    }
+
+    return weekdays;
   }
 }

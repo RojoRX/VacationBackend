@@ -12,4 +12,12 @@ export class VacationController {
   ) {
     return this.vacationService.getVacationInfo(carnetIdentidad, year);
   }
+
+  @Get('current/:year/:carnetIdentidad')
+  async getCurrentYearVacationData(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('carnetIdentidad') carnetIdentidad: string,
+  ): Promise<any> {
+    return this.vacationService.getCurrentYearVacationData(carnetIdentidad, year);
+  }
 }
