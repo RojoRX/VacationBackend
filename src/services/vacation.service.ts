@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UserService } from './user.service';
 import { HolidayPeriodService } from './holydayperiod.service';
+import { NonHolidayService } from './nonholiday.service';
 import { User } from 'src/interfaces/user.interface';
 import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 
@@ -8,7 +9,8 @@ import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 export class VacationService {
   constructor(
     private readonly userService: UserService,
-    private readonly holidayService: HolidayPeriodService
+    private readonly holidayService: HolidayPeriodService,
+    private readonly nonHolidayService: NonHolidayService
   ) {}
 
   async calculateRemainingVacationDays(carnetIdentidad: string): Promise<any> {
@@ -23,18 +25,21 @@ export class VacationService {
     const userVacationDays = this.calculateVacationDaysByService(yearsOfService);
 
     const holidays = await this.holidayService.getHolidayPeriods(today.getFullYear());
-    const { totalHolidaysDays, holidayDetails } = this.calculateHolidayDays(holidays, today.getFullYear());
+    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(today.getFullYear());
 
-    const remainingVacationDays = userVacationDays - totalHolidaysDays;
+    const { totalHolidaysDays, effectiveHolidayDays } = await this.calculateHolidayDays(holidays, nonHolidays, today.getFullYear());
+
+    const remainingVacationDays = userVacationDays - effectiveHolidayDays;
 
     return {
       carnetIdentidad: carnetIdentidad,
       totalHolidaysDays: totalHolidaysDays,
+      effectiveHolidayDays: effectiveHolidayDays,
       userVacationDays: userVacationDays,
       remainingVacationDays: remainingVacationDays,
       yearsOfService: yearsOfService,
       monthsOfService: monthsOfService,
-      holidayDetails: holidayDetails
+      nonHolidayDays: nonHolidays
     };
   }
 
@@ -56,23 +61,29 @@ export class VacationService {
     if (yearsOfService < 10) return 20;
     return 30;
   }
-  
 
-  private calculateHolidayDays(holidays: any[], year: number): { totalHolidaysDays: number, holidayDetails: any[] } {
+  private async calculateHolidayDays(holidays: any[], nonHolidayDays: number, year: number): Promise<{ totalHolidaysDays: number, effectiveHolidayDays: number }> {
     let totalDays = 0;
+    let effectiveDays = 0;
     const holidayDetails = [];
-
+  
     for (const holiday of holidays) {
       if (holiday.year === year) {
         let start = new Date(holiday.startDate);
         let end = new Date(holiday.endDate);
-
+  
+        // Validar que start y end sean fechas válidas
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+          console.error(`Invalid date for holiday: ${holiday.name}`);
+          continue;
+        }
+  
         // Asegúrate de que la hora esté en el inicio del día
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
-
+  
         if (end < start) continue;
-
+  
         let holidayDays = 0;
         const currentHolidayDetails = {
           name: holiday.name,
@@ -80,11 +91,11 @@ export class VacationService {
           endDate: holiday.endDate,
           days: 0
         };
-
+  
         console.log(`Processing holiday: ${holiday.name}`);
         console.log(`Start Date: ${start}`);
         console.log(`End Date: ${end}`);
-
+  
         for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
           if (date.getDay() >= 1 && date.getDay() <= 5) { // Check if the day is Monday to Friday
             holidayDays++;
@@ -92,18 +103,30 @@ export class VacationService {
             console.log(`Counting day: ${date.toDateString()}`);
           }
         }
-
+  
+        // Update effectiveDays to exclude non-holiday days
+        const nonHolidayDaysInRange = await this.getNonHolidayDaysInRange(start, end, nonHolidayDays);
+        effectiveDays += holidayDays;
+        
+        // Exclude non-holiday days from total
+        totalDays += holidayDays;
+        
         if (holidayDays > 0) {
           holidayDetails.push(currentHolidayDetails);
         }
-
-        totalDays += holidayDays;
+  
         console.log(`Total Days for ${holiday.name}: ${holidayDays}`);
       }
     }
-
+  
     console.log(`Total Holidays Days: ${totalDays}`);
+    console.log(`Effective Holidays Days: ${effectiveDays - nonHolidayDays}`);
+  
+    return { totalHolidaysDays: totalDays, effectiveHolidayDays: effectiveDays - nonHolidayDays };
+  }
 
-    return { totalHolidaysDays: totalDays, holidayDetails: holidayDetails };
+  private async getNonHolidayDaysInRange(start: Date, end: Date, nonHolidayDays: number): Promise<number> {
+    // Simplified version; should calculate days in range if needed
+    return nonHolidayDays;
   }
 }
