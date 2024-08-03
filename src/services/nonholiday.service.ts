@@ -8,7 +8,7 @@ import { DateTime } from 'luxon';
 export class NonHolidayService {
   constructor(
     @InjectRepository(NonHoliday)
-    private readonly nonHolidayRepository: Repository<NonHoliday>
+    private readonly nonHolidayRepository: Repository<NonHoliday>,
   ) {}
 
   async getNonHolidayDays(year: number): Promise<NonHoliday[]> {
@@ -21,9 +21,9 @@ export class NonHolidayService {
 
     for (const nonHoliday of nonHolidays) {
       const nonHolidayDate = DateTime.fromISO(nonHoliday.date);
-      
-      // Solo contar días no hábiles que ocurren después de la fecha actual
-      if (nonHolidayDate >= DateTime.fromJSDate(currentDate)) {
+
+      // Solo contar días no hábiles que ocurren antes de la fecha actual
+      if (nonHolidayDate < DateTime.fromJSDate(currentDate)) {
         totalNonHolidayDays += 1;
       }
     }

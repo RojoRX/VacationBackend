@@ -1,47 +1,67 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, ParseIntPipe } from '@nestjs/common';
-import { HolidayPeriodService } from 'src/services/holydayperiod.service';
-import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
-import { DateTime } from 'luxon';
+import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put } from "@nestjs/common";
+import { HolidayPeriod } from "src/entities/holydayperiod.entity";
+import { HolidayPeriodService } from "src/services/holydayperiod.service";
+import { Response } from 'express';
 
 @Controller('holiday-periods')
 export class HolidayPeriodController {
   constructor(private readonly holidayPeriodService: HolidayPeriodService) {}
 
-  // Obtiene todos los períodos de receso
-  @Get()
-  async findAll(): Promise<HolidayPeriod[]> {
-    return this.holidayPeriodService.findAll();
-  }
-  
-  // Crea un nuevo período de receso
-  @Post()
-  createHolidayPeriod(@Body() holidayPeriod: Partial<HolidayPeriod>): Promise<HolidayPeriod> {
-    return this.holidayPeriodService.createHolidayPeriod(holidayPeriod);
-  }
-
-  // Obtiene los períodos de receso para un año específico
   @Get(':year')
-  async getHolidayPeriods(@Param('year', ParseIntPipe) year: number): Promise<HolidayPeriod[]> {
-    const periods = await this.holidayPeriodService.getHolidayPeriods(year);
-    return periods.map(period => ({
-      ...period,
-      startDate: DateTime.fromJSDate(period.startDate).toISO(),
-      endDate: DateTime.fromJSDate(period.endDate).toISO(),
-    }));
+  async getHolidayPeriods(@Param('year') year: number, @Res() res: Response): Promise<void> {
+    try {
+      const holidayPeriods = await this.holidayPeriodService.getHolidayPeriods(year);
+      res.status(HttpStatus.OK).json(holidayPeriods);
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving holiday periods', error });
+    }
   }
 
-  // Actualiza un período de receso existente
+  @Get('general/:year')
+  async getGeneralHolidayPeriods(@Param('year') year: number, @Res() res: Response): Promise<void> {
+    try {
+      const holidayPeriods = await this.holidayPeriodService.getGeneralHolidayPeriods(year);
+      res.status(HttpStatus.OK).json(holidayPeriods);
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving general holiday periods', error });
+    }
+  }
+
+  @Get('specific/:year/:career')
+  async getSpecificHolidayPeriods(
+    @Param('year') year: number,
+    @Param('career') career: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const holidayPeriods = await this.holidayPeriodService.getSpecificHolidayPeriods(year, career);
+      res.status(HttpStatus.OK).json(holidayPeriods);
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving specific holiday periods', error });
+    }
+  }
+
+  @Post()
+  async createHolidayPeriod(@Body() holidayPeriod: HolidayPeriod, @Res() res: Response): Promise<void> {
+    try {
+      const newHolidayPeriod = await this.holidayPeriodService.createHolidayPeriod(holidayPeriod);
+      res.status(HttpStatus.CREATED).json(newHolidayPeriod);
+    } catch (error) {
+      res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error creating holiday period', error });
+    }
+  }
+
   @Put(':id')
-  updateHolidayPeriod(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() holidayPeriod: Partial<HolidayPeriod>,
-  ): Promise<HolidayPeriod> {
-    return this.holidayPeriodService.updateHolidayPeriod(id, holidayPeriod);
-  }
-
-  // Elimina un período de receso por su id
-  @Delete(':id')
-  deleteHolidayPeriod(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    return this.holidayPeriodService.deleteHolidayPeriod(id);
+  async updateHolidayPeriod(
+    @Param('id') id: number,
+    @Body() holidayPeriod: HolidayPeriod,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const updatedHolidayPeriod = await this.holidayPeriodService.updateHolidayPeriod(id, holidayPeriod);
+      res.status(HttpStatus.OK).json(updatedHolidayPeriod);
+    } catch (error) {
+      res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error updating holiday period', error });
+    }
   }
 }

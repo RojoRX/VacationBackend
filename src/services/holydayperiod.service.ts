@@ -1,73 +1,75 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
-import { DateTime } from 'luxon';
+import { Not, Repository } from 'typeorm';
+import { HolidayPeriod, HolidayPeriodName, HolidayPeriodType } from 'src/entities/holydayperiod.entity';
+
 
 @Injectable()
 export class HolidayPeriodService {
   constructor(
     @InjectRepository(HolidayPeriod)
-    private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
+    private holidayPeriodRepository: Repository<HolidayPeriod>,
   ) {}
 
-  // Obtiene todos los períodos de receso
-  async findAll(): Promise<HolidayPeriod[]> {
-    return this.holidayPeriodRepository.find();
-  }
-
-  // Crea un nuevo período de receso
-  async createHolidayPeriod(holidayPeriod: Partial<HolidayPeriod>): Promise<HolidayPeriod> {
-    const existingPeriod = await this.holidayPeriodRepository.findOne({
-      where: { year: holidayPeriod.year, name: holidayPeriod.name },
-    });
-
-    if (existingPeriod) {
-      throw new BadRequestException(`Ya existe un receso de tipo ${holidayPeriod.name} para el año ${holidayPeriod.year}`);
+  async createHolidayPeriod(holidayPeriod: HolidayPeriod): Promise<HolidayPeriod> {
+    if (holidayPeriod.type === HolidayPeriodType.GENERAL) {
+      const existingGeneralPeriod = await this.holidayPeriodRepository.findOne({
+        where: { year: holidayPeriod.year, type: HolidayPeriodType.GENERAL, name: holidayPeriod.name }
+      });
+      if (existingGeneralPeriod) {
+        throw new BadRequestException(`Ya existe un receso general de ${holidayPeriod.name} para este año.`);
+      }
     }
 
-    holidayPeriod.startDate = DateTime.fromISO(holidayPeriod.startDate as any).toUTC().toJSDate();
-    holidayPeriod.endDate = DateTime.fromISO(holidayPeriod.endDate as any).toUTC().toJSDate();
+    if (holidayPeriod.type === HolidayPeriodType.SPECIFIC && holidayPeriod.career) {
+      const existingSpecificPeriod = await this.holidayPeriodRepository.findOne({
+        where: { year: holidayPeriod.year, type: HolidayPeriodType.SPECIFIC, name: holidayPeriod.name, career: holidayPeriod.career }
+      });
+      if (existingSpecificPeriod) {
+        throw new BadRequestException(`Ya existe un receso específico de ${holidayPeriod.name} para la carrera ${holidayPeriod.career} en este año.`);
+      }
+    }
 
     return this.holidayPeriodRepository.save(holidayPeriod);
   }
 
-  // Obtiene los períodos de receso para un año específico
   async getHolidayPeriods(year: number): Promise<HolidayPeriod[]> {
     return this.holidayPeriodRepository.find({ where: { year } });
   }
 
-  // Actualiza un período de receso existente
-  async updateHolidayPeriod(id: number, holidayPeriod: Partial<HolidayPeriod>): Promise<HolidayPeriod> {
-    const existingPeriod = await this.holidayPeriodRepository.findOne({ where: { id } });
+  async getGeneralHolidayPeriods(year: number): Promise<HolidayPeriod[]> {
+    return this.holidayPeriodRepository.find({ where: { year, type: HolidayPeriodType.GENERAL } });
+  }
 
+  async getSpecificHolidayPeriods(year: number, career: string): Promise<HolidayPeriod[]> {
+    return this.holidayPeriodRepository.find({ where: { year, type: HolidayPeriodType.SPECIFIC, career } });
+  }
+
+  async updateHolidayPeriod(id: number, holidayPeriod: HolidayPeriod): Promise<HolidayPeriod> {
+    const existingPeriod = await this.holidayPeriodRepository.findOne({where:{id:id}});
     if (!existingPeriod) {
-      throw new BadRequestException(`No se encontró un receso con el ID ${id}`);
+      throw new NotFoundException(`Receso con id ${id} no encontrado.`);
     }
 
-    if (holidayPeriod.name && holidayPeriod.name !== existingPeriod.name) {
-      const conflictPeriod = await this.holidayPeriodRepository.findOne({
-        where: { year: holidayPeriod.year || existingPeriod.year, name: holidayPeriod.name },
+    if (holidayPeriod.type === HolidayPeriodType.GENERAL) {
+      const existingGeneralPeriod = await this.holidayPeriodRepository.findOne({
+        where: { year: holidayPeriod.year, type: HolidayPeriodType.GENERAL, name: holidayPeriod.name, id: Not(id) }
       });
-
-      if (conflictPeriod) {
-        throw new BadRequestException(`Ya existe un receso de tipo ${holidayPeriod.name} para el año ${holidayPeriod.year || existingPeriod.year}`);
+      if (existingGeneralPeriod) {
+        throw new BadRequestException(`Ya existe un receso general de ${holidayPeriod.name} para este año.`);
       }
     }
 
-    if (holidayPeriod.startDate) {
-      holidayPeriod.startDate = DateTime.fromISO(holidayPeriod.startDate as any).toUTC().toJSDate();
-    }
-    if (holidayPeriod.endDate) {
-      holidayPeriod.endDate = DateTime.fromISO(holidayPeriod.endDate as any).toUTC().toJSDate();
+    if (holidayPeriod.type === HolidayPeriodType.SPECIFIC && holidayPeriod.career) {
+      const existingSpecificPeriod = await this.holidayPeriodRepository.findOne({
+        where: { year: holidayPeriod.year, type: HolidayPeriodType.SPECIFIC, name: holidayPeriod.name, career: holidayPeriod.career, id: Not(id) }
+      });
+      if (existingSpecificPeriod) {
+        throw new BadRequestException(`Ya existe un receso específico de ${holidayPeriod.name} para la carrera ${holidayPeriod.career} en este año.`);
+      }
     }
 
     await this.holidayPeriodRepository.update(id, holidayPeriod);
-    return this.holidayPeriodRepository.findOne({ where: { id } });
-  }
-
-  // Elimina un período de receso por su id
-  async deleteHolidayPeriod(id: number): Promise<void> {
-    await this.holidayPeriodRepository.delete(id);
+    return this.holidayPeriodRepository.findOne({where:{id:id}});
   }
 }
