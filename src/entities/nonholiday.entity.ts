@@ -8,6 +8,6 @@ export class NonHoliday {
   @Column({ type: 'int' })
   year: number;
 
-  @Column({ type: 'int' })
-  days: number;
+  @Column({ type: 'date' })
+  date: string; // Fecha específica del día no hábil
 }

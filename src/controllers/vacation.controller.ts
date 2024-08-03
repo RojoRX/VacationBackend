@@ -1,23 +1,26 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Param, Query, BadRequestException } from '@nestjs/common';
 import { VacationService } from 'src/services/vacation.service';
+import { DateTime } from 'luxon';
 
 @Controller('vacations')
 export class VacationController {
   constructor(private readonly vacationService: VacationService) {}
 
-  @Get(':carnetIdentidad/:year')
-  async getVacationInfo(
+  @Get('current-year/:carnetIdentidad')
+  async getCurrentYearVacationData(
     @Param('carnetIdentidad') carnetIdentidad: string,
-    @Param('year', ParseIntPipe) year: number,
+    @Query('year') year: number
   ) {
-    return this.vacationService.getVacationInfo(carnetIdentidad, year);
+    if (!year) {
+      year = DateTime.now().year;
+    }
+
+    try {
+      const vacationData = await this.vacationService.getCurrentYearVacationData(carnetIdentidad, year);
+      return vacationData;
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 
-  @Get('current/:year/:carnetIdentidad')
-  async getCurrentYearVacationData(
-    @Param('year', ParseIntPipe) year: number,
-    @Param('carnetIdentidad') carnetIdentidad: string,
-  ): Promise<any> {
-    return this.vacationService.getCurrentYearVacationData(carnetIdentidad, year);
-  }
 }

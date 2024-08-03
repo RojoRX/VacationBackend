@@ -3,7 +3,8 @@ import { UserService } from 'src/services/user.service';
 import { HolidayPeriodService } from './holydayperiod.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { DateTime } from 'luxon';
-import { firstValueFrom, lastValueFrom } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
+import { NonHoliday } from 'src/entities/nonholiday.entity';
 
 @Injectable()
 export class VacationService {
@@ -13,111 +14,45 @@ export class VacationService {
     private readonly nonHolidayService: NonHolidayService,
   ) {}
 
-  async getVacationInfo(carnetIdentidad: string, year: number) {
-    // Obtener los datos del usuario
-    const userObservable = this.userService.findByCarnet(carnetIdentidad);
-    const user = await lastValueFrom(userObservable);
-    console.log('User Data:', user);
-
-    // Obtener los períodos de receso y días no hábiles
-    const holidays = await this.holidayPeriodService.getHolidayPeriods(year);
-    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
-
-    const startDate = DateTime.fromISO(user.fechaIngreso);
-    const endDate = DateTime.local(year, 12, 31);
-    const diff = endDate.diff(startDate, ['years', 'months']);
-    const yearsOfService = Math.floor(diff.years);
-    const monthsOfService = Math.floor(diff.months);
-
-    const userVacationDays = this.calculateVacationDays(yearsOfService);
-    const totalNonHolidayDays = nonHolidays.reduce((sum, nh) => sum + nh.days, 0);
-
-    const holidayDetails = holidays.map(holiday => {
-      const startDate = DateTime.fromJSDate(holiday.startDate);
-      const endDate = DateTime.fromJSDate(holiday.endDate);
-      const weekdays = this.calculateWeekdaysBetween(startDate, endDate);
-      return { ...holiday, weekdays };
-    });
-
-    const totalHolidayDays = holidayDetails.reduce((sum, holiday) => sum + holiday.weekdays, 0);
-
-    const availableVacationDays = userVacationDays - totalHolidayDays + totalNonHolidayDays;
-
-    return {
-      carnetIdentidad: user.carnetIdentidad,
-      name: user.name,
-      email: user.email,
-      position: user.position,
-      department: user.department,
-      yearsOfService,
-      monthsOfService,
-      userVacationDays,
-      totalHolidayDays,
-      totalNonHolidayDays,
-      availableVacationDays,
-      holidayDetails,
-    };
-  }
-
-  private calculateVacationDays(yearsOfService: number): number {
-    if (yearsOfService >= 20) {
-      return 30;
-    } else if (yearsOfService >= 10) {
-      return 20;
-    } else if (yearsOfService >= 5) {
-      return 15;
-    } else {
-      return 0;
-    }
-  }
-
-  private calculateWeekdaysBetween(startDate: DateTime, endDate: DateTime): number {
-    let count = 0;
-    let currentDate = startDate.startOf('day');
-    while (currentDate <= endDate.startOf('day')) {
-      if (currentDate.weekday >= 1 && currentDate.weekday <= 5) {
-        count++;
-      }
-      currentDate = currentDate.plus({ days: 1 });
-    }
-    return count;
-  }
   async getCurrentYearVacationData(carnetIdentidad: string, year: number): Promise<any> {
     const user = await firstValueFrom(this.userService.findByCarnet(carnetIdentidad));
     
     if (!user) {
       throw new BadRequestException(`Usuario con carnet de identidad ${carnetIdentidad} no encontrado`);
     }
-
-    const startDate = DateTime.fromISO(user.fechaIngreso);
+  
     const today = DateTime.now();
-    const yearsOfService = today.year - startDate.year;
-    const monthsOfService = today.month - startDate.month;
-    const userVacationDays = 30; // Asignar según la antigüedad
-
+    const startDate = DateTime.fromISO(user.fechaIngreso);
+    const yearsOfService = today.year - startDate.year - (today.month < startDate.month ? 1 : 0);
+    const monthsOfService = today.month - startDate.month + (today.month < startDate.month ? 12 : 0);
+    const userVacationDays = this.calculateVacationDays(yearsOfService);
+  
     const holidays = await this.holidayPeriodService.getHolidayPeriods(year);
     const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
-
+  
     let totalHolidayDays = 0;
     const holidayDetails = holidays.map(holiday => {
-      let weekdays = 0;
+      const startDate = DateTime.fromJSDate(holiday.startDate);
       const endDate = DateTime.fromJSDate(holiday.endDate);
+  
+      let weekdays = 0;
       if (endDate <= today) {
-        weekdays = this.countWeekdays(holiday.startDate, holiday.endDate);
-      } else if (DateTime.fromJSDate(holiday.startDate) <= today && endDate > today) {
-        weekdays = this.countWeekdays(holiday.startDate, today.toJSDate());
+        weekdays = this.calculateWeekdaysBetween(startDate, endDate);
+      } else if (startDate <= today) {
+        weekdays = this.calculateWeekdaysBetween(startDate, today);
       }
+  
+      // Ajusta los días hábiles para descontar los días no hábiles
+      weekdays = this.adjustWeekdaysForNonHolidays(startDate, today, nonHolidays);
+  
       totalHolidayDays += weekdays;
-      return {
-        ...holiday,
-        weekdays
-      };
+      return { ...holiday, weekdays };
     });
-
-    const totalNonHolidayDays = nonHolidays.reduce((sum, nh) => sum + nh.days, 0);
-
+  
+    const totalNonHolidayDays = await this.calculateTotalNonHolidayDays(nonHolidays, today.toJSDate());
+  
     const availableVacationDays = userVacationDays - totalHolidayDays + totalNonHolidayDays;
-
+  
     return {
       carnetIdentidad: user.carnetIdentidad,
       name: user.name,
@@ -133,19 +68,55 @@ export class VacationService {
       holidayDetails
     };
   }
+  
+  private adjustWeekdaysForNonHolidays(startDate: DateTime, today: DateTime, nonHolidays: NonHoliday[]): number {
+    let weekdays = this.calculateWeekdaysBetween(startDate, today);
+  
+    nonHolidays.forEach(nonHoliday => {
+      const nhDate = DateTime.fromISO(nonHoliday.date);
+      if (nhDate >= startDate && nhDate <= today) {
+        if (nhDate.weekday >= 1 && nhDate.weekday <= 5) {
+          weekdays--; // Restar un día hábil si el día no hábil está dentro del rango
+        }
+      }
+    });
+  
+    return weekdays;
+  }
+  
 
-  private countWeekdays(startDate: Date, endDate: Date): number {
-    let weekdays = 0;
-    let currentDate = DateTime.fromJSDate(startDate).startOf('day');
-    const end = DateTime.fromJSDate(endDate).startOf('day');
-
-    while (currentDate <= end) {
+  private calculateWeekdaysBetween(startDate: DateTime, endDate: DateTime): number {
+    let count = 0;
+    let currentDate = startDate.startOf('day');
+    while (currentDate <= endDate.startOf('day')) {
       if (currentDate.weekday >= 1 && currentDate.weekday <= 5) {
-        weekdays++;
+        count++;
       }
       currentDate = currentDate.plus({ days: 1 });
     }
-
-    return weekdays;
+    return count;
   }
+
+  private async calculateTotalNonHolidayDays(nonHolidays: NonHoliday[], currentDate: Date): Promise<number> {
+    return nonHolidays.reduce(async (sumPromise, nh) => {
+      const sum = await sumPromise;
+      const nhDate = DateTime.fromISO(nh.date);
+      if (nhDate <= DateTime.fromJSDate(currentDate)) {
+        return sum + (nhDate <= DateTime.fromJSDate(currentDate) ? 1 : 0);
+      }
+      return sum;
+    }, Promise.resolve(0));
+  }
+  private calculateVacationDays(yearsOfService: number): number {
+    if (yearsOfService >= 20) {
+      return 30; // 30 días de vacaciones para empleados con 20 años o más de servicio
+    } else if (yearsOfService >= 10) {
+      return 20; // 20 días de vacaciones para empleados con 10 a 19 años de servicio
+    } else if (yearsOfService >= 5) {
+      return 15; // 15 días de vacaciones para empleados con 5 a 9 años de servicio
+    } else {
+      return 0; // Menos de 5 años de servicio no otorgan días de vacaciones
+    }
+  }
+  
 }
