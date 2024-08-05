@@ -1,26 +1,22 @@
-import { Controller, Get, Param, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
 import { VacationService } from 'src/services/vacation.service';
-import { DateTime } from 'luxon';
 
 @Controller('vacations')
 export class VacationController {
-  constructor(private readonly vacationService: VacationService) {}
+  constructor(
+    private readonly vacationService: VacationService
+  ) {}
 
-  @Get('current-year/:carnetIdentidad')
-  async getCurrentYearVacationData(
-    @Param('carnetIdentidad') carnetIdentidad: string,
-    @Query('year') year: number
+  @Get()
+  async getVacationInfo(
+    @Query('carnetIdentidad') carnetIdentidad: string,
+    @Query('year') year: number,
+    @Query('currentDate') currentDate: string // Formato esperado 'YYYY-MM-DD'
   ) {
-    if (!year) {
-      year = DateTime.now().year;
-    }
+    // Convertir currentDate a objeto Date
+    const currentDateObj = new Date(currentDate);
 
-    try {
-      const vacationData = await this.vacationService.getCurrentYearVacationData(carnetIdentidad, year);
-      return vacationData;
-    } catch (error) {
-      throw new BadRequestException(error.message);
-    }
+    // Llamar al servicio de vacaciones con el carnet de identidad, año y fecha actual
+    return this.vacationService.calculateVacationDays(carnetIdentidad, year, currentDateObj);
   }
-
 }

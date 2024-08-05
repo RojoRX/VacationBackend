@@ -8,6 +8,7 @@ import { HolidayPeriodService } from '../services/holydayperiod.service';
 import { UserModule } from './user.module';
 import { NonHolidayModule } from './nonholiday.module'; // Importa NonHolidayModule para que NonHolidayService esté disponible
 import { NonHolidayService } from 'src/services/nonholiday.service';
+import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 
 @Module({
   imports: [
@@ -16,6 +17,6 @@ import { NonHolidayService } from 'src/services/nonholiday.service';
     NonHolidayModule, // Asegúrate de que NonHolidayModule esté importado aquí
   ],
   controllers: [VacationController],
-  providers: [VacationService, HolidayPeriodService, ],
+  providers: [VacationService, HolidayPeriodService,VacationCalculatorService ],
 })
 export class VacationModule {}

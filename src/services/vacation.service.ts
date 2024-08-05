@@ -1,122 +1,104 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { UserService } from 'src/services/user.service';
-import { HolidayPeriodService } from './holydayperiod.service';
-import { NonHolidayService } from 'src/services/nonholiday.service';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { DateTime } from 'luxon';
-import { firstValueFrom } from 'rxjs';
-import { NonHoliday } from 'src/entities/nonholiday.entity';
+import { UserService } from 'src/services/user.service';
+import { HolidayPeriod, HolidayPeriodType } from 'src/entities/holydayperiod.entity';
+import { VacationResponse } from 'src/interfaces/vacation-response.interface';
+import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 
 @Injectable()
 export class VacationService {
   constructor(
+    @InjectRepository(HolidayPeriod)
+    private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
     private readonly userService: UserService,
-    private readonly holidayPeriodService: HolidayPeriodService,
-    private readonly nonHolidayService: NonHolidayService,
+    private readonly vacationCalculatorService: VacationCalculatorService
   ) {}
 
-  async getCurrentYearVacationData(carnetIdentidad: string, year: number): Promise<any> {
-    const user = await firstValueFrom(this.userService.findByCarnet(carnetIdentidad));
-    
+  async calculateVacationDays(carnetIdentidad: string, year: number, currentDate: Date): Promise<VacationResponse> {
+    const user = await this.userService.findByCarnet(carnetIdentidad).toPromise();
     if (!user) {
-      throw new BadRequestException(`Usuario con carnet de identidad ${carnetIdentidad} no encontrado`);
+      throw new BadRequestException('Usuario no encontrado.');
     }
-  
-    const today = DateTime.now();
-    const startDate = DateTime.fromISO(user.fechaIngreso);
-    const yearsOfService = today.year - startDate.year - (today.month < startDate.month ? 1 : 0);
-    const monthsOfService = today.month - startDate.month + (today.month < startDate.month ? 12 : 0);
-    const userVacationDays = this.calculateVacationDays(yearsOfService);
-  
-    const holidays = await this.holidayPeriodService.getHolidayPeriods(year);
-    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
-  
-    let totalHolidayDays = 0;
-    const holidayDetails = holidays.map(holiday => {
-      const startDate = DateTime.fromJSDate(holiday.startDate);
-      const endDate = DateTime.fromJSDate(holiday.endDate);
-  
-      let weekdays = 0;
-      if (endDate <= today) {
-        weekdays = this.calculateWeekdaysBetween(startDate, endDate);
-      } else if (startDate <= today) {
-        weekdays = this.calculateWeekdaysBetween(startDate, today);
-      }
-  
-      // Ajusta los días hábiles para descontar los días no hábiles
-      weekdays = this.adjustWeekdaysForNonHolidays(startDate, today, nonHolidays);
-  
-      totalHolidayDays += weekdays;
-      return { ...holiday, weekdays };
+
+    const userDate = DateTime.fromISO(user.fechaIngreso);
+    const currentDateTime = DateTime.fromJSDate(currentDate);
+
+    const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, currentDateTime);
+    const monthsOfService = this.vacationCalculatorService.calculateMonthsOfService(userDate, currentDateTime);
+    const daysOfService = this.vacationCalculatorService.calculateDaysOfService(userDate, currentDateTime);
+
+    const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
+
+    const holidayPeriods = await this.holidayPeriodRepository.find({
+      where: {
+        year,
+        type: HolidayPeriodType.GENERAL,
+      },
     });
-  
-    const totalNonHolidayDays = await this.calculateTotalNonHolidayDays(nonHolidays, today.toJSDate());
-  
-    const availableVacationDays = userVacationDays - totalHolidayDays + totalNonHolidayDays;
-  
+
+    let totalNonHolidayDays = 0;
+    const recesos = [];
+
+    for (const period of holidayPeriods) {
+      const startDateHol = DateTime.fromJSDate(period.startDate);
+      const endDateHol = DateTime.fromJSDate(period.endDate);
+
+      const startDateEmp = userDate;
+      const endDateEmp = currentDateTime;
+
+      const intersectionDays = getIntersectionDays(startDateEmp, endDateEmp, startDateHol, endDateHol);
+      totalNonHolidayDays += intersectionDays;
+
+      recesos.push({
+        name: period.name,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        type: period.type,
+        daysCount: intersectionDays,
+      });
+    }
+
     return {
       carnetIdentidad: user.carnetIdentidad,
       name: user.name,
       email: user.email,
       position: user.position,
       department: user.department,
-      yearsOfService,
-      monthsOfService,
-      userVacationDays,
-      totalHolidayDays,
-      totalNonHolidayDays,
-      availableVacationDays,
-      holidayDetails
+      fechaIngreso: new Date(user.fechaIngreso), // Convertir a Date
+      permisos: user.permisos,
+      antiguedadEnAnios: Math.floor(yearsOfService),
+      antiguedadEnMeses: Math.floor(monthsOfService),
+      antiguedadEnDias: Math.floor(daysOfService),
+      diasDeVacacion: vacationDays - totalNonHolidayDays,
+      recesos: recesos,
+      diasNoHabiles: totalNonHolidayDays,
     };
   }
-  
-  private adjustWeekdaysForNonHolidays(startDate: DateTime, today: DateTime, nonHolidays: NonHoliday[]): number {
-    let weekdays = this.calculateWeekdaysBetween(startDate, today);
-  
-    nonHolidays.forEach(nonHoliday => {
-      const nhDate = DateTime.fromISO(nonHoliday.date);
-      if (nhDate >= startDate && nhDate <= today) {
-        if (nhDate.weekday >= 1 && nhDate.weekday <= 5) {
-          weekdays--; // Restar un día hábil si el día no hábil está dentro del rango
-        }
-      }
-    });
-  
-    return weekdays;
-  }
-  
+}
 
-  private calculateWeekdaysBetween(startDate: DateTime, endDate: DateTime): number {
-    let count = 0;
-    let currentDate = startDate.startOf('day');
-    while (currentDate <= endDate.startOf('day')) {
-      if (currentDate.weekday >= 1 && currentDate.weekday <= 5) {
-        count++;
-      }
-      currentDate = currentDate.plus({ days: 1 });
+function countBusinessDays(startDate: DateTime, endDate: DateTime): number {
+  let count = 0;
+  let currentDate = startDate;
+
+  while (currentDate <= endDate) {
+    if (currentDate.weekday >= 1 && currentDate.weekday <= 5) { // Lunes a Viernes
+      count += 1;
     }
-    return count;
+    currentDate = currentDate.plus({ days: 1 });
   }
 
-  private async calculateTotalNonHolidayDays(nonHolidays: NonHoliday[], currentDate: Date): Promise<number> {
-    return nonHolidays.reduce(async (sumPromise, nh) => {
-      const sum = await sumPromise;
-      const nhDate = DateTime.fromISO(nh.date);
-      if (nhDate <= DateTime.fromJSDate(currentDate)) {
-        return sum + (nhDate <= DateTime.fromJSDate(currentDate) ? 1 : 0);
-      }
-      return sum;
-    }, Promise.resolve(0));
+  return count;
+}
+
+function getIntersectionDays(startDateEmp: DateTime, endDateEmp: DateTime, startDateHol: DateTime, endDateHol: DateTime): number {
+  const latestStart = startDateEmp > startDateHol ? startDateEmp : startDateHol;
+  const earliestEnd = endDateEmp < endDateHol ? endDateEmp : endDateHol;
+
+  if (latestStart > earliestEnd) {
+    return 0;
   }
-  private calculateVacationDays(yearsOfService: number): number {
-    if (yearsOfService >= 20) {
-      return 30; // 30 días de vacaciones para empleados con 20 años o más de servicio
-    } else if (yearsOfService >= 10) {
-      return 20; // 20 días de vacaciones para empleados con 10 a 19 años de servicio
-    } else if (yearsOfService >= 5) {
-      return 15; // 15 días de vacaciones para empleados con 5 a 9 años de servicio
-    } else {
-      return 0; // Menos de 5 años de servicio no otorgan días de vacaciones
-    }
-  }
-  
+
+  return countBusinessDays(latestStart, earliestEnd);
 }

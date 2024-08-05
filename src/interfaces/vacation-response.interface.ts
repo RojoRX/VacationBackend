@@ -1,12 +1,21 @@
 export interface VacationResponse {
   carnetIdentidad: string;
-  totalHolidaysDays: number;
-  userVacationDays: number;
-  remainingVacationDays: number;
-  holidayDetails: Array<{
+  name: string;
+  email: string;
+  position: string;
+  department: string;
+  fechaIngreso: Date;
+  permisos: number;
+  antiguedadEnAnios: number;
+  antiguedadEnMeses: number;
+  antiguedadEnDias: number;
+  diasDeVacacion: number;
+  recesos: {
     name: string;
-    startDate: string;
-    endDate: string;
-    days: number;
-  }>;
+    startDate: Date;
+    endDate: Date;
+    type: string;
+    daysCount: number;
+  }[];
+  diasNoHabiles: number;
 }
