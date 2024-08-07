@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { HolidayPeriodModule } from './modules/holiday-period.module';
 import { VacationModule } from './modules/vacation.module';
 import { NonHolidayModule } from './modules/nonholiday.module';
+import { GestionPeriodModule } from './modules/gestion.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { NonHolidayModule } from './modules/nonholiday.module';
     HolidayPeriodModule,
     VacationModule,
     NonHolidayModule,
+    GestionPeriodModule
   ],
   controllers: [],
   providers: [AppService],
