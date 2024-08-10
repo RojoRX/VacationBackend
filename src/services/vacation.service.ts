@@ -1,21 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DateTime } from 'luxon';
 import { UserService } from 'src/services/user.service';
-import { HolidayPeriod, HolidayPeriodType } from 'src/entities/holydayperiod.entity';
+import { NonHolidayService } from './nonholiday.service';
 import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
-import { NonHolidayService } from './nonholiday.service';
+import { RecesoService } from './receso.service';
+import { DateTime } from 'luxon';
 
 @Injectable()
 export class VacationService {
   constructor(
-    @InjectRepository(HolidayPeriod)
-    private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
     private readonly userService: UserService,
     private readonly vacationCalculatorService: VacationCalculatorService,
-    private readonly nonHolidayService: NonHolidayService
+    private readonly nonHolidayService: NonHolidayService,
+    private readonly recesoService: RecesoService
   ) { }
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
@@ -34,60 +31,20 @@ export class VacationService {
 
     const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
 
-    // Obtener recesos específicos para el departamento del usuario
-    const specificHolidayPeriods = await this.holidayPeriodRepository.find({
-      where: {
-        year: startDateTime.year,
-        type: HolidayPeriodType.SPECIFIC,
-        career: user.department
-      },
-    });
-
-    // Obtener recesos generales
-    const generalHolidayPeriods = await this.holidayPeriodRepository.find({
-      where: {
-        year: startDateTime.year,
-        type: HolidayPeriodType.GENERAL,
-      },
-    });
-
-    // Obtener días no hábiles
+    const { specificHolidayPeriods, generalHolidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year, user.department);
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
 
     const recesos = [];
     let totalNonHolidayDays = 0;
     const nonHolidayDetails = [];
 
-    // Función para contar los días hábiles en el rango
-    function countWeekdays(startDate: DateTime, endDate: DateTime): number {
-      let count = 0;
-      let current = startDate;
-
-      while (current <= endDate) {
-        if (current.weekday >= 1 && current.weekday <= 5) {
-          count++;
-        }
-        current = current.plus({ days: 1 });
-      }
-
-      return count;
-    }
-
-    // Función para obtener la intersección de días no hábiles en un rango
-    const getIntersectionDays = (startDateHol: DateTime, endDateHol: DateTime, nonHolidayDays: any[]): number => {
-      return nonHolidayDays.filter(nonHoliday => {
-        const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
-        return nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol;
-      }).length;
-    };
-
     // Procesar recesos específicos
     for (const period of specificHolidayPeriods) {
       const startDateHol = DateTime.fromJSDate(period.startDate).startOf('day');
       const endDateHol = DateTime.fromJSDate(period.endDate).endOf('day');
 
-      const totalDays = countWeekdays(startDateHol, endDateHol);
-      const nonHolidayDaysCount = getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
+      const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+      const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
 
       totalNonHolidayDays += nonHolidayDaysCount;
 
@@ -123,8 +80,8 @@ export class VacationService {
         const startDateHol = DateTime.fromJSDate(period.startDate).startOf('day');
         const endDateHol = DateTime.fromJSDate(period.endDate).endOf('day');
 
-        const totalDays = countWeekdays(startDateHol, endDateHol);
-        const nonHolidayDaysCount = getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
+        const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+        const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
 
         totalNonHolidayDays += nonHolidayDaysCount;
 

@@ -4,51 +4,42 @@ import { DateTime } from 'luxon';
 @Injectable()
 export class VacationCalculatorService {
   calculateYearsOfService(startDate: DateTime, endDate: DateTime): number {
-    return endDate.diff(startDate, 'years').years;
+    return endDate.year - startDate.year - (endDate < startDate.plus({ years: endDate.year - startDate.year }) ? 1 : 0);
   }
 
   calculateMonthsOfService(startDate: DateTime, endDate: DateTime): number {
-    return endDate.diff(startDate, 'months').months;
+    return (endDate.year - startDate.year) * 12 + endDate.month - startDate.month;
   }
 
   calculateDaysOfService(startDate: DateTime, endDate: DateTime): number {
-    return endDate.diff(startDate, 'days').days;
+    return Math.floor(endDate.diff(startDate, 'days').days);
   }
 
   calculateVacationDays(yearsOfService: number): number {
-    if (yearsOfService >= 10) {
-      return 30;
-    } else if (yearsOfService >= 5) {
-      return 20;
-    } else if (yearsOfService >= 1) {
-      return 15;
-    } else {
-      return 0;
-    }
+    if (yearsOfService < 1) return 0;
+    if (yearsOfService <= 5) return 15;
+    if (yearsOfService <= 10) return 20;
+    return 30;
   }
 
-  countBusinessDays(startDate: DateTime, endDate: DateTime): number {
+  countWeekdays(startDate: DateTime, endDate: DateTime): number {
     let count = 0;
-    let currentDate = startDate.startOf('day'); // Asegura que comience al inicio del día
+    let current = startDate;
 
-    while (currentDate <= endDate.endOf('day')) { // Asegura que termine al final del día
-      if (currentDate.weekday >= 1 && currentDate.weekday <= 5) { // Lunes a Viernes
-        count += 1;
+    while (current <= endDate) {
+      if (current.weekday >= 1 && current.weekday <= 5) {
+        count++;
       }
-      currentDate = currentDate.plus({ days: 1 });
+      current = current.plus({ days: 1 });
     }
 
     return count;
   }
 
-  getIntersectionDays(startDateEmp: DateTime, endDateEmp: DateTime, startDateHol: DateTime, endDateHol: DateTime): number {
-    const latestStart = startDateEmp > startDateHol ? startDateEmp : startDateHol;
-    const earliestEnd = endDateEmp < endDateHol ? endDateEmp : endDateHol;
-
-    if (latestStart > earliestEnd) {
-      return 0;
-    }
-
-    return this.countBusinessDays(latestStart, earliestEnd);
+  getIntersectionDays(startDateHol: DateTime, endDateHol: DateTime, nonHolidayDays: any[]): number {
+    return nonHolidayDays.filter(nonHoliday => {
+      const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
+      return nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol;
+    }).length;
   }
 }
