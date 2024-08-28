@@ -11,22 +11,26 @@ export class RecesoService {
     private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
   ) {}
 
-  async getHolidayPeriods(year: number, department: string) {
-    const specificHolidayPeriods = await this.holidayPeriodRepository.find({
-      where: {
-        year,
-        type: HolidayPeriodType.SPECIFIC,
-        career: department
-      },
-    });
-
+  async getHolidayPeriods(year: number, department?: string) {
     const generalHolidayPeriods = await this.holidayPeriodRepository.find({
       where: {
         year,
         type: HolidayPeriodType.GENERAL,
       },
     });
-
+  
+    let specificHolidayPeriods = [];
+    if (department) {
+      specificHolidayPeriods = await this.holidayPeriodRepository.find({
+        where: {
+          year,
+          type: HolidayPeriodType.SPECIFIC,
+          career: department,
+        },
+      });
+    }
+  
     return { specificHolidayPeriods, generalHolidayPeriods };
   }
+  
 }

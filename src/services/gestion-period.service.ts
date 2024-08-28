@@ -13,7 +13,7 @@ export class GestionPeriodService {
       throw new BadRequestException('Usuario no encontrado.');
     }
 
-    const userDate = DateTime.fromISO(user.fechaIngreso);
+    const userDate = DateTime.fromISO(user.attributes.fecha_ingreso);
     const currentDateTime = DateTime.local();
     const gestions: Gestion[] = [];
 

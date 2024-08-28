@@ -6,27 +6,28 @@ import { map } from 'rxjs/operators';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly httpService: HttpService) {}
+  private readonly apiUrl: string;
+
+  constructor(private readonly httpService: HttpService) {
+    this.apiUrl = process.env.API_BASE_URL || 'http://localhost:1337/api/personas';
+  }
 
   findAll(): Observable<User[]> {
-    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
-    return this.httpService.get<User[]>(apiUrl).pipe(
-      map(response => response.data)
+    return this.httpService.get<{ data: User[] }>(this.apiUrl).pipe(
+      map(response => response.data.data) // Extrae el array 'data' del objeto de respuesta
     );
   }
 
   findOne(id: number): Observable<User> {
-    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
-    return this.httpService.get<User>(`${apiUrl}/${id}`).pipe(
-      map(response => response.data)
+    return this.httpService.get<{ data: User }>(`${this.apiUrl}/${id}`).pipe(
+      map(response => response.data.data) // Extrae el objeto 'data' del objeto de respuesta
     );
   }
 
   findByCarnet(carnetIdentidad: string): Observable<User> {
-    const apiUrl = process.env.API_BASE_URL || 'https://api.externa.com/users';
-    return this.httpService.get<User[]>(`${apiUrl}?carnetIdentidad=${carnetIdentidad}`).pipe(
+    return this.httpService.get<{ data: User[] }>(`${this.apiUrl}?filters[ci][$eq]=${carnetIdentidad}`).pipe(
       map(response => {
-        const user = response.data.find(user => user.carnetIdentidad === carnetIdentidad);
+        const user = response.data.data[0]; // Toma el primer usuario que coincida
         return user || null;
       })
     );

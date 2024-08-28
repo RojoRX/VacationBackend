@@ -3,9 +3,7 @@ export interface VacationResponse {
   name: string;
   email: string;
   position: string;
-  department: string;
   fechaIngreso: Date;
-  permisos: number;
   antiguedadEnAnios: number;
   antiguedadEnMeses: number;
   antiguedadEnDias: number;
