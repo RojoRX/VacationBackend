@@ -22,19 +22,21 @@ export class VacationCalculatorService {
     return 30;
   }
 
-  countWeekdays(startDate: DateTime, endDate: DateTime): number {
-    let count = 0;
-    let current = startDate;
+ // Función para contar los días hábiles en el rango
+ countWeekdays(startDate: DateTime, endDate: DateTime): number {
+  let count = 0;
+  let current = startDate.startOf('day').plus({ days: 1 }); // Inicia al siguiente día
 
-    while (current <= endDate) {
-      if (current.weekday >= 1 && current.weekday <= 5) {
-        count++;
-      }
-      current = current.plus({ days: 1 });
+  while (current < endDate) {
+    if (current.weekday >= 1 && current.weekday <= 5) {
+      count++;
     }
-
-    return count;
+    current = current.plus({ days: 1 });
   }
+
+  return count;
+}
+
 
   getIntersectionDays(startDateHol: DateTime, endDateHol: DateTime, nonHolidayDays: any[]): number {
     return nonHolidayDays.filter(nonHoliday => {

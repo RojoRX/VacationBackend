@@ -7,6 +7,7 @@ import { HolidayPeriodModule } from './modules/holiday-period.module';
 import { VacationModule } from './modules/vacation.module';
 import { NonHolidayModule } from './modules/nonholiday.module';
 import { GestionPeriodModule } from './modules/gestion.module';
+import { LicenseModule } from './modules/license.module';
 
 @Module({
   imports: [
@@ -26,7 +27,8 @@ import { GestionPeriodModule } from './modules/gestion.module';
     HolidayPeriodModule,
     VacationModule,
     NonHolidayModule,
-    GestionPeriodModule
+    GestionPeriodModule, 
+    LicenseModule
   ],
   controllers: [],
   providers: [AppService],
