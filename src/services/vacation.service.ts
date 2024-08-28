@@ -13,25 +13,35 @@ export class VacationService {
     private readonly vacationCalculatorService: VacationCalculatorService,
     private readonly nonHolidayService: NonHolidayService,
     private readonly recesoService: RecesoService
-  ) { }
+  ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
-    const user = await this.userService.findByCarnet(carnetIdentidad).toPromise();
+    // Buscar usuario por CI en la base de datos local
+    const user = await this.userService.findByCarnet(carnetIdentidad);
     if (!user) {
       throw new BadRequestException('Usuario no encontrado.');
     }
 
-    const userDate = DateTime.fromISO(user.attributes.fecha_ingreso);
+    // Consultar la API externa para obtener la información completa del usuario
+    const apiUserData = await this.userService.verifyWithExternalApi(carnetIdentidad);
+    if (!apiUserData) {
+      throw new BadRequestException('Información del usuario no encontrada en la API externa.');
+    }
+
+    const userData = apiUserData.attributes; // Extrae los datos necesarios del objeto API
+
+    // Convertir fechas para cálculos
+    const userDate = DateTime.fromISO(userData.fecha_ingreso);
     const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
     const endDateTime = DateTime.fromJSDate(endDate).endOf('day');
 
+    // Calcular antigüedad y días de vacaciones
     const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
     const monthsOfService = this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime);
     const daysOfService = this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime);
-
     const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
 
-    // Modificar para que solo se obtengan recesos generales
+    // Obtener recesos generales y días no hábiles
     const { generalHolidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
 
@@ -74,11 +84,11 @@ export class VacationService {
     const remainingVacationDays = vacationDays - totalVacationDaysUsed;
 
     return {
-      carnetIdentidad: user.attributes.ci,
-      name: user.attributes.nombres,
-      email: user.attributes.correo_electronico,
-      position: user.attributes.profesion,
-      fechaIngreso: new Date(user.attributes.fecha_ingreso),
+      carnetIdentidad: user.ci,
+      name: userData.nombres,
+      email: userData.correo_electronico,
+      position: userData.profesion,
+      fechaIngreso: new Date(userData.fecha_ingreso),
       antiguedadEnAnios: Math.floor(yearsOfService),
       antiguedadEnMeses: Math.floor(monthsOfService),
       antiguedadEnDias: Math.floor(daysOfService),
@@ -90,4 +100,3 @@ export class VacationService {
     };
   }
 }
-

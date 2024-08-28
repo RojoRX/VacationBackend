@@ -1,20 +1,25 @@
-/* import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity()
+@Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
-  name: string;
+  @Column({ unique: true })
+  ci: string;  // Carnet de identidad, usado como identificador único
+
+  @Column({ type: 'date' })
+  fecha_ingreso: string;  // Fecha de ingreso del usuario
+
+  @Column({ unique: true })
+  username: string;  // Nombre de usuario único para autenticación
 
   @Column()
-  email: string;
+  password: string;  // Contraseña encriptada para autenticación
 
-  @Column()
-  position: string;
+  @CreateDateColumn()
+  createdAt: Date;
 
-  @Column()
-  department: string;
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
- */

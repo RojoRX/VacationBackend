@@ -8,12 +8,12 @@ export class GestionPeriodService {
   constructor(private readonly userService: UserService) {}
 
   async getAvailableGestions(carnetIdentidad: string): Promise<Gestion[]> {
-    const user = await this.userService.findByCarnet(carnetIdentidad).toPromise();
+    const user = await this.userService.findByCarnet(carnetIdentidad);
     if (!user) {
       throw new BadRequestException('Usuario no encontrado.');
     }
 
-    const userDate = DateTime.fromISO(user.attributes.fecha_ingreso);
+    const userDate = DateTime.fromISO(user.fecha_ingreso);
     const currentDateTime = DateTime.local();
     const gestions: Gestion[] = [];
 
