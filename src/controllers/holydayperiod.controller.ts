@@ -1,6 +1,6 @@
-import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put } from "@nestjs/common";
-import { HolidayPeriod } from "src/entities/holydayperiod.entity";
-import { HolidayPeriodService } from "src/services/holydayperiod.service";
+import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put } from '@nestjs/common';
+import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
+import { HolidayPeriodService } from 'src/services/holydayperiod.service';
 import { Response } from 'express';
 
 @Controller('holiday-periods')
@@ -14,30 +14,6 @@ export class HolidayPeriodController {
       res.status(HttpStatus.OK).json(holidayPeriods);
     } catch (error) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving holiday periods', error });
-    }
-  }
-
-  @Get('general/:year')
-  async getGeneralHolidayPeriods(@Param('year') year: number, @Res() res: Response): Promise<void> {
-    try {
-      const holidayPeriods = await this.holidayPeriodService.getGeneralHolidayPeriods(year);
-      res.status(HttpStatus.OK).json(holidayPeriods);
-    } catch (error) {
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving general holiday periods', error });
-    }
-  }
-
-  @Get('specific/:year/:career')
-  async getSpecificHolidayPeriods(
-    @Param('year') year: number,
-    @Param('career') career: string,
-    @Res() res: Response,
-  ): Promise<void> {
-    try {
-      const holidayPeriods = await this.holidayPeriodService.getSpecificHolidayPeriods(year, career);
-      res.status(HttpStatus.OK).json(holidayPeriods);
-    } catch (error) {
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving specific holiday periods', error });
     }
   }
 

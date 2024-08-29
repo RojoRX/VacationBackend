@@ -6,11 +6,6 @@ export enum HolidayPeriodName {
   FINDEGESTION = 'FINDEGESTION',
 }
 
-export enum HolidayPeriodType {
-  GENERAL = 'general',
-  SPECIFIC = 'specific',
-}
-
 @Entity()
 export class HolidayPeriod {
   @PrimaryGeneratedColumn()
@@ -22,12 +17,6 @@ export class HolidayPeriod {
   })
   name: HolidayPeriodName;
 
-  @Column({
-    type: 'enum',
-    enum: HolidayPeriodType,
-  })
-  type: HolidayPeriodType;
-
   @Column({ type: 'timestamptz' })
   startDate: Date;
 
@@ -36,9 +25,6 @@ export class HolidayPeriod {
 
   @Column({ type: 'int' })
   year: number;
-
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  career: string; // Nombre de la carrera si es específico, null si es general
 
   setStartDate(date: string) {
     this.startDate = DateTime.fromISO(date).toJSDate();

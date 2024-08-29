@@ -42,7 +42,7 @@ export class VacationService {
     const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
 
     // Obtener recesos generales y días no hábiles
-    const { generalHolidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
+    const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
 
     const recesos = [];
@@ -50,7 +50,7 @@ export class VacationService {
     const nonHolidayDetails = [];
 
     // Procesar recesos generales
-    for (const period of generalHolidayPeriods) {
+    for (const period of holidayPeriods) {
       const startDateHol = DateTime.fromJSDate(period.startDate).startOf('day');
       const endDateHol = DateTime.fromJSDate(period.endDate).endOf('day');
 
@@ -73,7 +73,6 @@ export class VacationService {
         name: period.name,
         startDate: period.startDate,
         endDate: period.endDate,
-        type: period.type,
         totalDays: totalDays,
         nonHolidayDays: nonHolidayDaysCount,
         daysCount: totalDays - nonHolidayDaysCount

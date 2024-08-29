@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { HolidayPeriod, HolidayPeriodType } from 'src/entities/holydayperiod.entity';
-import { DateTime } from 'luxon';
+import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
 
 @Injectable()
 export class RecesoService {
@@ -11,26 +10,13 @@ export class RecesoService {
     private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
   ) {}
 
-  async getHolidayPeriods(year: number, department?: string) {
-    const generalHolidayPeriods = await this.holidayPeriodRepository.find({
+  async getHolidayPeriods(year: number) {
+    const holidayPeriods = await this.holidayPeriodRepository.find({
       where: {
         year,
-        type: HolidayPeriodType.GENERAL,
       },
     });
-  
-    let specificHolidayPeriods = [];
-    if (department) {
-      specificHolidayPeriods = await this.holidayPeriodRepository.find({
-        where: {
-          year,
-          type: HolidayPeriodType.SPECIFIC,
-          career: department,
-        },
-      });
-    }
-  
-    return { specificHolidayPeriods, generalHolidayPeriods };
+
+    return { holidayPeriods };
   }
-  
 }
