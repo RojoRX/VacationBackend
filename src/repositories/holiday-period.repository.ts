@@ -1,5 +1,5 @@
 import { EntityRepository, Repository } from 'typeorm';
-import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
+import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 
-@EntityRepository(HolidayPeriod)
-export class HolidayPeriodRepository extends Repository<HolidayPeriod> {}
+@EntityRepository(GeneralHolidayPeriod)
+export class HolidayPeriodRepository extends Repository<GeneralHolidayPeriod> {}

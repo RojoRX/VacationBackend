@@ -3,7 +3,7 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './modules/user.module';
 import { ConfigModule } from '@nestjs/config';
-import { HolidayPeriodModule } from './modules/holiday-period.module';
+import { GeneralHolidayPeriodModule } from './modules/generalholidayperiod.module';
 import { VacationModule } from './modules/vacation.module';
 import { NonHolidayModule } from './modules/nonholiday.module';
 import { GestionPeriodModule } from './modules/gestion.module';
@@ -24,7 +24,7 @@ import { LicenseModule } from './modules/license.module';
         true,
     }),
     UserModule,
-    HolidayPeriodModule,
+    GeneralHolidayPeriodModule,
     VacationModule,
     NonHolidayModule,
     GestionPeriodModule, 

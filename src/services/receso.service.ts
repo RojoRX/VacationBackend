@@ -1,36 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { HolidayPeriod, HolidayPeriodType } from 'src/entities/holydayperiod.entity';
-import { DateTime } from 'luxon';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 
 @Injectable()
 export class RecesoService {
   constructor(
-    @InjectRepository(HolidayPeriod)
-    private readonly holidayPeriodRepository: Repository<HolidayPeriod>,
+    @InjectRepository(GeneralHolidayPeriod)
+    private readonly holidayPeriodRepository: Repository<GeneralHolidayPeriod>
   ) {}
-
-  async getHolidayPeriods(year: number, department?: string) {
+  async getHolidayPeriods(startDate: Date, endDate: Date): Promise<{ generalHolidayPeriods: GeneralHolidayPeriod[] }> {
+    console.log(`Buscando recesos generales entre ${startDate.toISOString()} y ${endDate.toISOString()}`);
+  
     const generalHolidayPeriods = await this.holidayPeriodRepository.find({
-      where: {
-        year,
-        type: HolidayPeriodType.GENERAL,
-      },
+      where: [
+        { 
+          startDate: LessThanOrEqual(endDate),
+          endDate: MoreThanOrEqual(startDate),
+        }
+      ]
     });
   
-    let specificHolidayPeriods = [];
-    if (department) {
-      specificHolidayPeriods = await this.holidayPeriodRepository.find({
-        where: {
-          year,
-          type: HolidayPeriodType.SPECIFIC,
-          career: department,
-        },
-      });
-    }
-  
-    return { specificHolidayPeriods, generalHolidayPeriods };
+    console.log(`Recesos generales obtenidos: ${JSON.stringify(generalHolidayPeriods)}`);
+    
+    return { generalHolidayPeriods };
   }
   
 }
