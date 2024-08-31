@@ -1,0 +1,20 @@
+[33m1e8422e[m[33m ([m[1;36mHEAD[m[33m, [m[1;32mmain[m[33m)[m Holiday Entity Modified
+[33m101c4b6[m Users Register Works And Vacation looks good
+[33ma13a45f[m API looks like works
+[33m09baedf[m Before new Changes
+[33m7200adf[m Vacations Service Code Separated
+[33mec283ae[m Specific Feriados Count Fixed
+[33m59e00dc[m Days Holidays Count Fixed
+[33m0893e4e[m Gestion Period Service for users Implemented
+[33m111dece[m[33m ([m[1;31morigin/main[m[33m)[m Vacation Engine Service Almost Done
+[33m56ff850[m Years of Service and Days of Recesos Calculated
+[33me0323c9[m Corrected Holiday Period and NonHoliday
+[33mecd6436[m Before Adjust The Vacation Services
+[33m9fb7355[m Vacations Service for Current Year almost Works
+[33mb085604[m Vacations Service for Other Years Works
+[33mfd1c473[m Vacations Service With Feriados
+[33me0ce6ef[m Vacations Service Fixed
+[33m77f41e2[m Demo for Vacations General Report Works
+[33me864785[m Demo for Vacations and Holydays defined
+[33m45184a3[m Conecction To Mocks and Real API Works!
+[33mcc69ecf[m Conection to BD Ready

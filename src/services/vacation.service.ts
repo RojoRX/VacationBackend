@@ -52,16 +52,29 @@ export class VacationService {
       const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
       console.log('Antigüedad calculada - Años:', yearsOfService, 'Meses:', monthsOfService, 'Días:', daysOfService, 'Días de vacaciones:', vacationDays);
 
+<<<<<<< HEAD
       // Obtener recesos generales y días no hábiles
       const { generalHolidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.toJSDate(), endDateTime.toJSDate());
       console.log('Recesos generales obtenidos:', generalHolidayPeriods);
+=======
+    // Obtener recesos generales y días no hábiles
+    const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
+    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
+>>>>>>> Adding_Entities
 
       const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
       console.log('Días no hábiles obtenidos:', nonHolidayDays);
 
+<<<<<<< HEAD
       const recesos = [];
       let totalNonHolidayDays = 0;
       const nonHolidayDetails = [];
+=======
+    // Procesar recesos generales
+    for (const period of holidayPeriods) {
+      const startDateHol = DateTime.fromJSDate(period.startDate).startOf('day');
+      const endDateHol = DateTime.fromJSDate(period.endDate).endOf('day');
+>>>>>>> Adding_Entities
 
       // Procesar recesos generales
       for (const period of generalHolidayPeriods) {
@@ -75,6 +88,7 @@ export class VacationService {
 
         totalNonHolidayDays += nonHolidayDaysCount;
 
+<<<<<<< HEAD
         nonHolidayDays.forEach(nonHoliday => {
           const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
           if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
@@ -118,6 +132,16 @@ export class VacationService {
     } catch (error) {
       console.error('Error en el cálculo de días de vacaciones:', error);
       throw new BadRequestException('Error en el cálculo de días de vacaciones.');
+=======
+      recesos.push({
+        name: period.name,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        totalDays: totalDays,
+        nonHolidayDays: nonHolidayDaysCount,
+        daysCount: totalDays - nonHolidayDaysCount
+      });
+>>>>>>> Adding_Entities
     }
   }
 }
