@@ -1,23 +1,27 @@
+// src/modules/user.module.ts
+
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserController } from 'src/controllers/user.controller';
 import { UserService } from 'src/services/user.service';
-import { User } from 'src/entities/user.entity'; // Ajusta la ruta según tu estructura
+import { User } from 'src/entities/user.entity';
+import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity'; // Importa la entidad relacionada
+import { HolidayPeriod } from 'src/entities/holydayperiod.entity'; // Importa la entidad HolidayPeriod si es usada en la relación
 import { MockUserService } from 'src/mocks/user.service.mock';
 
 @Module({
   imports: [
     HttpModule,
     ConfigModule,
-    TypeOrmModule.forFeature([User]), // Importa el módulo TypeOrm para la entidad User
+    TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod]), // Asegúrate de incluir todas las entidades relacionadas
   ],
   controllers: [UserController],
   providers: [
     {
       provide: UserService,
-      useClass: UserService, // Usamos `useClass` para asegurar la inyección adecuada
+      useClass: UserService,
     },
     {
       provide: 'USE_MOCK',
