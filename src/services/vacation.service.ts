@@ -4,6 +4,7 @@ import { NonHolidayService } from './nonholiday.service';
 import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 import { RecesoService } from './receso.service';
+import { UserHolidayPeriodService } from './userholidayperiod.service'; // Importar el servicio de recesos personalizados
 import { DateTime } from 'luxon';
 
 @Injectable()
@@ -12,7 +13,8 @@ export class VacationService {
     private readonly userService: UserService,
     private readonly vacationCalculatorService: VacationCalculatorService,
     private readonly nonHolidayService: NonHolidayService,
-    private readonly recesoService: RecesoService
+    private readonly recesoService: RecesoService,
+    private readonly userHolidayPeriodService: UserHolidayPeriodService // Añadir el servicio de recesos personalizados
   ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
@@ -45,14 +47,20 @@ export class VacationService {
     const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
 
+    // Obtener recesos personalizados del usuario
+    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(user.id, startDateTime.year);
+
     const recesos = [];
     let totalNonHolidayDays = 0;
     const nonHolidayDetails = [];
 
-    // Procesar recesos generales
+    // Procesar recesos, priorizando personalizados sobre generales
     for (const period of holidayPeriods) {
-      const startDateHol = DateTime.fromJSDate(period.startDate).startOf('day');
-      const endDateHol = DateTime.fromJSDate(period.endDate).endOf('day');
+      const personalizedReceso = personalizedRecesses.find(p => p.name === period.name); // Buscar receso personalizado con el mismo nombre
+      const effectiveReceso = personalizedReceso || period; // Priorizar receso personalizado si existe
+
+      const startDateHol = DateTime.fromJSDate(effectiveReceso.startDate).startOf('day');
+      const endDateHol = DateTime.fromJSDate(effectiveReceso.endDate).endOf('day');
 
       const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
       const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
@@ -64,18 +72,19 @@ export class VacationService {
         if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
           nonHolidayDetails.push({
             date: nonHoliday.date,
-            reason: `Dentro del receso general ${period.name}`
+            reason: `Dentro del receso ${personalizedReceso ? 'personalizado' : 'general'} ${effectiveReceso.name}`
           });
         }
       });
 
       recesos.push({
-        name: period.name,
-        startDate: period.startDate,
-        endDate: period.endDate,
+        name: effectiveReceso.name,
+        startDate: effectiveReceso.startDate,
+        endDate: effectiveReceso.endDate,
         totalDays: totalDays,
         nonHolidayDays: nonHolidayDaysCount,
-        daysCount: totalDays - nonHolidayDaysCount
+        daysCount: totalDays - nonHolidayDaysCount,
+        type: personalizedReceso ? 'personalizado' : 'general' // Campo adicional para indicar tipo de receso
       });
     }
 

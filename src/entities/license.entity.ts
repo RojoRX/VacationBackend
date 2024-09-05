@@ -1,4 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, BeforeInsert, BeforeUpdate } from 'typeorm';
+import { User } from './user.entity';
+import { DateTime } from 'luxon';
+import { BadRequestException } from '@nestjs/common';
 
 export enum LicenseType {
   VACATION = 'VACACION',
@@ -6,13 +9,9 @@ export enum LicenseType {
 }
 
 export enum TimeRequest {
-  HALF_MORNING = 'Media Mañana',
-  AFTERNOON = 'Media Tarde',
-  FULL_DAY = '1 día',
-  TWO_DAYS = '2 días',
-  THREE_DAYS = '3 días',
-  FOUR_DAYS = '4 días',
-  FIVE_DAYS = '5 días',
+  HALF_DAY = 'Medio Día',
+  FULL_DAY = 'Día Completo',
+  MULTIPLE_DAYS = 'Varios Días',
 }
 
 @Entity()
@@ -23,15 +22,9 @@ export class License {
   @Column({
     type: 'enum',
     enum: LicenseType,
-    default: LicenseType.OTHER,
+    default: LicenseType.VACATION,
   })
   licenseType: LicenseType;
-
-  @Column()
-  applicantName: string;
-
-  @Column()
-  applicantCI: string;
 
   @Column({
     type: 'enum',
@@ -46,6 +39,9 @@ export class License {
   @Column({ type: 'date' })
   endDate: string;
 
+  @Column({ type: 'numeric', default: 0 }) 
+  totalDays: number;
+
   @CreateDateColumn()
   issuedDate: Date;
 
@@ -54,4 +50,7 @@ export class License {
 
   @Column({ type: 'boolean', default: false })
   personalDepartmentApproval: boolean;
+
+  @ManyToOne(() => User, (user) => user.licenses)
+  user: User;
 }

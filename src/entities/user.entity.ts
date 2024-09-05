@@ -1,5 +1,6 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad creada
+import { License } from './license.entity'; // Importa la entidad License
+import { UserHolidayPeriod } from './userholidayperiod.entity';
 
 @Entity('users')
 export class User {
@@ -24,7 +25,12 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  // Relación con recesos específicos
-  @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
-  holidayPeriods: UserHolidayPeriod[];
+    // Relación con recesos específicos
+    @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
+    holidayPeriods: UserHolidayPeriod[];
+  
+
+  // Relación con licencias
+  @OneToMany(() => License, (license) => license.user)
+  licenses: License[];
 }

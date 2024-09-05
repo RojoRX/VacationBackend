@@ -10,12 +10,16 @@ import { NonHolidayModule } from './nonholiday.module'; // Importa NonHolidayMod
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 import { RecesoService } from 'src/services/receso.service';
+import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
+import { UserHolidayPeriodModule } from './userholidayperiod.module';
+import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([GeneralHolidayPeriod]),
+    TypeOrmModule.forFeature([GeneralHolidayPeriod, UserHolidayPeriod]),
     UserModule,
     NonHolidayModule, // Asegúrate de que NonHolidayModule esté importado aquí
+    UserHolidayPeriodModule
   ],
   controllers: [VacationController],
   providers: [VacationService, GeneralHolidayPeriod,VacationCalculatorService, RecesoService ],
