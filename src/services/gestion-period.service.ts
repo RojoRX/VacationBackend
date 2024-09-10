@@ -30,9 +30,10 @@ export class GestionPeriodService {
       currentStartDate = nextYearDate;
     }
 
-    // Excluir el año actual si no se ha cumplido el aniversario de ingreso
+    // Excluir el año actual si no se ha cumplido el aniversario de ingreso más un día
     const lastGestion = gestions[gestions.length - 1];
-    if (currentDateTime < DateTime.fromJSDate(lastGestion.endDate)) {
+    const lastGestionEndDate = DateTime.fromJSDate(lastGestion.endDate);
+    if (currentDateTime <= lastGestionEndDate.plus({ days: 1 })) {
       gestions.pop();
     }
 

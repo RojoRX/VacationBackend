@@ -21,7 +21,7 @@ export class VacationRequestService {
     startDate: string,
     endDate: string,
     position: string,
-  ): Promise<Omit<VacationRequest, 'user'>> {
+  ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
     const user = await this.userService.findByCarnet(ci);
 
     if (!user) {
@@ -48,9 +48,9 @@ export class VacationRequestService {
 
     const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
 
-    // Retornar la solicitud sin los datos sensibles del usuario
+    // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-    return requestWithoutSensitiveData;
+    return { ...requestWithoutSensitiveData, ci: user.ci }; // Ajuste al usar user.ci
   }
 
   // Método para verificar solapamiento de vacaciones
@@ -123,21 +123,29 @@ export class VacationRequestService {
   }
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
-  async getUserVacationRequests(userId: number): Promise<Omit<VacationRequest, 'user'>[]> {
+  async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
       where: { user: { id: userId } },
       relations: ['user'],
     });
 
-    return requests.map(({ user: _user, ...requestWithoutSensitiveData }) => requestWithoutSensitiveData);
+    // Mapear para asegurar que el objeto cumpla con el tipo esperado
+    return requests.map(({ user, ...requestWithoutSensitiveData }) => ({
+      ...requestWithoutSensitiveData,
+      ci: user.ci,
+    }));
   }
 
   // Método para obtener todas las vacaciones registradas
-  async getAllVacationRequests(): Promise<Omit<VacationRequest, 'user'>[]> {
+  async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
       relations: ['user'],
     });
 
-    return requests.map(({ user: _user, ...requestWithoutSensitiveData }) => requestWithoutSensitiveData);
+    // Mapear para asegurar que el objeto cumpla con el tipo esperado
+    return requests.map(({ user, ...requestWithoutSensitiveData }) => ({
+      ...requestWithoutSensitiveData,
+      ci: user.ci,
+    }));
   }
 }
