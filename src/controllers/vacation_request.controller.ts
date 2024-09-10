@@ -1,6 +1,8 @@
-import { Controller, Post, Get, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
+// src/controllers/vacation-request.controller.ts
+import { Controller, Post, Get, Query, Body, Param, HttpException, HttpStatus, Put } from '@nestjs/common';
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
+import { UpdateVacationRequestStatusDto } from 'src/dto/update-vacation-request-status.dto';
 
 @Controller('vacation-requests')
 export class VacationRequestController {
@@ -41,6 +43,39 @@ export class VacationRequestController {
     try {
       const requests = await this.vacationRequestService.getAllVacationRequests();
       return requests;
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // Endpoint para contar los días de vacaciones autorizados en un rango de fechas
+  @Get('authorized-days')
+  async countAuthorizedVacationDays(
+    @Query('ci') ci: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    try {
+      const totalDays = await this.vacationRequestService.countAuthorizedVacationDaysInRange(
+        ci,
+        startDate,
+        endDate,
+      );
+      return { totalDays };
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  
+
+  // Endpoint para actualizar el estado de una solicitud de vacaciones
+  @Put('status')
+  async updateVacationRequestStatus(@Body() updateVacationRequestStatusDto: UpdateVacationRequestStatusDto) {
+    const { id, status } = updateVacationRequestStatusDto;
+
+    try {
+      const updatedRequest = await this.vacationRequestService.updateVacationRequestStatus(id, status);
+      return updatedRequest;
     } catch (error) {
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }

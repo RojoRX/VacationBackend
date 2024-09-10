@@ -1,10 +1,11 @@
+// src/services/vacation_request.service.ts
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { UserService } from 'src/services/user.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
-import { DateTime } from 'luxon';
+import { calculateVacationDays, calculateReturnDate, ensureNoOverlappingVacations, countAuthorizedVacationDaysInRange, getAuthorizedVacationRequestsInRange } from 'src/utils/vacation-request-utils';
 
 @Injectable()
 export class VacationRequestService {
@@ -29,10 +30,10 @@ export class VacationRequestService {
     }
 
     // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
-    await this.ensureNoOverlappingVacations(user.id, startDate, endDate);
+    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
 
-    const daysOfVacation = await this.calculateVacationDays(startDate, endDate);
-    const returnDate = await this.calculateReturnDate(startDate, daysOfVacation);
+    const daysOfVacation = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
+    const returnDate = await calculateReturnDate(startDate, daysOfVacation, this.nonHolidayService);
 
     // Crear y guardar la solicitud de vacaciones
     const vacationRequest = this.vacationRequestRepository.create({
@@ -53,75 +54,6 @@ export class VacationRequestService {
     return { ...requestWithoutSensitiveData, ci: user.ci }; // Ajuste al usar user.ci
   }
 
-  // Método para verificar solapamiento de vacaciones
-  private async ensureNoOverlappingVacations(
-    userId: number,
-    startDate: string,
-    endDate: string,
-  ): Promise<void> {
-    const overlappingRequests = await this.vacationRequestRepository.find({
-      where: [
-        {
-          user: { id: userId },
-          startDate: DateTime.fromISO(startDate).toISODate(),
-        },
-        {
-          user: { id: userId },
-          endDate: DateTime.fromISO(endDate).toISODate(),
-        },
-      ],
-    });
-
-    if (overlappingRequests.length > 0) {
-      throw new HttpException(
-        'Vacation request overlaps with existing requests',
-        HttpStatus.CONFLICT,
-      );
-    }
-  }
-
-  // Método para calcular los días de vacaciones, considerando solo días hábiles y excluyendo feriados
-  private async calculateVacationDays(startDate: string, endDate: string): Promise<number> {
-    const start = DateTime.fromISO(startDate);
-    const end = DateTime.fromISO(endDate);
-
-    if (end < start) {
-      throw new HttpException('End date must be after start date', HttpStatus.BAD_REQUEST);
-    }
-
-    let totalDays = 0;
-    const year = start.year;
-    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
-
-    for (let day = start; day <= end; day = day.plus({ days: 1 })) {
-      const isWeekend = day.weekday === 6 || day.weekday === 7; // Sábado o domingo
-      const isNonHoliday = nonHolidays.some((nonHoliday) => nonHoliday.date === day.toISODate());
-
-      if (!isWeekend && !isNonHoliday) {
-        totalDays++;
-      }
-    }
-
-    return totalDays;
-  }
-
-  // Método para calcular la fecha de retorno asegurando que sea un día hábil
-  private async calculateReturnDate(startDate: string, vacationDays: number): Promise<string> {
-    let day = DateTime.fromISO(startDate).plus({ days: vacationDays });
-    const year = day.year;
-    const nonHolidays = await this.nonHolidayService.getNonHolidayDays(year);
-
-    while (
-      day.weekday === 6 ||
-      day.weekday === 7 ||
-      nonHolidays.some((nonHoliday) => nonHoliday.date === day.toISODate())
-    ) {
-      day = day.plus({ days: 1 });
-    }
-
-    return day.toISODate();
-  }
-
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -129,23 +61,57 @@ export class VacationRequestService {
       relations: ['user'],
     });
 
-    // Mapear para asegurar que el objeto cumpla con el tipo esperado
-    return requests.map(({ user, ...requestWithoutSensitiveData }) => ({
-      ...requestWithoutSensitiveData,
-      ci: user.ci,
-    }));
+    return requests.map((request) => {
+      const { user, ...requestWithoutSensitiveData } = request;
+      return { ...requestWithoutSensitiveData, ci: user.ci };
+    });
   }
 
-  // Método para obtener todas las vacaciones registradas
+  // Método para obtener todas las solicitudes de vacaciones
   async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
-    const requests = await this.vacationRequestRepository.find({
-      relations: ['user'],
+    const requests = await this.vacationRequestRepository.find({ relations: ['user'] });
+
+    return requests.map((request) => {
+      const { user, ...requestWithoutSensitiveData } = request;
+      return { ...requestWithoutSensitiveData, ci: user.ci };
+    });
+  }
+
+  // Método para contar los días de vacaciones autorizados en un rango de fechas
+// Método para contar los días de vacaciones autorizados en un rango de fechas
+async countAuthorizedVacationDaysInRange(
+  ci: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ requests: any[]; totalDays: number }> {
+  console.log(`Counting authorized vacation days for CI: ${ci} from ${startDate} to ${endDate}`);
+
+  const user = await this.userService.findByCarnet(ci);
+
+  if (!user) {
+    throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+  }
+
+  console.log('User found:', user);
+
+  const result = await getAuthorizedVacationRequestsInRange(this.vacationRequestRepository, user.id, startDate, endDate);
+
+  console.log('Result from getAuthorizedVacationRequestsInRange:', result);
+
+  return result;
+}
+
+  // Método para actualizar el estado de una solicitud de vacaciones
+  async updateVacationRequestStatus(id: number, status: string): Promise<VacationRequest> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
     });
 
-    // Mapear para asegurar que el objeto cumpla con el tipo esperado
-    return requests.map(({ user, ...requestWithoutSensitiveData }) => ({
-      ...requestWithoutSensitiveData,
-      ci: user.ci,
-    }));
+    if (!request) {
+      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+    }
+
+    request.status = status;
+    return await this.vacationRequestRepository.save(request);
   }
 }
