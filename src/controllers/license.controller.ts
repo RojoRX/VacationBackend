@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Put, Delete, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, HttpException, HttpStatus, Patch } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
@@ -49,4 +49,36 @@ export class LicenseController {
   async remove(@Param('id') id: number): Promise<void> {
     return this.licenseService.removeLicense(id);
   }
+
+ // Nuevo endpoint para obtener las licencias autorizadas y el total de días
+ @Get('authorized/:userId')
+ async getAuthorizedLicenses(
+   @Param('userId') userId: number,
+   @Query('startDate') startDate: string,
+   @Query('endDate') endDate: string,
+ ): Promise<{ totalAuthorizedDays: number; requests: LicenseResponseDto[] }> {
+   const start = new Date(startDate);
+   const end = new Date(endDate);
+
+   return this.licenseService.getTotalAuthorizedLicensesForUser(userId, start, end);
+ }
+
+
+   // Endpoint para actualizar el estado de aprobación del supervisor inmediato
+   @Patch(':licenseId/supervisor-approval')
+   async updateImmediateSupervisorApproval(
+     @Param('licenseId') licenseId: number,
+     @Body('approval') approval: boolean,
+   ): Promise<License> {
+     return this.licenseService.updateImmediateSupervisorApproval(licenseId, approval);
+   }
+ 
+   // Endpoint para actualizar el estado de aprobación del departamento personal
+   @Patch(':licenseId/personal-approval')
+   async updatePersonalDepartmentApproval(
+     @Param('licenseId') licenseId: number,
+     @Body('approval') approval: boolean,
+   ): Promise<License> {
+     return this.licenseService.updatePersonalDepartmentApproval(licenseId, approval);
+   }
 }

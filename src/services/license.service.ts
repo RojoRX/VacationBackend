@@ -49,7 +49,7 @@ export class LicenseService {
       totalDays = diffDays + 1; // Incluye el último día
     }
 
-    console.log(`Calculated totalDays: ${totalDays}`);
+
 
     // Validar el rango máximo permitido
     if (totalDays > 5) {
@@ -78,12 +78,12 @@ export class LicenseService {
       totalDays,
     });
 
-    console.log(`Saving License with totalDays: ${license.totalDays}`);
+
 
     const savedLicense = await this.licenseRepository.save(license);
 
     const savedLicenseFromDb = await this.licenseRepository.findOne({ where: { id: savedLicense.id } });
-    console.log(`Saved License totalDays from DB: ${savedLicenseFromDb.totalDays}`);
+
 
     return this.mapLicenseToDto(savedLicense);
   }
@@ -117,6 +117,13 @@ export class LicenseService {
   }
 
   private mapLicenseToDto(license: License): LicenseResponseDto {
+    // Depuración del objeto License
+
+  
+    if (!license.user) {
+      console.error('License user is undefined during mapping for License ID:', license.id);
+    }
+  
     return {
       id: license.id,
       licenseType: license.licenseType,
@@ -126,10 +133,11 @@ export class LicenseService {
       issuedDate: license.issuedDate,
       immediateSupervisorApproval: license.immediateSupervisorApproval,
       personalDepartmentApproval: license.personalDepartmentApproval,
-      userId: license.user.id,
+      userId: license.user ? license.user.id : null, // Agregar control para caso en que user es undefined
       totalDays: license.totalDays,
     };
   }
+  
 
   async getTotalLicensesForUser(userId: number, startDate: Date, endDate: Date): Promise<{ totalLicenses: number; totalDays: number }> {
     const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
@@ -163,5 +171,92 @@ export class LicenseService {
       totalLicenses: licenses.length,
       totalDays,
     };
+  }
+
+
+  async getTotalAuthorizedLicensesForUser(
+    userId: number, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<{ totalAuthorizedDays: number; requests: LicenseResponseDto[] }> {
+    const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
+    const endDateTime = DateTime.fromJSDate(endDate).startOf('day').plus({ days: 1 }); // Incluye el último día
+  
+    try {
+
+  
+      // Filtrar solo las licencias autorizadas
+      const licenses = await this.licenseRepository.createQueryBuilder('license')
+        .leftJoinAndSelect('license.user', 'user') // Asegúrate de que la relación se cargue
+        .where('license.user.id = :userId', { userId })
+        .andWhere('license.startDate >= :startDate', { startDate: startDateTime.toISODate() })
+        .andWhere('license.endDate < :endDate', { endDate: endDateTime.toISODate() })
+        .andWhere('license.immediateSupervisorApproval = :approved', { approved: true })
+        .andWhere('license.personalDepartmentApproval = :approved', { approved: true })
+        .getMany();
+  
+
+  
+      let totalAuthorizedDays = 0;
+      const requests = licenses.map(license => {
+        // Depuración de cada licencia
+
+  
+        if (!license.user) {
+          console.error('License user is undefined for License ID:', license.id);
+        }
+  
+        // Calcular los días totales según el tipo de solicitud
+        let additionalDays = 0;
+        if (license.timeRequested === TimeRequest.HALF_DAY) {
+          additionalDays = 0.5;
+        } else if (license.timeRequested === TimeRequest.FULL_DAY || license.timeRequested === TimeRequest.MULTIPLE_DAYS) {
+          const start = DateTime.fromJSDate(new Date(license.startDate)).startOf('day');
+          const end = DateTime.fromJSDate(new Date(license.endDate)).startOf('day').plus({ days: 1 }); // Incluye el último día
+          const days = end.diff(start, 'days').days;
+          additionalDays = days;
+        }
+  
+        totalAuthorizedDays += additionalDays;
+  
+        // Mapear cada licencia a LicenseResponseDto para la respuesta
+        return this.mapLicenseToDto(license);
+      });
+  
+      return {
+        totalAuthorizedDays,
+        requests,
+      };
+  
+    } catch (error) {
+      console.error('Error al obtener licencias autorizadas:', error);
+      throw new Error('Error al obtener licencias autorizadas');
+    }
+  }
+  
+  
+  
+  // Método para actualizar el estado de aprobación del supervisor inmediato
+  async updateImmediateSupervisorApproval(licenseId: number, approval: boolean): Promise<License> {
+    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
+
+    if (!license) {
+      throw new NotFoundException('Licencia no encontrada');
+    }
+
+    license.immediateSupervisorApproval = approval;
+    return this.licenseRepository.save(license);
+  }
+
+  // Método para actualizar el estado de aprobación del departamento personal
+  async updatePersonalDepartmentApproval(licenseId: number, approval: boolean): Promise<License> {
+    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
+
+    if (!license) {
+      throw new NotFoundException('Licencia no encontrada');
+    }
+
+    license.personalDepartmentApproval = approval;
+    return this.licenseRepository.save(license);
   }
 }
