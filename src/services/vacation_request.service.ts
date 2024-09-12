@@ -78,28 +78,31 @@ export class VacationRequestService {
   }
 
   // Método para contar los días de vacaciones autorizados en un rango de fechas
+// src/services/vacation_request.service.ts
+
 // Método para contar los días de vacaciones autorizados en un rango de fechas
 async countAuthorizedVacationDaysInRange(
   ci: string,
   startDate: string,
   endDate: string,
-): Promise<{ requests: any[]; totalDays: number }> {
-  console.log(`Counting authorized vacation days for CI: ${ci} from ${startDate} to ${endDate}`);
-
+): Promise<{ requests: any[]; totalAuthorizedDays: number }> {
   const user = await this.userService.findByCarnet(ci);
 
   if (!user) {
     throw new HttpException('User not found', HttpStatus.NOT_FOUND);
   }
 
-  console.log('User found:', user);
+  // Utiliza la función ajustada para obtener solicitudes y total de días autorizados
+  const authorizedVacationDays = await getAuthorizedVacationRequestsInRange(
+    this.vacationRequestRepository, 
+    user.id, 
+    startDate, 
+    endDate
+  );
 
-  const result = await getAuthorizedVacationRequestsInRange(this.vacationRequestRepository, user.id, startDate, endDate);
-
-  console.log('Result from getAuthorizedVacationRequestsInRange:', result);
-
-  return result;
+  return authorizedVacationDays;
 }
+
 
   // Método para actualizar el estado de una solicitud de vacaciones
   async updateVacationRequestStatus(id: number, status: string): Promise<VacationRequest> {

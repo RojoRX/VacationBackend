@@ -124,67 +124,32 @@ export async function countAuthorizedVacationDaysInRange(
 
 // Función para obtener las solicitudes autorizadas en un rango de fechas y contar los días
 export async function getAuthorizedVacationRequestsInRange(
-    repository: Repository<VacationRequest>,
+    vacationRequestRepository: any,
     userId: number,
     startDate: string,
-    endDate: string,
-): Promise<{ requests: any[]; totalDays: number }> {
-    // Verificar que startDate y endDate no sean nulos o vacíos
-    if (!startDate || !endDate) {
-        console.log('Start date or end date is missing.');
-        return { requests: [], totalDays: 0 };
-    }
-
-    const start = DateTime.fromISO(startDate);
-    const end = DateTime.fromISO(endDate);
-
-    // Verificar si las fechas son válidas
-    if (!start.isValid || !end.isValid) {
-        console.log('Invalid date(s) provided');
-        console.log('Received Start Date:', startDate);
-        console.log('Received End Date:', endDate);
-        console.log('Parsed Start Date:', start.toISO(), 'Is Valid:', start.isValid);
-        console.log('Parsed End Date:', end.toISO(), 'Is Valid:', end.isValid);
-        return { requests: [], totalDays: 0 };
-    }
-
-    console.log('Parsed Start Date:', start.toISO());
-    console.log('Parsed End Date:', end.toISO());
-
-    // Buscar solicitudes de vacaciones autorizadas dentro del rango
-    const requests = await repository.find({
+    endDate: string
+): Promise<{ requests: any[]; totalAuthorizedDays: number }> {
+    const authorizedRequests = await vacationRequestRepository.find({
         where: {
             user: { id: userId },
             status: 'AUTHORIZED',
-            startDate: LessThanOrEqual(end.toISODate()),
-            endDate: MoreThanOrEqual(start.toISODate()),
+            startDate: LessThanOrEqual(endDate), // Solicitudes que terminan antes o en la fecha final
+            endDate: MoreThanOrEqual(startDate), // Solicitudes que comienzan después o en la fecha inicial
         },
     });
 
-    // Calcular los días efectivos
-    const requestsWithTotalDays = requests.map((request) => {
-        const requestStart = DateTime.fromISO(request.startDate);
-        const requestEnd = DateTime.fromISO(request.endDate);
+    // Llamar a la función para contar los días autorizados
+    const totalAuthorizedDays = await countAuthorizedVacationDaysInRange(
+        vacationRequestRepository,
+        userId,
+        startDate,
+        endDate
+    );
 
-        // Determinar el rango efectivo
-        const effectiveStart = requestStart > start ? requestStart : start;
-        const effectiveEnd = requestEnd < end ? requestEnd : end;
-
-        // Calcular los días efectivos
-        const days = effectiveEnd.diff(effectiveStart, 'days').days + 1;
-
-        console.log(`Request ID: ${request.id}, Effective Start: ${effectiveStart.toISODate()}, Effective End: ${effectiveEnd.toISODate()}, Days: ${days}`);
-
-        return {
-            ...request,
-            totalDays: days,
-        };
-    });
-
-    const totalDays = requestsWithTotalDays.reduce((acc, request) => acc + request.totalDays, 0);
-
-    console.log('Requests with Total Days:', requestsWithTotalDays);
-    console.log('Total Days:', totalDays);
-
-    return { requests: requestsWithTotalDays, totalDays };
+    // Retornar las solicitudes y los días autorizados bajo el nuevo nombre de campo
+    return {
+        requests: authorizedRequests,
+        totalAuthorizedDays, // Renombrado de totalDays a totalAuthorizedDays
+    };
 }
+
