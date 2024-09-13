@@ -4,7 +4,8 @@ import { NonHolidayService } from './nonholiday.service';
 import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 import { RecesoService } from './receso.service';
-import { UserHolidayPeriodService } from './userholidayperiod.service'; // Importar el servicio de recesos personalizados
+import { UserHolidayPeriodService } from './userholidayperiod.service';
+import { LicenseService } from './license.service'; // Importar el servicio de licencias
 import { DateTime } from 'luxon';
 
 @Injectable()
@@ -14,7 +15,8 @@ export class VacationService {
     private readonly vacationCalculatorService: VacationCalculatorService,
     private readonly nonHolidayService: NonHolidayService,
     private readonly recesoService: RecesoService,
-    private readonly userHolidayPeriodService: UserHolidayPeriodService // Añadir el servicio de recesos personalizados
+    private readonly userHolidayPeriodService: UserHolidayPeriodService,
+    private readonly licenseService: LicenseService // Añadir el servicio de licencias
   ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
@@ -89,7 +91,13 @@ export class VacationService {
     }
 
     const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
-    const remainingVacationDays = vacationDays - totalVacationDaysUsed;
+    let remainingVacationDays = vacationDays - totalVacationDaysUsed;
+
+    // Consultar licencias autorizadas para el usuario, asegurándonos de pasar los parámetros correctos
+    const { totalAuthorizedDays, requests } = await this.licenseService.getTotalAuthorizedLicensesForUser(user.id, startDate, endDate);
+
+    // Restar los días de licencias autorizadas de los días de vacaciones restantes
+    remainingVacationDays -= totalAuthorizedDays;
 
     return {
       carnetIdentidad: user.ci,
@@ -104,7 +112,11 @@ export class VacationService {
       diasDeVacacionRestantes: remainingVacationDays,
       recesos: recesos,
       diasNoHabiles: totalNonHolidayDays,
-      nonHolidayDaysDetails: nonHolidayDetails
+      nonHolidayDaysDetails: nonHolidayDetails,
+      licenciasAutorizadas: {
+        totalAuthorizedDays: totalAuthorizedDays,
+        requests: requests
+      }
     };
   }
 }

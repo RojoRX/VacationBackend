@@ -1,3 +1,5 @@
+import { LicenseResponseDto } from "src/dto/license-response.dto";
+
 export interface VacationResponse {
   carnetIdentidad: string;
   name: string;
@@ -13,11 +15,11 @@ export interface VacationResponse {
     name: string;
     startDate: Date;
     endDate: Date;
-    type: string;
-    daysCount: number;
+    type: string; // Indica si es general o personalizado
+    daysCount: number; // Total de días hábiles descontados
   }[];
   diasNoHabiles: number;
-  detailedPeriods?: { 
+  detailedPeriods?: {
     specific: {
       name: string;
       startDate: string;
@@ -31,8 +33,12 @@ export interface VacationResponse {
       intersectionDays: number;
     }[];
   };
-  nonHolidayDaysDetails?: { // Nueva sección para detalles de días no hábiles
+  nonHolidayDaysDetails?: {
     date: string;
-    reason: string; // Puede ser un texto descriptivo o el nombre del receso
+    reason: string; // Detalle del día no hábil
   }[];
+  licenciasAutorizadas?: { // Nuevo campo para licencias autorizadas
+    totalAuthorizedDays: number; // Número total de días autorizados
+    requests: LicenseResponseDto[]; // Detalles de las licencias
+  };
 }

@@ -13,15 +13,19 @@ import { RecesoService } from 'src/services/receso.service';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { UserHolidayPeriodModule } from './userholidayperiod.module';
 import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+import { LicenseService } from 'src/services/license.service';
+import { License } from 'src/entities/license.entity';
+import { LicenseModule } from './license.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([GeneralHolidayPeriod, UserHolidayPeriod]),
+    TypeOrmModule.forFeature([GeneralHolidayPeriod, UserHolidayPeriod, License]),
     UserModule,
     NonHolidayModule, // Asegúrate de que NonHolidayModule esté importado aquí
-    UserHolidayPeriodModule
+    UserHolidayPeriodModule,
+    LicenseModule
   ],
   controllers: [VacationController],
-  providers: [VacationService, GeneralHolidayPeriod,VacationCalculatorService, RecesoService ],
+  providers: [VacationService, GeneralHolidayPeriod,VacationCalculatorService, RecesoService,],
 })
 export class VacationModule {}
