@@ -124,32 +124,27 @@ export async function countAuthorizedVacationDaysInRange(
 
 // Función para obtener las solicitudes autorizadas en un rango de fechas y contar los días
 export async function getAuthorizedVacationRequestsInRange(
-    vacationRequestRepository: any,
-    userId: number,
-    startDate: string,
+    vacationRequestRepository: Repository<VacationRequest>, 
+    userId: number, 
+    startDate: string, 
     endDate: string
-): Promise<{ requests: any[]; totalAuthorizedDays: number }> {
-    const authorizedRequests = await vacationRequestRepository.find({
-        where: {
-            user: { id: userId },
-            status: 'AUTHORIZED',
-            startDate: LessThanOrEqual(endDate), // Solicitudes que terminan antes o en la fecha final
-            endDate: MoreThanOrEqual(startDate), // Solicitudes que comienzan después o en la fecha inicial
-        },
-    });
-
-    // Llamar a la función para contar los días autorizados
-    const totalAuthorizedDays = await countAuthorizedVacationDaysInRange(
-        vacationRequestRepository,
-        userId,
-        startDate,
-        endDate
-    );
-
-    // Retornar las solicitudes y los días autorizados bajo el nuevo nombre de campo
+  ): Promise<{ requests: VacationRequest[]; totalAuthorizedDays: number }> {
+  
+    // Consulta a la base de datos para obtener las solicitudes autorizadas
+    const requests = await vacationRequestRepository.createQueryBuilder('request')
+      .where('request.user.id = :userId', { userId })
+      .andWhere('request.startDate >= :startDate', { startDate })
+      .andWhere('request.endDate <= :endDate', { endDate })
+      .andWhere('request.status = :status', { status: 'AUTHORIZED' })
+      .getMany();
+  
+    // Calcular el total de días autorizados
+    const totalAuthorizedDays = requests.reduce((total, request) => total + request.totalDays, 0);
+  
     return {
-        requests: authorizedRequests,
-        totalAuthorizedDays, // Renombrado de totalDays a totalAuthorizedDays
+      requests,
+      totalAuthorizedDays,
     };
-}
+  }
+  
 

@@ -1,4 +1,5 @@
 import { LicenseResponseDto } from "src/dto/license-response.dto";
+import { VacationRequest } from "src/entities/vacation_request.entity";
 
 export interface VacationResponse {
   carnetIdentidad: string;
@@ -41,4 +42,9 @@ export interface VacationResponse {
     totalAuthorizedDays: number; // Número total de días autorizados
     requests: LicenseResponseDto[]; // Detalles de las licencias
   };
+  solicitudesDeVacacionAutorizadas?: {
+    totalAuthorizedVacationDays: number,
+    requests: VacationRequest[];
+  }
+
 }

@@ -50,24 +50,28 @@ export class VacationRequestController {
 
   // Endpoint para contar los días de vacaciones autorizados en un rango de fechas
   // Endpoint para contar los días de vacaciones autorizados en un rango de fechas
-@Get('authorized-days')
-async countAuthorizedVacationDays(
-  @Query('ci') ci: string,
-  @Query('startDate') startDate: string,
-  @Query('endDate') endDate: string,
-) {
-  try {
-    const { totalAuthorizedDays, requests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(
-      ci,
-      startDate,
-      endDate,
-    );
-    // Cambia "totalDays" a "totalAuthorizedDays"
-    return { totalAuthorizedDays, requests };
-  } catch (error) {
-    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+  @Get('authorized-days')
+  async countAuthorizedVacationDays(
+    @Query('ci') ci: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    try {
+      // Llamar al servicio con el nombre actualizado de la variable
+      const { totalAuthorizedVacationDays, requests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(
+        ci,
+        startDate,
+        endDate,
+      );
+  
+      // Retornar la respuesta con el nuevo nombre de la variable
+      return { totalAuthorizedVacationDays, requests };
+    } catch (error) {
+      // Manejar errores de forma apropiada
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
-}
+  
 
 
   // Endpoint para actualizar el estado de una solicitud de vacaciones

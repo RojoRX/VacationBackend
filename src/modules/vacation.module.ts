@@ -16,6 +16,7 @@ import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseModule } from './license.module';
+import { VacationRequestModule } from './vacation_request.module';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { LicenseModule } from './license.module';
     UserModule,
     NonHolidayModule, // Asegúrate de que NonHolidayModule esté importado aquí
     UserHolidayPeriodModule,
-    LicenseModule
+    LicenseModule, 
+    VacationRequestModule
   ],
   controllers: [VacationController],
   providers: [VacationService, GeneralHolidayPeriod,VacationCalculatorService, RecesoService,],

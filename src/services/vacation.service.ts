@@ -5,8 +5,9 @@ import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 import { RecesoService } from './receso.service';
 import { UserHolidayPeriodService } from './userholidayperiod.service';
-import { LicenseService } from './license.service'; // Importar el servicio de licencias
+import { LicenseService } from './license.service';
 import { DateTime } from 'luxon';
+import { VacationRequestService } from './vacation_request.service';
 
 @Injectable()
 export class VacationService {
@@ -16,7 +17,8 @@ export class VacationService {
     private readonly nonHolidayService: NonHolidayService,
     private readonly recesoService: RecesoService,
     private readonly userHolidayPeriodService: UserHolidayPeriodService,
-    private readonly licenseService: LicenseService // Añadir el servicio de licencias
+    private readonly licenseService: LicenseService,
+    private readonly vacationRequestService: VacationRequestService,
   ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
@@ -86,18 +88,25 @@ export class VacationService {
         totalDays: totalDays,
         nonHolidayDays: nonHolidayDaysCount,
         daysCount: totalDays - nonHolidayDaysCount,
-        type: personalizedReceso ? 'personalizado' : 'general' // Campo adicional para indicar tipo de receso
+        type: personalizedReceso ? 'personalizado' : 'general'
       });
     }
 
     const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
     let remainingVacationDays = vacationDays - totalVacationDaysUsed;
+    
+    // Consultar licencias autorizadas para el usuario
+    const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(user.id, startDate, endDate);
+    
+    // Consultar las solicitudes de vacaciones en el rango de fechas
+    const { totalAuthorizedVacationDays, requests: vacationRequests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
+    
+    // Restar los días de licencias y solicitudes autorizadas de las vacaciones restantes
+    remainingVacationDays -= (totalAuthorizedLicenseDays + totalAuthorizedVacationDays);
+    
 
-    // Consultar licencias autorizadas para el usuario, asegurándonos de pasar los parámetros correctos
-    const { totalAuthorizedDays, requests } = await this.licenseService.getTotalAuthorizedLicensesForUser(user.id, startDate, endDate);
-
-    // Restar los días de licencias autorizadas de los días de vacaciones restantes
-    remainingVacationDays -= totalAuthorizedDays;
+    // Asegurarse de que los días de vacaciones restantes no sean negativos
+    //remainingVacationDays = Math.max(0, remainingVacationDays);
 
     return {
       carnetIdentidad: user.ci,
@@ -114,8 +123,12 @@ export class VacationService {
       diasNoHabiles: totalNonHolidayDays,
       nonHolidayDaysDetails: nonHolidayDetails,
       licenciasAutorizadas: {
-        totalAuthorizedDays: totalAuthorizedDays,
-        requests: requests
+        totalAuthorizedDays: totalAuthorizedLicenseDays,
+        requests: licenseRequests
+      },
+      solicitudesDeVacacionAutorizadas: {
+        totalAuthorizedVacationDays,
+        requests: vacationRequests
       }
     };
   }

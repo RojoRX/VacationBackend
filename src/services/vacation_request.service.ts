@@ -79,29 +79,43 @@ export class VacationRequestService {
 
   // Método para contar los días de vacaciones autorizados en un rango de fechas
 // src/services/vacation_request.service.ts
-
-// Método para contar los días de vacaciones autorizados en un rango de fechas
 async countAuthorizedVacationDaysInRange(
   ci: string,
   startDate: string,
   endDate: string,
-): Promise<{ requests: any[]; totalAuthorizedDays: number }> {
+): Promise<{ requests: VacationRequest[]; totalAuthorizedVacationDays: number }> {
+
+  // Validar las fechas
+  if (new Date(startDate) > new Date(endDate)) {
+    throw new HttpException('Invalid date range', HttpStatus.BAD_REQUEST);
+  }
+
+  // Buscar usuario por carnet de identidad
   const user = await this.userService.findByCarnet(ci);
 
   if (!user) {
     throw new HttpException('User not found', HttpStatus.NOT_FOUND);
   }
 
-  // Utiliza la función ajustada para obtener solicitudes y total de días autorizados
+  // Obtener las solicitudes autorizadas y contar los días autorizados
   const authorizedVacationDays = await getAuthorizedVacationRequestsInRange(
     this.vacationRequestRepository, 
     user.id, 
     startDate, 
-    endDate
+    endDate,
   );
 
-  return authorizedVacationDays;
+  // Verificar que authorizedVacationDays no sea nulo o vacío
+  if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays.requests)) {
+    throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  return {
+    ...authorizedVacationDays,
+    totalAuthorizedVacationDays: authorizedVacationDays.totalAuthorizedDays,
+  };
 }
+
 
 
   // Método para actualizar el estado de una solicitud de vacaciones
