@@ -10,6 +10,7 @@ import { GestionPeriodModule } from './modules/gestion.module';
 import { LicenseModule } from './modules/license.module';
 import { UserHolidayPeriodModule } from './modules/userholidayperiod.module';
 import { VacationRequestModule } from './modules/vacation_request.module';
+import { DepartmentModule } from './modules/department.module';
 
 @Module({
   imports: [
@@ -32,7 +33,8 @@ import { VacationRequestModule } from './modules/vacation_request.module';
     GestionPeriodModule, 
     LicenseModule, 
     UserHolidayPeriodModule,
-    VacationRequestModule
+    VacationRequestModule,
+    DepartmentModule
   ],
   controllers: [],
   providers: [AppService],
