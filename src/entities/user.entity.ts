@@ -1,7 +1,8 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne } from 'typeorm';
 import { License } from './license.entity'; // Importa la entidad License
 import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad UserHolidayPeriod
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
+import { Department } from './department.entity';
 
 @Entity('users')
 export class User {
@@ -37,4 +38,8 @@ export class User {
   // Relación con solicitudes de vacaciones
   @OneToMany(() => VacationRequest, (vacationRequest) => vacationRequest.user)
   vacationRequests: VacationRequest[];
+
+
+  @ManyToOne(() => Department, { nullable: true })
+  department: Department;
 }

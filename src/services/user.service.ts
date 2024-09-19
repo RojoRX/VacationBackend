@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from 'src/entities/user.entity'; // Ajusta la ruta según tu estructura
 import * as bcrypt from 'bcrypt';
+import { Department } from 'src/entities/department.entity';
 
 @Injectable()
 export class UserService {
@@ -12,7 +13,10 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    private readonly httpService: HttpService
+    private readonly httpService: HttpService,
+    @InjectRepository(Department)
+    private readonly departmentRepository: Repository<Department>,
+
   ) {}
 
   async verifyWithExternalApi(ci: string): Promise<any> {
@@ -53,5 +57,19 @@ export class UserService {
     const user = await this.findByUsername(username);
     if (!user) return false;
     return bcrypt.compare(password, user.password);
+  }
+
+  //permitir la actualización del departamento de un usuario.
+  async updateDepartment(userId: number, departmentId: number): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new Error('User not found');
+    }
+    const department = await this.departmentRepository.findOne({ where: { id: departmentId } });
+    if (!department) {
+      throw new Error('Department not found');
+    }
+    user.department = department;
+    await this.userRepository.save(user);
   }
 }

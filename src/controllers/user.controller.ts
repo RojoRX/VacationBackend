@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
@@ -42,4 +42,14 @@ export class UserController {
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
     }
   }
+
+  @Patch(':id/department')
+  async updateDepartment(
+    @Param('id') userId: number,
+    @Body('departmentId') departmentId: number
+  ): Promise<void> {
+    return this.userService.updateDepartment(userId, departmentId);
+  }
+
+
 }

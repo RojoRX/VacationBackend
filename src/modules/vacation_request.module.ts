@@ -9,10 +9,11 @@ import { NonHolidayService } from 'src/services/nonholiday.service';
 import { HttpModule } from '@nestjs/axios';
 import { User } from 'src/entities/user.entity';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
+import { Department } from 'src/entities/department.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday]),
+    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday, Department]),
     HttpModule, // Importa HttpModule para permitir llamadas a APIs externas
   ],
   controllers: [VacationRequestController],
