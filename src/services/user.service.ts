@@ -72,4 +72,8 @@ export class UserService {
     user.department = department;
     await this.userRepository.save(user);
   }
+
+  async findById(userId: number): Promise<User | undefined> {
+    return this.userRepository.findOne({ where: { id: userId }, relations: ['department'] });
+  }
 }

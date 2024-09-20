@@ -5,6 +5,7 @@ import { License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
+import { UserService } from './user.service';
 
 @Injectable()
 export class LicenseService {
@@ -14,6 +15,9 @@ export class LicenseService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    
+    private userService: UserService,
+
   ) { }
 
   async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
@@ -259,19 +263,55 @@ export class LicenseService {
     license.personalDepartmentApproval = approval;
     return this.licenseRepository.save(license);
   }
-  async approveLicenseBySupervisor(licenseId: number, supervisorId: number) {
-    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
-    const supervisor = await this.userRepository.findOne({ where: { id: supervisorId } });
-  
-    if (!license || !supervisor) {
-      throw new BadRequestException('License or Supervisor not found');
-    }
-  
-    license.immediateSupervisorApproval = true;
-    license.approvedBySupervisor = supervisor; // Aquí se asigna el supervisor que aprobó
-  
-    return this.licenseRepository.save(license);
+
+// Método para obtener las licencias del departamento del supervisor
+async findLicensesByDepartment(supervisorId: number): Promise<License[]> {
+  const supervisor = await this.userService.findById(supervisorId);
+
+  if (!supervisor || !supervisor.department) {
+    throw new Error('Supervisor or department not found');
   }
-  
+
+  // Obtener todas las licencias de los usuarios que pertenecen al departamento del supervisor
+  return this.licenseRepository.createQueryBuilder('license')
+    .leftJoinAndSelect('license.user', 'user')
+    .where('user.departmentId = :departmentId', { departmentId: supervisor.department.id })
+    .getMany();
+}
+
+ // Método para que un supervisor apruebe o rechace una licencia
+ async approveLicense(licenseId: number, supervisorId: number, approval: boolean): Promise<License> {
+  // Buscar la licencia y su usuario
+  const license = await this.licenseRepository.findOne({
+    where: { id: licenseId },
+    relations: ['user'], // Cargar la relación con el usuario
+  });
+
+  if (!license) {
+    throw new BadRequestException('License not found');
+  }
+
+  // Buscar al supervisor por ID
+  const supervisor = await this.userRepository.findOne({
+    where: { id: supervisorId },
+    relations: ['department'], // Asegurarse de cargar el departamento del supervisor
+  });
+
+  if (!supervisor) {
+    throw new BadRequestException('Supervisor not found');
+  }
+
+  // Verificar si el usuario de la licencia pertenece al mismo departamento que el supervisor
+  if (license.user.department.id !== supervisor.department.id) {
+    throw new BadRequestException('Unauthorized: Supervisor does not belong to the same department as the user.');
+  }
+
+  // Actualizar el estado de aprobación de la licencia según la acción del supervisor
+  license.immediateSupervisorApproval = approval;
+  license.approvedBySupervisor = supervisor;
+
+  // Guardar los cambios en la licencia
+  return this.licenseRepository.save(license);
+}
 
 }
