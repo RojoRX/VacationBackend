@@ -1,9 +1,9 @@
-import { Controller, Post, Get, Param, Put, Delete, Body, Query, HttpException, HttpStatus, Patch } from '@nestjs/common';
+// src/controllers/license.controller.ts
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
 
-// src/controllers/license.controller.ts
 @Controller('licenses')
 export class LicenseController {
   constructor(private readonly licenseService: LicenseService) {}
@@ -50,35 +50,43 @@ export class LicenseController {
     return this.licenseService.removeLicense(id);
   }
 
- // Nuevo endpoint para obtener las licencias autorizadas y el total de días
- @Get('authorized/:userId')
- async getAuthorizedLicenses(
-   @Param('userId') userId: number,
-   @Query('startDate') startDate: string,
-   @Query('endDate') endDate: string,
- ): Promise<{ totalAuthorizedDays: number; requests: LicenseResponseDto[] }> {
-   const start = new Date(startDate);
-   const end = new Date(endDate);
+  // Endpoint para obtener las licencias autorizadas y el total de días
+  @Get('authorized/:userId')
+  async getAuthorizedLicenses(
+    @Param('userId') userId: number,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ): Promise<{ totalAuthorizedDays: number; requests: LicenseResponseDto[] }> {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
-   return this.licenseService.getTotalAuthorizedLicensesForUser(userId, start, end);
- }
+    return this.licenseService.getTotalAuthorizedLicensesForUser(userId, start, end);
+  }
 
+  // Endpoint para actualizar el estado de aprobación del supervisor inmediato
+  @Patch(':licenseId/supervisor-approval')
+  async updateImmediateSupervisorApproval(
+    @Param('licenseId') licenseId: number,
+    @Body('approval') approval: boolean,
+  ): Promise<License> {
+    return this.licenseService.updateImmediateSupervisorApproval(licenseId, approval);
+  }
 
-   // Endpoint para actualizar el estado de aprobación del supervisor inmediato
-   @Patch(':licenseId/supervisor-approval')
-   async updateImmediateSupervisorApproval(
-     @Param('licenseId') licenseId: number,
-     @Body('approval') approval: boolean,
-   ): Promise<License> {
-     return this.licenseService.updateImmediateSupervisorApproval(licenseId, approval);
-   }
- 
-   // Endpoint para actualizar el estado de aprobación del departamento personal
-   @Patch(':licenseId/personal-approval')
-   async updatePersonalDepartmentApproval(
-     @Param('licenseId') licenseId: number,
-     @Body('approval') approval: boolean,
-   ): Promise<License> {
-     return this.licenseService.updatePersonalDepartmentApproval(licenseId, approval);
-   }
+  // Endpoint para actualizar el estado de aprobación del departamento personal
+  @Patch(':licenseId/personal-approval')
+  async updatePersonalDepartmentApproval(
+    @Param('licenseId') licenseId: number,
+    @Body('approval') approval: boolean,
+  ): Promise<License> {
+    return this.licenseService.updatePersonalDepartmentApproval(licenseId, approval);
+  }
+
+  // Nuevo endpoint: Aprobación de licencia por parte del supervisor
+  @Patch(':licenseId/approve-by-supervisor')
+  async approveBySupervisor(
+    @Param('licenseId') licenseId: number,
+    @Body('supervisorId') supervisorId: number,
+  ): Promise<License> {
+    return this.licenseService.approveLicenseBySupervisor(licenseId, supervisorId);
+  }
 }

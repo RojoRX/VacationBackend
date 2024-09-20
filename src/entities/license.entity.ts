@@ -1,6 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, BeforeInsert, BeforeUpdate } from 'typeorm';
 import { User } from './user.entity';
-import { DateTime } from 'luxon';
 import { BadRequestException } from '@nestjs/common';
 
 export enum LicenseType {
@@ -45,12 +44,19 @@ export class License {
   @CreateDateColumn()
   issuedDate: Date;
 
+  // Aprobación del supervisor inmediato
   @Column({ type: 'boolean', default: false })
   immediateSupervisorApproval: boolean;
 
+  // Aprobación del administrador del sistema
   @Column({ type: 'boolean', default: false })
   personalDepartmentApproval: boolean;
 
+  // Relación con el usuario que solicita la licencia
   @ManyToOne(() => User, (user) => user.licenses)
   user: User;
+
+  // Nuevo: Relación con el supervisor que aprobó la licencia
+  @ManyToOne(() => User, { nullable: true }) // Opcional al momento de crear la licencia
+  approvedBySupervisor: User; // El supervisor que aprobó la licencia
 }

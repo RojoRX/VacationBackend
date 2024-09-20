@@ -259,4 +259,19 @@ export class LicenseService {
     license.personalDepartmentApproval = approval;
     return this.licenseRepository.save(license);
   }
+  async approveLicenseBySupervisor(licenseId: number, supervisorId: number) {
+    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
+    const supervisor = await this.userRepository.findOne({ where: { id: supervisorId } });
+  
+    if (!license || !supervisor) {
+      throw new BadRequestException('License or Supervisor not found');
+    }
+  
+    license.immediateSupervisorApproval = true;
+    license.approvedBySupervisor = supervisor; // Aquí se asigna el supervisor que aprobó
+  
+    return this.licenseRepository.save(license);
+  }
+  
+
 }
