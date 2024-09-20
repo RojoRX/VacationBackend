@@ -22,19 +22,14 @@ export class VacationService {
   ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
-    // Buscar usuario por CI en la base de datos local
-    const user = await this.userService.findByCarnet(carnetIdentidad);
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado.');
+    // Obtener datos del usuario (desde la base de datos o API externa)
+    const userData = await this.userService.getUserData(carnetIdentidad);
+    
+    // Asegurarse de que los datos del usuario se obtuvieron
+    if (!userData) {
+      throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
     }
 
-    // Consultar la API externa para obtener la información completa del usuario
-    const apiUserData = await this.userService.verifyWithExternalApi(carnetIdentidad);
-    if (!apiUserData) {
-      throw new BadRequestException('Información del usuario no encontrada en la API externa.');
-    }
-
-    const userData = apiUserData.attributes; // Extrae los datos necesarios del objeto API
 
     // Convertir fechas para cálculos
     const userDate = DateTime.fromISO(userData.fecha_ingreso);
@@ -51,8 +46,8 @@ export class VacationService {
     const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
 
-    // Obtener recesos personalizados del usuario
-    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(user.id, startDateTime.year);
+  // Obtener recesos personalizados del usuario
+ const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(userData.id, startDateTime.year);
 
     const recesos = [];
     let totalNonHolidayDays = 0;
@@ -95,9 +90,9 @@ export class VacationService {
     const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
     let remainingVacationDays = vacationDays - totalVacationDaysUsed;
     
-    // Consultar licencias autorizadas para el usuario
-    const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(user.id, startDate, endDate);
-    
+     // Consultar licencias autorizadas para el usuario
+     const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
+   
     // Consultar las solicitudes de vacaciones en el rango de fechas
     const { totalAuthorizedVacationDays, requests: vacationRequests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
     
@@ -109,7 +104,7 @@ export class VacationService {
     //remainingVacationDays = Math.max(0, remainingVacationDays);
 
     return {
-      carnetIdentidad: user.ci,
+      carnetIdentidad: userData.carnetIdentidad,
       name: userData.nombres,
       email: userData.correo_electronico,
       position: userData.profesion,

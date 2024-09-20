@@ -3,6 +3,7 @@ import { License } from './license.entity'; // Importa la entidad License
 import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad UserHolidayPeriod
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
 import { Department } from './department.entity';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @Entity('users')
 export class User {
@@ -10,16 +11,16 @@ export class User {
   id: number;
 
   @Column({ unique: true })
-  ci: string;  // Carnet de identidad, usado como identificador único
+  ci: string;
 
   @Column({ type: 'date' })
-  fecha_ingreso: string;  // Fecha de ingreso del usuario
+  fecha_ingreso: string;
 
   @Column({ unique: true })
-  username: string;  // Nombre de usuario único para autenticación
+  username: string;
 
   @Column()
-  password: string;  // Contraseña encriptada para autenticación
+  password: string;
 
   @CreateDateColumn()
   createdAt: Date;
@@ -27,19 +28,28 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  // Relación con recesos específicos
+  @Column({ nullable: true })
+  fullName: string;
+
+  @Column({ nullable: true })
+  celular: string;
+
+  @Column({ nullable: true })
+  profesion: string;
+
   @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
   holidayPeriods: UserHolidayPeriod[];
 
-  // Relación con licencias
   @OneToMany(() => License, (license) => license.user)
   licenses: License[];
 
-  // Relación con solicitudes de vacaciones
   @OneToMany(() => VacationRequest, (vacationRequest) => vacationRequest.user)
   vacationRequests: VacationRequest[];
 
-
   @ManyToOne(() => Department, { nullable: true })
   department: Department;
+
+  @Column({ type: 'enum', enum: RoleEnum, default: RoleEnum.USER })
+  role: RoleEnum; // Usa el enum para el rol del usuario
+
 }
