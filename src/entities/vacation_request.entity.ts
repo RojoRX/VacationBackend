@@ -1,4 +1,3 @@
-// vacation_request.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
 import { User } from 'src/entities/user.entity'; // Asegúrate de tener la entidad User definida o ajusta según tu implementación.
 
@@ -28,7 +27,7 @@ export class VacationRequest {
   @Column({ 
     type: 'enum', 
     enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'], 
-    default: 'PENDING' // Cambiado a 'PENDING' para mayor claridad
+    default: 'PENDING' // Estado inicial ajustado a 'PENDING'
   })
   status: string; // Estado de la solicitud
 
@@ -43,4 +42,7 @@ export class VacationRequest {
 
   @Column({ type: 'boolean', default: false })
   approvedByHR: boolean; // Indicador de aprobación por RRHH
+
+  @Column({ type: 'boolean', default: false }) // Campo para la aprobación del supervisor
+  approvedBySupervisor: boolean; // Aprobación del supervisor
 }

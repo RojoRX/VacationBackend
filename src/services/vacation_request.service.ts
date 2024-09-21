@@ -6,6 +6,7 @@ import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { UserService } from 'src/services/user.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { calculateVacationDays, calculateReturnDate, ensureNoOverlappingVacations, countAuthorizedVacationDaysInRange, getAuthorizedVacationRequestsInRange } from 'src/utils/vacation-request-utils';
+import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 
 @Injectable()
 export class VacationRequestService {
@@ -116,19 +117,104 @@ async countAuthorizedVacationDaysInRange(
   };
 }
 
+async updateVacationRequestStatus(
+  id: number,
+  status: string,
+  supervisorId: number,
+): Promise<VacationRequestDTO> {
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user', 'user.department'], // Asegúrate de incluir la relación con el departamento
+  });
 
-
-  // Método para actualizar el estado de una solicitud de vacaciones
-  async updateVacationRequestStatus(id: number, status: string): Promise<VacationRequest> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-    });
-
-    if (!request) {
-      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-    }
-
-    request.status = status;
-    return await this.vacationRequestRepository.save(request);
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
   }
+
+  // Verificar que el supervisor tenga permiso para actualizar solicitudes de su departamento
+  const supervisor = await this.userService.findById(supervisorId);
+  if (!supervisor || supervisor.department.id !== request.user.department.id) {
+    throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
+  }
+
+  // Verificar que el estado enviado sea un valor válido del enum
+  const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
+  if (!validStatuses.includes(status)) {
+    throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
+  }
+
+  // Actualizar el estado
+  request.status = status;
+  request.approvedByHR = status === 'AUTHORIZED';
+
+  // Guardar la solicitud
+  await this.vacationRequestRepository.save(request);
+
+  // Mapear a DTO
+  const vacationRequestDTO: VacationRequestDTO = {
+    id: request.id,
+    position: request.position,
+    requestDate: request.requestDate,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    user: {
+      id: request.user.id,
+      ci: request.user.ci,
+      fecha_ingreso: request.user.fecha_ingreso,
+      username: request.user.username,
+      // No incluimos el password ni otros datos sensibles
+    },
+  };
+
+  return vacationRequestDTO;
+}
+
+
+
+// Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
+async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
+  const supervisor = await this.userService.findById(supervisorId);
+  if (!supervisor) {
+    throw new HttpException('Supervisor not found', HttpStatus.NOT_FOUND);
+  }
+
+  const departmentId = supervisor.department.id;
+  if (!departmentId) {
+    throw new HttpException('Supervisor does not belong to any department', HttpStatus.BAD_REQUEST);
+  }
+
+  const requests = await this.vacationRequestRepository.find({
+    where: { user: { department: { id: departmentId } } },
+    relations: ['user'],
+  });
+
+  if (requests.length === 0) {
+    throw new HttpException('No vacation requests found for this department', HttpStatus.NOT_FOUND);
+  }
+
+  // Mapeo de las solicitudes a DTO
+  return requests.map(request => {
+    const { user, ...rest } = request;
+    return {
+      ...rest,
+      user: {
+        id: user.id,
+        ci: user.ci,
+        fecha_ingreso: user.fecha_ingreso,
+        username: user.username,
+      },
+    } as VacationRequestDTO;
+  });
+}
+
+
+
+  
 }
