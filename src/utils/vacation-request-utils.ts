@@ -35,24 +35,29 @@ export async function calculateVacationDays(
 
 // Calcular la fecha de retorno asegurando que sea un día hábil
 export async function calculateReturnDate(
-    startDate: string,
+    endDate: string,
     vacationDays: number,
     nonHolidayService: NonHolidayService
 ): Promise<string> {
-    let day = DateTime.fromISO(startDate).plus({ days: vacationDays });
+    let day = DateTime.fromISO(endDate).plus({ days: 1 }); // Comienza desde el día siguiente al final de las vacaciones
     const year = day.year;
     const nonHolidays = await nonHolidayService.getNonHolidayDays(year);
 
-    while (
-        day.weekday === 6 ||
-        day.weekday === 7 ||
-        nonHolidays.some((nonHoliday) => nonHoliday.date === day.toISODate())
-    ) {
+    let daysAdded = 0;
+
+    while (daysAdded < vacationDays) {
+        if (day.weekday !== 6 && day.weekday !== 7 && !nonHolidays.some((nonHoliday) => nonHoliday.date === day.toISODate())) {
+            daysAdded++;
+        }
         day = day.plus({ days: 1 });
     }
 
-    return day.toISODate();
+    // Volver un día al último día hábil encontrado
+    day = day.minus({ days: 1 });
+
+    return day.toISODate(); // Retornar solo la fecha en formato YYYY-MM-DD
 }
+
 
 // Verificar solapamiento de vacaciones
 export async function ensureNoOverlappingVacations(
