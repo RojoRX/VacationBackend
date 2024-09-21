@@ -280,38 +280,68 @@ async findLicensesByDepartment(supervisorId: number): Promise<License[]> {
 }
 
  // Método para que un supervisor apruebe o rechace una licencia
- async approveLicense(licenseId: number, supervisorId: number, approval: boolean): Promise<License> {
-  // Buscar la licencia y su usuario
+ async approveLicense(
+  licenseId: number,
+  supervisorId: number,
+  approval: boolean
+): Promise<LicenseResponseDto> {
   const license = await this.licenseRepository.findOne({
     where: { id: licenseId },
-    relations: ['user'], // Cargar la relación con el usuario
+    relations: ['user', 'user.department'],
   });
 
   if (!license) {
     throw new BadRequestException('License not found');
   }
 
-  // Buscar al supervisor por ID
+  if (!license.user.department) {
+    throw new BadRequestException('The user does not belong to any department.');
+  }
+
   const supervisor = await this.userRepository.findOne({
     where: { id: supervisorId },
-    relations: ['department'], // Asegurarse de cargar el departamento del supervisor
+    relations: ['department'],
   });
 
   if (!supervisor) {
     throw new BadRequestException('Supervisor not found');
   }
 
-  // Verificar si el usuario de la licencia pertenece al mismo departamento que el supervisor
+  if (!supervisor.department) {
+    throw new BadRequestException('The supervisor does not belong to any department.');
+  }
+
   if (license.user.department.id !== supervisor.department.id) {
     throw new BadRequestException('Unauthorized: Supervisor does not belong to the same department as the user.');
   }
 
-  // Actualizar el estado de aprobación de la licencia según la acción del supervisor
+  // Actualizar el estado de aprobación de la licencia
   license.immediateSupervisorApproval = approval;
-  license.approvedBySupervisor = supervisor;
+  license.approvedBySupervisor = approval ? supervisor : null;
 
   // Guardar los cambios en la licencia
-  return this.licenseRepository.save(license);
+  await this.licenseRepository.save(license);
+
+  // Devolver la licencia con la estructura del DTO actualizado
+  return {
+    id: license.id,
+    licenseType: license.licenseType,
+    timeRequested: license.timeRequested,
+    startDate: license.startDate,
+    endDate: license.endDate,
+    issuedDate: license.issuedDate,
+    immediateSupervisorApproval: license.immediateSupervisorApproval,
+    personalDepartmentApproval: license.personalDepartmentApproval,
+    userId: license.user.id,
+    totalDays: license.totalDays,
+    userDepartmentId: license.user.department.id,
+    userDepartmentName: license.user.department.name,
+    approvedBySupervisorId: approval ? supervisor.id : undefined,
+    approvedBySupervisorName: approval ? supervisor.fullName : undefined,
+    supervisorDepartmentId: approval ? supervisor.department.id : undefined,
+    supervisorDepartmentName: approval ? supervisor.department.name : undefined,
+  };
 }
+
 
 }

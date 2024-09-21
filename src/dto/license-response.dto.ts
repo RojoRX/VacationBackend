@@ -9,6 +9,12 @@ export class LicenseResponseDto {
   issuedDate: Date;
   immediateSupervisorApproval: boolean;
   personalDepartmentApproval: boolean;
-  userId: number; // Solo el ID del usuario es visible
-  totalDays: number; // Añadido para incluir el total de días
+  userId: number; // ID del usuario
+  totalDays: number; // Total de días solicitados
+  approvedBySupervisorId?: number; // ID del supervisor que aprobó la licencia, opcional si no ha sido aprobado
+  approvedBySupervisorName?: string; // Nombre del supervisor, opcional si no ha sido aprobado
+  userDepartmentId?: number; // ID del departamento del usuario
+  userDepartmentName?: string; // Nombre del departamento del usuario
+  supervisorDepartmentId?: number; // ID del departamento del supervisor
+  supervisorDepartmentName?: string; // Nombre del departamento del supervisor
 }

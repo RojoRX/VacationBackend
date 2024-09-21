@@ -81,14 +81,13 @@ export class LicenseController {
     return this.licenseService.updatePersonalDepartmentApproval(licenseId, approval);
   }
 
-  // Nuevo endpoint: Aprobación de licencia por parte del supervisor
 // Endpoint para que el supervisor apruebe o rechace una licencia
 @Patch(':licenseId/approve')
 async approveLicense(
   @Param('licenseId') licenseId: number,
   @Query('supervisorId') supervisorId: number,
   @Body('approval') approval: boolean,
-): Promise<License> {
+): Promise<LicenseResponseDto> {
   return this.licenseService.approveLicense(licenseId, supervisorId, approval);
 }
 
