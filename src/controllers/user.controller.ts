@@ -1,14 +1,22 @@
+// src/controllers/user.controller.ts
 import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
 import { RoleEnum } from 'src/enums/role.enum';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { UpdateRoleDto } from 'src/dto/update-role.dto';
 
+@ApiTags('Usuarios')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Post('create')
+  @ApiOperation({ summary: 'Crear un nuevo usuario' })
+  @ApiBody({ type: User, description: 'Datos del usuario a crear' })
+  @ApiResponse({ status: 201, description: 'Usuario creado exitosamente', type: User })
+  @ApiResponse({ status: 400, description: 'Error en los datos de entrada' })
   async createUser(@Body() body: { ci: string; username: string; password: string }, @Res() res: Response) {
     try {
       const user = await this.userService.createUserFromApi(body.ci, body.username, body.password);
@@ -19,6 +27,10 @@ export class UserController {
   }
 
   @Get('find/:ci')
+  @ApiOperation({ summary: 'Buscar un usuario por su carnet' })
+  @ApiParam({ name: 'ci', required: true, description: 'Carnet del usuario a buscar' })
+  @ApiResponse({ status: 200, description: 'Usuario encontrado', type: User })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findUserByCarnet(@Param('ci') ci: string, @Res() res: Response) {
     try {
       const user = await this.userService.findByCarnet(ci);
@@ -32,6 +44,10 @@ export class UserController {
   }
 
   @Get('validate/:username')
+  @ApiOperation({ summary: 'Validar la contraseña del usuario' })
+  @ApiParam({ name: 'username', required: true, description: 'Nombre de usuario para validar la contraseña' })
+  @ApiResponse({ status: 200, description: 'Contraseña válida' })
+  @ApiResponse({ status: 401, description: 'Contraseña inválida' })
   async validateUserPassword(@Param('username') username: string, @Body('password') password: string, @Res() res: Response) {
     try {
       const isValid = await this.userService.validatePassword(username, password);
@@ -45,6 +61,10 @@ export class UserController {
   }
 
   @Patch(':id/department')
+  @ApiOperation({ summary: 'Actualizar el departamento del usuario' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del usuario a actualizar' })
+  @ApiBody({ type: Number, description: 'ID del nuevo departamento' })
+  @ApiResponse({ status: 200, description: 'Departamento actualizado exitosamente' })
   async updateDepartment(
     @Param('id') userId: number,
     @Body('departmentId') departmentId: number
@@ -53,12 +73,15 @@ export class UserController {
   }
 
   @Put(':id/role')
+  @ApiOperation({ summary: 'Actualizar el rol del usuario' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del usuario a actualizar' })
+  @ApiBody({ type: UpdateRoleDto, description: 'Nuevo rol del usuario' })  // Usar el DTO aquí
+  @ApiResponse({ status: 200, description: 'Rol actualizado correctamente' })
   async updateUserRole(
     @Param('id', ParseIntPipe) userId: number,
-    @Body('role') newRole: RoleEnum
+    @Body() updateRoleDto: UpdateRoleDto  // Usar el DTO aquí
   ) {
-    await this.userService.updateUserRole(userId, newRole);
+    await this.userService.updateUserRole(userId, updateRoleDto.role);
     return { message: 'Rol actualizado correctamente.' };
   }
-
 }

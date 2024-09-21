@@ -2,37 +2,58 @@
 import { Controller, Post, Put, Delete, Get, Param, Body } from '@nestjs/common';
 import { DepartmentService } from 'src/services/department.service';
 import { Department } from 'src/entities/department.entity';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { CreateDepartmentDto, UpdateDepartmentDto } from 'src/dto/department.dto';
 
+@ApiTags('Departamentos') // Etiqueta para agrupar en Swagger
 @Controller('departments')
 export class DepartmentController {
   constructor(private readonly departmentService: DepartmentService) {}
 
   @Post()
-  async createDepartment(@Body() body: { name: string; isCareer: boolean }): Promise<Department> {
+  @ApiOperation({ summary: 'Crear un nuevo departamento' })
+  @ApiResponse({ status: 201, description: 'Departamento creado exitosamente.', type: Department })
+  @ApiBody({ type: CreateDepartmentDto }) // DTO para el cuerpo de la solicitud
+  async createDepartment(@Body() body: CreateDepartmentDto): Promise<Department> {
     const { name, isCareer } = body;
     return this.departmentService.createDepartment(name, isCareer);
   }
 
   @Put(':id')
+  @ApiOperation({ summary: 'Actualizar un departamento existente' })
+  @ApiResponse({ status: 200, description: 'Departamento actualizado exitosamente.', type: Department })
+  @ApiResponse({ status: 404, description: 'Departamento no encontrado.' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del departamento a actualizar' })
+  @ApiBody({ type: UpdateDepartmentDto }) // DTO para el cuerpo de la solicitud
   async updateDepartment(
     @Param('id') id: number,
-    @Body() body: { name: string; isCareer: boolean },
+    @Body() body: UpdateDepartmentDto,
   ): Promise<Department> {
     const { name, isCareer } = body;
     return this.departmentService.updateDepartment(id, name, isCareer);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar un departamento' })
+  @ApiResponse({ status: 204, description: 'Departamento eliminado exitosamente.' })
+  @ApiResponse({ status: 404, description: 'Departamento no encontrado.' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del departamento a eliminar' })
   async deleteDepartment(@Param('id') id: number): Promise<void> {
     return this.departmentService.deleteDepartment(id);
   }
 
   @Get()
+  @ApiOperation({ summary: 'Obtener todos los departamentos' })
+  @ApiResponse({ status: 200, description: 'Lista de departamentos', type: [Department] })
   async getDepartments(): Promise<Department[]> {
     return this.departmentService.getDepartments();
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Obtener un departamento por ID' })
+  @ApiResponse({ status: 200, description: 'Departamento encontrado.', type: Department })
+  @ApiResponse({ status: 404, description: 'Departamento no encontrado.' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del departamento a obtener' })
   async getDepartmentById(@Param('id') id: number): Promise<Department> {
     return this.departmentService.getDepartmentById(id);
   }

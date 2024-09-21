@@ -1,13 +1,20 @@
+// src/controllers/holiday-period.controller.ts
 import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put } from '@nestjs/common';
 import { HolidayPeriod } from 'src/entities/holydayperiod.entity';
 import { HolidayPeriodService } from 'src/services/holydayperiod.service';
 import { Response } from 'express';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 
+@ApiTags('holiday-periods')
 @Controller('holiday-periods')
 export class HolidayPeriodController {
   constructor(private readonly holidayPeriodService: HolidayPeriodService) {}
 
   @Get(':year')
+  @ApiOperation({ summary: 'Obtener periodos de vacaciones por año' })
+  @ApiResponse({ status: 200, description: 'Lista de periodos de vacaciones', type: [HolidayPeriod] })
+  @ApiResponse({ status: 500, description: 'Error al recuperar los periodos de vacaciones' })
+  @ApiParam({ name: 'year', required: true, description: 'Año para el cual se solicitan los periodos de vacaciones' })
   async getHolidayPeriods(@Param('year') year: number, @Res() res: Response): Promise<void> {
     try {
       const holidayPeriods = await this.holidayPeriodService.getHolidayPeriods(year);
@@ -18,6 +25,10 @@ export class HolidayPeriodController {
   }
 
   @Post()
+  @ApiOperation({ summary: 'Crear un nuevo periodo de vacaciones' })
+  @ApiResponse({ status: 201, description: 'Periodo de vacaciones creado exitosamente', type: HolidayPeriod })
+  @ApiResponse({ status: 400, description: 'Error al crear el periodo de vacaciones' })
+  @ApiBody({ type: HolidayPeriod, description: 'Datos del periodo de vacaciones a crear' })
   async createHolidayPeriod(@Body() holidayPeriod: HolidayPeriod, @Res() res: Response): Promise<void> {
     try {
       const newHolidayPeriod = await this.holidayPeriodService.createHolidayPeriod(holidayPeriod);
@@ -28,6 +39,12 @@ export class HolidayPeriodController {
   }
 
   @Put(':id')
+  @ApiOperation({ summary: 'Actualizar un periodo de vacaciones' })
+  @ApiResponse({ status: 200, description: 'Periodo de vacaciones actualizado exitosamente', type: HolidayPeriod })
+  @ApiResponse({ status: 400, description: 'Error al actualizar el periodo de vacaciones' })
+  @ApiResponse({ status: 404, description: 'Periodo de vacaciones no encontrado' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del periodo de vacaciones a actualizar' })
+  @ApiBody({ type: HolidayPeriod, description: 'Datos del periodo de vacaciones a actualizar' })
   async updateHolidayPeriod(
     @Param('id') id: number,
     @Body() holidayPeriod: HolidayPeriod,

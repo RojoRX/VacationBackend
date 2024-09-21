@@ -1,17 +1,30 @@
-// src/controllers/vacation-request.controller.ts
-import { Controller, Post, Get, Query, Body, Param, HttpException, HttpStatus, Put, Patch } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Query,
+  Body,
+  Param,
+  HttpException,
+  HttpStatus,
+  Patch,
+} from '@nestjs/common';
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
-import { UpdateVacationRequestStatusDto } from 'src/dto/update-vacation-request-status.dto';
-import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 
+@ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
 export class VacationRequestController {
-  constructor(private readonly vacationRequestService: VacationRequestService) { }
+  constructor(private readonly vacationRequestService: VacationRequestService) {}
 
   // Endpoint para crear una solicitud de vacaciones
   @Post()
+  @ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
+  @ApiBody({ type: CreateVacationRequestDto })
+  @ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
   async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
     const { ci, startDate, endDate, position } = createVacationRequestDto;
 
@@ -30,6 +43,9 @@ export class VacationRequestController {
 
   // Endpoint para obtener todas las solicitudes de vacaciones de un usuario
   @Get('user/:userId')
+  @ApiOperation({ summary: 'Obtener solicitudes de vacaciones por usuario' })
+  @ApiResponse({ status: 200, description: 'Lista de solicitudes de vacaciones del usuario' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async getUserVacationRequests(@Param('userId') userId: string) {
     try {
       const requests = await this.vacationRequestService.getUserVacationRequests(parseInt(userId, 10));
@@ -41,6 +57,8 @@ export class VacationRequestController {
 
   // Endpoint para obtener todas las vacaciones registradas
   @Get()
+  @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones' })
+  @ApiResponse({ status: 200, description: 'Lista de todas las solicitudes de vacaciones' })
   async getAllVacationRequests() {
     try {
       const requests = await this.vacationRequestService.getAllVacationRequests();
@@ -51,46 +69,46 @@ export class VacationRequestController {
   }
 
   // Endpoint para contar los días de vacaciones autorizados en un rango de fechas
-  // Endpoint para contar los días de vacaciones autorizados en un rango de fechas
   @Get('authorized-days')
+  @ApiOperation({ summary: 'Contar días de vacaciones autorizados en un rango de fechas' })
+  @ApiResponse({ status: 200, description: 'Total de días autorizados y solicitudes en el rango' })
+  @ApiResponse({ status: 400, description: 'Error en la consulta' })
   async countAuthorizedVacationDays(
     @Query('ci') ci: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
     try {
-      // Llamar al servicio con el nombre actualizado de la variable
       const { totalAuthorizedVacationDays, requests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(
         ci,
         startDate,
         endDate,
       );
 
-      // Retornar la respuesta con el nuevo nombre de la variable
       return { totalAuthorizedVacationDays, requests };
     } catch (error) {
-      // Manejar errores de forma apropiada
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
+  // Endpoint para actualizar el estado de una solicitud de vacaciones
+  @Patch(':vacationRequestId/approve')
+  @ApiOperation({ summary: 'Actualizar estado de una solicitud de vacaciones' })
+  @ApiResponse({ status: 200, description: 'Estado de la solicitud actualizado exitosamente' })
+  @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
+  async approveVacationRequest(
+    @Param('vacationRequestId') vacationRequestId: number,
+    @Query('supervisorId') supervisorId: number,
+    @Body() body: { status: string },
+  ): Promise<VacationRequestDTO> {
+    return this.vacationRequestService.updateVacationRequestStatus(vacationRequestId, body.status, supervisorId);
+  }
 
-
-// Endpoint para actualizar el estado de una solicitud de vacaciones
-@Patch(':vacationRequestId/approve')
-async approveVacationRequest(
-  @Param('vacationRequestId') vacationRequestId: number,
-  @Query('supervisorId') supervisorId: number,
-  @Body() body: { status: string }, // Mantener aquí
-): Promise<VacationRequestDTO> { // Cambiar aquí
-  return this.vacationRequestService.updateVacationRequestStatus(vacationRequestId, body.status, supervisorId);
-}
-
-
+  // Endpoint para obtener solicitudes de vacaciones por supervisor
   @Get('supervisor/:supervisorId')
+  @ApiOperation({ summary: 'Obtener solicitudes de vacaciones por supervisor' })
+  @ApiResponse({ status: 200, description: 'Lista de solicitudes de vacaciones del supervisor' })
   async getVacationRequestsBySupervisor(@Param('supervisorId') supervisorId: number): Promise<VacationRequestDTO[]> {
     return this.vacationRequestService.getVacationRequestsBySupervisor(supervisorId);
   }
-  
-
 }
