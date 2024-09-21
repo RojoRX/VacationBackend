@@ -114,4 +114,22 @@ async getUserData(carnetIdentidad: string): Promise<any> {
   // Si no se encuentra información, lanzar un error
   throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
 }
+
+async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
+  // Verificar si el usuario existe
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado.');
+  }
+
+  // Verificar si el nuevo rol es válido
+  if (!Object.values(RoleEnum).includes(newRole)) {
+    throw new BadRequestException('Rol inválido.');
+  }
+
+  // Actualizar el rol del usuario
+  user.role = newRole;
+  await this.userRepository.save(user);
+}
+
 }

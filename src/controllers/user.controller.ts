@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @Controller('users')
 export class UserController {
@@ -51,5 +52,13 @@ export class UserController {
     return this.userService.updateDepartment(userId, departmentId);
   }
 
+  @Put(':id/role')
+  async updateUserRole(
+    @Param('id', ParseIntPipe) userId: number,
+    @Body('role') newRole: RoleEnum
+  ) {
+    await this.userService.updateUserRole(userId, newRole);
+    return { message: 'Rol actualizado correctamente.' };
+  }
 
 }
