@@ -3,7 +3,7 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { GestionPeriodService } from 'src/services/gestion-period.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 
-@ApiTags('Gestiones de Usuario')
+@ApiTags('Gestiones de un Usuario')
 @Controller('gestion-periods')
 export class GestionPeriodController {
   constructor(private readonly gestionPeriodService: GestionPeriodService) {}

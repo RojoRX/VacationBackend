@@ -7,7 +7,7 @@ import { HolidayPeriodName } from 'src/entities/holydayperiod.entity'; // Asegú
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { CreateUserHolidayPeriodDto } from 'src/dto/create-user-holiday-period.dto';
 
-@ApiTags('Recesos Personalizados Usuarios')
+@ApiTags('Recesos Personalizados')
 @Controller('user-holiday-periods')
 export class UserHolidayPeriodController {
   constructor(private readonly userHolidayPeriodService: UserHolidayPeriodService) {}
