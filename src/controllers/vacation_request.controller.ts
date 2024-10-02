@@ -92,16 +92,21 @@ export class VacationRequestController {
   }
 
   // Endpoint para actualizar el estado de una solicitud de vacaciones
-  @Patch(':vacationRequestId/approve')
-  @ApiOperation({ summary: 'Actualizar estado de una solicitud de vacaciones' })
+  @Patch(':vacationRequestId/status')
+  @ApiOperation({ summary: 'Actualizar estado de una solicitud de vacaciones por el supervisor' })
   @ApiResponse({ status: 200, description: 'Estado de la solicitud actualizado exitosamente' })
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
-  async approveVacationRequest(
+  @ApiResponse({ status: 400, description: 'Error al actualizar el estado' })
+  async updateVacationRequestStatus(
     @Param('vacationRequestId') vacationRequestId: number,
     @Query('supervisorId') supervisorId: number,
     @Body() body: { status: string },
   ): Promise<VacationRequestDTO> {
-    return this.vacationRequestService.updateVacationRequestStatus(vacationRequestId, body.status, supervisorId);
+    try {
+      return await this.vacationRequestService.updateVacationRequestStatus(vacationRequestId, body.status, supervisorId);
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   // Endpoint para obtener solicitudes de vacaciones por supervisor
@@ -109,6 +114,6 @@ export class VacationRequestController {
   @ApiOperation({ summary: 'Obtener solicitudes de vacaciones por supervisor' })
   @ApiResponse({ status: 200, description: 'Lista de solicitudes de vacaciones del supervisor' })
   async getVacationRequestsBySupervisor(@Param('supervisorId') supervisorId: number): Promise<VacationRequestDTO[]> {
-    return this.vacationRequestService.getVacationRequestsBySupervisor(supervisorId);
+    return await this.vacationRequestService.getVacationRequestsBySupervisor(supervisorId);
   }
 }

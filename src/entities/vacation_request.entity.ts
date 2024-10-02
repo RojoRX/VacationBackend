@@ -6,7 +6,7 @@ export class VacationRequest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, user => user.vacationRequests) // Relación con la entidad User
+  @ManyToOne(() => User, (user) => user.vacationRequests) // Relación con la entidad User
   user: User;
 
   @Column()
@@ -24,10 +24,10 @@ export class VacationRequest {
   @Column({ type: 'int' })
   totalDays: number; // Días totales calculados de vacaciones
 
-  @Column({ 
-    type: 'enum', 
-    enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'], 
-    default: 'PENDING' // Estado inicial ajustado a 'PENDING'
+  @Column({
+    type: 'enum',
+    enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'],
+    default: 'PENDING', // Estado inicial ajustado a 'PENDING'
   })
   status: string; // Estado de la solicitud
 
@@ -45,4 +45,8 @@ export class VacationRequest {
 
   @Column({ type: 'boolean', default: false }) // Campo para la aprobación del supervisor
   approvedBySupervisor: boolean; // Aprobación del supervisor
+
+  // Relación con el supervisor que aprobó la solicitud
+  @ManyToOne(() => User, { nullable: true }) // Supervisor opcional en la aprobación
+  approvedBy: User; // Supervisor que aprobó la solicitud
 }
