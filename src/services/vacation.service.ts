@@ -22,87 +22,83 @@ export class VacationService {
   ) {}
 
   async calculateVacationDays(carnetIdentidad: string, startDate: Date, endDate: Date): Promise<VacationResponse> {
-    // Obtener datos del usuario (desde la base de datos o API externa)
+    // Obtener datos del usuario
     const userData = await this.userService.getUserData(carnetIdentidad);
-    
-    // Asegurarse de que los datos del usuario se obtuvieron
     if (!userData) {
-      throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
+      throw new BadRequestException('Usuario no encontrado.');
     }
-
-
+  
     // Convertir fechas para cálculos
     const userDate = DateTime.fromISO(userData.fecha_ingreso);
-    const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
-    const endDateTime = DateTime.fromJSDate(endDate).endOf('day');
-
+    const startDateTime = DateTime.fromJSDate(startDate);
+    const endDateTime = DateTime.fromJSDate(endDate);
+  
     // Calcular antigüedad y días de vacaciones
     const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
-    const monthsOfService = this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime);
-    const daysOfService = this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime);
     const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
-
+  
+    // Extraer los años de startDate y endDate
+    const startYear = startDateTime.year;
+    const endYear = endDateTime.year;
+  
     // Obtener recesos generales y días no hábiles
-    const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startDateTime.year);
-    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startDateTime.year);
-
-  // Obtener recesos personalizados del usuario
- const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(userData.id, startDateTime.year);
-
+    const { holidayPeriods } = await this.recesoService.getHolidayPeriods(startYear);
+    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(startYear);
+  
+    // Obtener recesos personalizados del usuario
+    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(userData.id, startYear);
+  
     const recesos = [];
     let totalNonHolidayDays = 0;
-    const nonHolidayDetails = [];
-
-    // Procesar recesos, priorizando personalizados sobre generales
+    const nonHolidayDaysDetails = [];
+  
+    // Procesar recesos
     for (const period of holidayPeriods) {
-      const personalizedReceso = personalizedRecesses.find(p => p.name === period.name); // Buscar receso personalizado con el mismo nombre
-      const effectiveReceso = personalizedReceso || period; // Priorizar receso personalizado si existe
-
-      const startDateHol = DateTime.fromJSDate(effectiveReceso.startDate).startOf('day');
-      const endDateHol = DateTime.fromJSDate(effectiveReceso.endDate).endOf('day');
-
+      const personalizedReceso = personalizedRecesses.find(p => p.name === period.name) || period;
+  
+      const startDateHol = DateTime.fromJSDate(personalizedReceso.startDate).startOf('day');
+      const endDateHol = DateTime.fromJSDate(personalizedReceso.endDate).endOf('day');
+  
       const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
       const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
-
+  
       totalNonHolidayDays += nonHolidayDaysCount;
-
+  
       nonHolidayDays.forEach(nonHoliday => {
         const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
         if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
-          nonHolidayDetails.push({
+          nonHolidayDaysDetails.push({
             date: nonHoliday.date,
-            reason: `Dentro del receso ${personalizedReceso ? 'personalizado' : 'general'} ${effectiveReceso.name}`
+            reason: `Dentro del receso ${personalizedReceso.name}`
           });
         }
       });
-
+  
       recesos.push({
-        name: effectiveReceso.name,
-        startDate: effectiveReceso.startDate,
-        endDate: effectiveReceso.endDate,
-        totalDays: totalDays,
+        name: personalizedReceso.name,
+        startDate: personalizedReceso.startDate,
+        endDate: personalizedReceso.endDate,
+        totalDays,
         nonHolidayDays: nonHolidayDaysCount,
         daysCount: totalDays - nonHolidayDaysCount,
-        type: personalizedReceso ? 'personalizado' : 'general'
+        type: personalizedReceso === period ? 'general' : 'personalizado'
       });
     }
-
+  
     const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
     let remainingVacationDays = vacationDays - totalVacationDaysUsed;
+  
+    // Consultar licencias autorizadas para el usuario
+    const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
     
-     // Consultar licencias autorizadas para el usuario
-     const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
-   
     // Consultar las solicitudes de vacaciones en el rango de fechas
     const { totalAuthorizedVacationDays, requests: vacationRequests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
-    
+
+    console.log('Días de vacaciones autorizados:', totalAuthorizedVacationDays);
+    console.log('Solicitudes de vacaciones autorizadas:', vacationRequests);
     // Restar los días de licencias y solicitudes autorizadas de las vacaciones restantes
     remainingVacationDays -= (totalAuthorizedLicenseDays + totalAuthorizedVacationDays);
-    
-
-    // Asegurarse de que los días de vacaciones restantes no sean negativos
-    //remainingVacationDays = Math.max(0, remainingVacationDays);
-
+  
     return {
       carnetIdentidad: userData.carnetIdentidad,
       name: userData.nombres,
@@ -110,13 +106,13 @@ export class VacationService {
       position: userData.profesion,
       fechaIngreso: new Date(userData.fecha_ingreso),
       antiguedadEnAnios: Math.floor(yearsOfService),
-      antiguedadEnMeses: Math.floor(monthsOfService),
-      antiguedadEnDias: Math.floor(daysOfService),
+      antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
+      antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
       diasDeVacacion: vacationDays,
       diasDeVacacionRestantes: remainingVacationDays,
-      recesos: recesos,
+      recesos,
       diasNoHabiles: totalNonHolidayDays,
-      nonHolidayDaysDetails: nonHolidayDetails,
+      nonHolidayDaysDetails,
       licenciasAutorizadas: {
         totalAuthorizedDays: totalAuthorizedLicenseDays,
         requests: licenseRequests
@@ -127,4 +123,5 @@ export class VacationService {
       }
     };
   }
+  
 }

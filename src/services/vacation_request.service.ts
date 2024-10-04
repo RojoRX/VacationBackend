@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { UserService } from 'src/services/user.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
@@ -22,14 +22,14 @@ export class VacationRequestService {
     private readonly nonHolidayService: NonHolidayService,
   ) {}
 
-  
+
 // Método para crear una solicitud de vacaciones
 async createVacationRequest(
   ci: string,
   startDate: string,
   endDate: string,
   position: string,
-  managementPeriod: string, // Recibido desde el frontend
+  managementPeriod: { startYear: number; endYear: number },
 ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
   const user = await this.userService.findByCarnet(ci);
 
@@ -43,9 +43,9 @@ async createVacationRequest(
   const daysOfVacation = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
   const returnDate = await calculateReturnDate(startDate, daysOfVacation, this.nonHolidayService);
 
-  // Crear y guardar la solicitud de vacaciones con el período de gestión enviado desde el frontend
+  // Crear y guardar la solicitud de vacaciones
   const vacationRequest = this.vacationRequestRepository.create({
-    user,
+    user,  // Se asigna el usuario correctamente
     position,
     requestDate: new Date().toISOString().split('T')[0],
     startDate: new Date(startDate).toISOString().split('T')[0],
@@ -53,15 +53,20 @@ async createVacationRequest(
     totalDays: daysOfVacation,
     status: 'PENDING', // Estado inicial ajustado a 'PENDING'
     returnDate: new Date(returnDate).toISOString().split('T')[0],
-    managementPeriod, // Almacenar el período de gestión proporcionado
+    managementPeriod: {  // Usar el objeto managementPeriod
+      startYear: managementPeriod.startYear,
+      endYear: managementPeriod.endYear
+    },
   });
 
   const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
 
   // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
   const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-  return { ...requestWithoutSensitiveData, ci: user.ci };
+  return { ...requestWithoutSensitiveData, ci: user.ci }; // Ajuste al usar user.ci
 }
+
+
 
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
@@ -87,7 +92,6 @@ async createVacationRequest(
     });
   }
 
-  // Método para contar los días de vacaciones autorizados en un rango de fechas
   async countAuthorizedVacationDaysInRange(
     ci: string,
     startDate: string,
@@ -97,32 +101,45 @@ async createVacationRequest(
     if (new Date(startDate) > new Date(endDate)) {
       throw new HttpException('Invalid date range', HttpStatus.BAD_REQUEST);
     }
-
+  
     // Buscar usuario por carnet de identidad
     const user = await this.userService.findByCarnet(ci);
 
     if (!user) {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
-
-    // Obtener las solicitudes autorizadas y contar los días autorizados
-    const authorizedVacationDays = await getAuthorizedVacationRequestsInRange(
-      this.vacationRequestRepository,
-      user.id,
-      startDate,
-      endDate,
-    );
+  
+    // Extraer los años de las fechas
+    const startYear = new Date(startDate).getFullYear();
+    const endYear = new Date(endDate).getFullYear();
+  
+    // Obtener las solicitudes autorizadas que coincidan con los años del período de gestión
+    const authorizedVacationDays = await this.vacationRequestRepository.find({
+      where: {
+        user: { id: user.id },
+        status: 'AUTHORIZED',
+        managementPeriod: {
+          startYear: startYear, // Debe coincidir con el startYear del managementPeriod
+          endYear: endYear,     // Debe coincidir con el endYear del managementPeriod
+        },
+      },
+    });
 
     // Verificar que authorizedVacationDays no sea nulo o vacío
-    if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays.requests)) {
+    if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays)) {
       throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
+  
+    // Calcular total de días autorizados
+    const totalAuthorizedDays = authorizedVacationDays.reduce((total, request) => total + request.totalDays, 0);
+  
     return {
-      ...authorizedVacationDays,
-      totalAuthorizedVacationDays: authorizedVacationDays.totalAuthorizedDays,
+      requests: authorizedVacationDays,
+      totalAuthorizedVacationDays: totalAuthorizedDays,
     };
   }
+  
+
 
   // Método para actualizar el estado de la solicitud de vacaciones
   async updateVacationRequestStatus(
@@ -219,4 +236,6 @@ async createVacationRequest(
       } as VacationRequestDTO;
     });
   }
+
+  
 }
