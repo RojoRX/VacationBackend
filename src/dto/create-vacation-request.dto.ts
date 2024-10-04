@@ -4,5 +4,6 @@ export class CreateVacationRequestDto {
     startDate: string;       // Fecha de inicio de vacaciones
     endDate: string;         // Fecha de fin de vacaciones
     position: string;        // Cargo del usuario
+    managementPeriod: string; // Este será enviado desde el frontend
   }
   

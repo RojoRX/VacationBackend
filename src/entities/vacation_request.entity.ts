@@ -6,47 +6,50 @@ export class VacationRequest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, (user) => user.vacationRequests) // Relación con la entidad User
+  @ManyToOne(() => User, (user) => user.vacationRequests)
   user: User;
 
   @Column()
-  position: string; // Cargo del usuario
+  position: string;
 
   @Column({ type: 'date' })
-  requestDate: string; // Fecha de solicitud
+  requestDate: string;
 
   @Column({ type: 'date' })
-  startDate: string; // Fecha de inicio de vacaciones
+  startDate: string;
 
   @Column({ type: 'date' })
-  endDate: string; // Fecha de fin de vacaciones
+  endDate: string;
 
   @Column({ type: 'int' })
-  totalDays: number; // Días totales calculados de vacaciones
+  totalDays: number;
 
   @Column({
     type: 'enum',
     enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'],
-    default: 'PENDING', // Estado inicial ajustado a 'PENDING'
+    default: 'PENDING',
   })
-  status: string; // Estado de la solicitud
+  status: string;
 
   @Column({ type: 'date', nullable: true })
-  postponedDate?: string; // Fecha de postergación, si aplica
+  postponedDate?: string;
 
   @Column({ type: 'text', nullable: true })
-  postponedReason?: string; // Justificación de postergación, si aplica
+  postponedReason?: string;
 
   @Column({ type: 'date' })
-  returnDate: string; // Fecha de retorno calculada
+  returnDate: string;
 
   @Column({ type: 'boolean', default: false })
-  approvedByHR: boolean; // Indicador de aprobación por RRHH
+  approvedByHR: boolean;
 
-  @Column({ type: 'boolean', default: false }) // Campo para la aprobación del supervisor
-  approvedBySupervisor: boolean; // Aprobación del supervisor
+  @Column({ type: 'boolean', default: false })
+  approvedBySupervisor: boolean;
 
-  // Relación con el supervisor que aprobó la solicitud
-  @ManyToOne(() => User, { nullable: true }) // Supervisor opcional en la aprobación
-  approvedBy: User; // Supervisor que aprobó la solicitud
+  @ManyToOne(() => User, { nullable: true })
+  approvedBy: User;
+
+  // Nuevo campo para almacenar el período de gestión de la solicitud
+  @Column({ type: 'varchar' })
+  managementPeriod: string; // Ejemplo: "GESTION 2022 - 2023"
 }

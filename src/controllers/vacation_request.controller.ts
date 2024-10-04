@@ -19,27 +19,29 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 export class VacationRequestController {
   constructor(private readonly vacationRequestService: VacationRequestService) {}
 
-  // Endpoint para crear una solicitud de vacaciones
-  @Post()
-  @ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
-  @ApiBody({ type: CreateVacationRequestDto })
-  @ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
-  @ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
-  async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
-    const { ci, startDate, endDate, position } = createVacationRequestDto;
+// Endpoint para crear una solicitud de vacaciones
+@Post()
+@ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
+@ApiBody({ type: CreateVacationRequestDto })
+@ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
+@ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
+async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
+  const { ci, startDate, endDate, position, managementPeriod } = createVacationRequestDto; // Añadimos managementPeriod
 
-    try {
-      const vacationRequest = await this.vacationRequestService.createVacationRequest(
-        ci,
-        startDate,
-        endDate,
-        position,
-      );
-      return vacationRequest;
-    } catch (error) {
-      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  try {
+    const vacationRequest = await this.vacationRequestService.createVacationRequest(
+      ci,
+      startDate,
+      endDate,
+      position,
+      managementPeriod, // Pasamos managementPeriod al servicio
+    );
+    return vacationRequest;
+  } catch (error) {
+    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
   }
+}
+
 
   // Endpoint para obtener todas las solicitudes de vacaciones de un usuario
   @Get('user/:userId')

@@ -22,43 +22,47 @@ export class VacationRequestService {
     private readonly nonHolidayService: NonHolidayService,
   ) {}
 
-  // Método para crear una solicitud de vacaciones
-  async createVacationRequest(
-    ci: string,
-    startDate: string,
-    endDate: string,
-    position: string,
-  ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
-    const user = await this.userService.findByCarnet(ci);
+  
+// Método para crear una solicitud de vacaciones
+async createVacationRequest(
+  ci: string,
+  startDate: string,
+  endDate: string,
+  position: string,
+  managementPeriod: string, // Recibido desde el frontend
+): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
+  const user = await this.userService.findByCarnet(ci);
 
-    if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-    }
-
-    // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
-    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
-
-    const daysOfVacation = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
-    const returnDate = await calculateReturnDate(startDate, daysOfVacation, this.nonHolidayService);
-
-    // Crear y guardar la solicitud de vacaciones
-    const vacationRequest = this.vacationRequestRepository.create({
-      user,
-      position,
-      requestDate: new Date().toISOString().split('T')[0],
-      startDate: new Date(startDate).toISOString().split('T')[0],
-      endDate: new Date(endDate).toISOString().split('T')[0],
-      totalDays: daysOfVacation,
-      status: 'PENDING', // Estado inicial ajustado a 'PENDING'
-      returnDate: new Date(returnDate).toISOString().split('T')[0],
-    });
-
-    const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-
-    // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
-    const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-    return { ...requestWithoutSensitiveData, ci: user.ci }; // Ajuste al usar user.ci
+  if (!user) {
+    throw new HttpException('User not found', HttpStatus.NOT_FOUND);
   }
+
+  // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
+  await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
+
+  const daysOfVacation = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
+  const returnDate = await calculateReturnDate(startDate, daysOfVacation, this.nonHolidayService);
+
+  // Crear y guardar la solicitud de vacaciones con el período de gestión enviado desde el frontend
+  const vacationRequest = this.vacationRequestRepository.create({
+    user,
+    position,
+    requestDate: new Date().toISOString().split('T')[0],
+    startDate: new Date(startDate).toISOString().split('T')[0],
+    endDate: new Date(endDate).toISOString().split('T')[0],
+    totalDays: daysOfVacation,
+    status: 'PENDING', // Estado inicial ajustado a 'PENDING'
+    returnDate: new Date(returnDate).toISOString().split('T')[0],
+    managementPeriod, // Almacenar el período de gestión proporcionado
+  });
+
+  const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
+
+  // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
+  const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
+  return { ...requestWithoutSensitiveData, ci: user.ci };
+}
+
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
