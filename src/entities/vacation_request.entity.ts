@@ -49,9 +49,10 @@ export class VacationRequest {
   @ManyToOne(() => User, { nullable: true })
   approvedBy: User;
   // Nuevo campo para almacenar el período de gestión de la solicitud
-  @Column('jsonb')  // Usar un tipo de dato JSON para guardar el periodo de gestión
-  managementPeriod: {
-    startYear: number;
-    endYear: number;
-  };
+  // Usar un tipo de datos adecuado para fechas en lugar de JSONB
+  @Column({ type: 'date' })
+  managementPeriodStart: string;
+
+  @Column({ type: 'date' })
+  managementPeriodEnd: string;
 }

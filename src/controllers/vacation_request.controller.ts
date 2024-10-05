@@ -20,27 +20,32 @@ export class VacationRequestController {
   constructor(private readonly vacationRequestService: VacationRequestService) { }
 
 // Endpoint para crear una solicitud de vacaciones
+
 @Post()
 @ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
 @ApiBody({ type: CreateVacationRequestDto })
 @ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
 @ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
 async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
-  const { ci, startDate, endDate, position, managementPeriod } = createVacationRequestDto;
+    const { ci, startDate, endDate, position, managementPeriodStart, managementPeriodEnd } = createVacationRequestDto;
 
-  try {
-    const vacationRequest = await this.vacationRequestService.createVacationRequest(
-      ci,
-      startDate,
-      endDate,
-      position,
-      managementPeriod, // Pasar el objeto de managementPeriod
-    );
-    return vacationRequest;
-  } catch (error) {
-    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
-  }
+    try {
+        const vacationRequest = await this.vacationRequestService.createVacationRequest(
+            ci,
+            startDate,
+            endDate,
+            position,
+            {
+                startPeriod: managementPeriodStart, // Usamos managementPeriodStart
+                endPeriod: managementPeriodEnd,     // Usamos managementPeriodEnd
+            },
+        );
+        return vacationRequest;
+    } catch (error) {
+        throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }
+
 
 
 
