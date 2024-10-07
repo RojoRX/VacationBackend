@@ -130,10 +130,6 @@ export class VacationRequestService {
     },
   });
     
-    console.log('Consulta SQL:', this.vacationRequestRepository.createQueryBuilder().getSql()); // Loggear la consulta SQL
-    console.log('Resultados de la consulta:', authorizedVacationDays);
-    
-
     // Verificar que authorizedVacationDays no sea nulo o vacío
     if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays)) {
         throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
