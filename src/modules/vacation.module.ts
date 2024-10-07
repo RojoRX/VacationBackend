@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+// vacation.module.ts
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 import { VacationService } from '../services/vacation.service';
@@ -6,7 +7,7 @@ import { VacationController } from '../controllers/vacation.controller';
 import { UserService } from '../services/user.service';
 import { GeneralHolidayPeriodService } from 'src/services/generalHolidayPeriod.service';
 import { UserModule } from './user.module';
-import { NonHolidayModule } from './nonholiday.module'; // Importa NonHolidayModule para que NonHolidayService esté disponible
+import { NonHolidayModule } from './nonholiday.module';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { VacationCalculatorService } from 'src/services/vacation-calculator.service';
 import { RecesoService } from 'src/services/receso.service';
@@ -22,12 +23,13 @@ import { VacationRequestModule } from './vacation_request.module';
   imports: [
     TypeOrmModule.forFeature([GeneralHolidayPeriod, UserHolidayPeriod, License]),
     UserModule,
-    NonHolidayModule, // Asegúrate de que NonHolidayModule esté importado aquí
+    NonHolidayModule,
     UserHolidayPeriodModule,
-    LicenseModule, 
-    VacationRequestModule
+    LicenseModule,
+    forwardRef(() => VacationRequestModule),
   ],
   controllers: [VacationController],
-  providers: [VacationService, GeneralHolidayPeriod,VacationCalculatorService, RecesoService,],
+  providers: [VacationService, GeneralHolidayPeriod, VacationCalculatorService, RecesoService],
+  exports: [VacationService],
 })
 export class VacationModule {}
