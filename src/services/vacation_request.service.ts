@@ -266,6 +266,47 @@ export class VacationRequestService {
       } as VacationRequestDTO;
     });
   }
+  
+  
+// Método para obtener una solicitud de vacaciones por su ID
+async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
+  // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user'], // Incluir la relación con el usuario
+  });
+
+  // Si la solicitud no se encuentra, lanzar una excepción
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+  }
+
+  // Mapear los datos de la solicitud a un DTO
+  const vacationRequestDTO: VacationRequestDTO = {
+    id: request.id,
+    position: request.position,
+    requestDate: request.requestDate,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    user: {
+      id: request.user.id,
+      ci: request.user.ci,
+      fecha_ingreso: request.user.fecha_ingreso,
+      username: request.user.username,
+      // No incluir datos sensibles como la contraseña
+    },
+  };
+
+  return vacationRequestDTO;
+}
+
 
 
 }

@@ -17,38 +17,33 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
 export class VacationRequestController {
-  constructor(private readonly vacationRequestService: VacationRequestService) { }
+  constructor(private readonly vacationRequestService: VacationRequestService) {}
 
-// Endpoint para crear una solicitud de vacaciones
-
-@Post()
-@ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
-@ApiBody({ type: CreateVacationRequestDto })
-@ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
-@ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
-async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
+  // Endpoint para crear una solicitud de vacaciones
+  @Post()
+  @ApiOperation({ summary: 'Crear una solicitud de vacaciones' })
+  @ApiBody({ type: CreateVacationRequestDto })
+  @ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
+  async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
     const { ci, startDate, endDate, position, managementPeriodStart, managementPeriodEnd } = createVacationRequestDto;
 
     try {
-        const vacationRequest = await this.vacationRequestService.createVacationRequest(
-            ci,
-            startDate,
-            endDate,
-            position,
-            {
-                startPeriod: managementPeriodStart, // Usamos managementPeriodStart
-                endPeriod: managementPeriodEnd,     // Usamos managementPeriodEnd
-            },
-        );
-        return vacationRequest;
+      const vacationRequest = await this.vacationRequestService.createVacationRequest(
+        ci,
+        startDate,
+        endDate,
+        position,
+        {
+          startPeriod: managementPeriodStart, // Usamos managementPeriodStart
+          endPeriod: managementPeriodEnd,     // Usamos managementPeriodEnd
+        },
+      );
+      return vacationRequest;
     } catch (error) {
-        throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
-}
-
-
-
-
+  }
 
   // Endpoint para obtener todas las solicitudes de vacaciones de un usuario
   @Get('user/:userId')
@@ -87,6 +82,23 @@ async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequ
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
+    // Validación de parámetros
+    if (!ci || !startDate || !endDate) {
+      throw new HttpException('Faltan parámetros obligatorios.', HttpStatus.BAD_REQUEST);
+    }
+
+    const startDateTime = new Date(startDate);
+    const endDateTime = new Date(endDate);
+
+    // Validación de fechas
+    if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+      throw new HttpException('Fechas inválidas.', HttpStatus.BAD_REQUEST);
+    }
+
+    if (startDateTime > endDateTime) {
+      throw new HttpException('La fecha de inicio no puede ser mayor que la fecha de fin.', HttpStatus.BAD_REQUEST);
+    }
+
     try {
       const { totalAuthorizedVacationDays, requests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(
         ci,
@@ -125,4 +137,20 @@ async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequ
   async getVacationRequestsBySupervisor(@Param('supervisorId') supervisorId: number): Promise<VacationRequestDTO[]> {
     return await this.vacationRequestService.getVacationRequestsBySupervisor(supervisorId);
   }
+
+  // Endpoint para obtener una solicitud de vacaciones por ID
+@Get(':id')
+@ApiOperation({ summary: 'Obtener solicitud de vacaciones por ID' })
+@ApiResponse({ status: 200, description: 'Solicitud de vacaciones encontrada' })
+@ApiResponse({ status: 404, description: 'Solicitud de vacaciones no encontrada' })
+async getVacationRequestById(@Param('id') id: number): Promise<VacationRequestDTO> {
+  try {
+    const vacationRequest = await this.vacationRequestService.getVacationRequestById(id);
+    return vacationRequest;
+  } catch (error) {
+    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+  }
 }
+
+}
+
