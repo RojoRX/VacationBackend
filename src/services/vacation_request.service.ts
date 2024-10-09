@@ -171,65 +171,74 @@ export class VacationRequestService {
 
 
 
-  // Método para actualizar el estado de la solicitud de vacaciones
-  async updateVacationRequestStatus(
-    id: number,
-    status: string,
-    supervisorId: number,
-  ): Promise<VacationRequestDTO> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user', 'user.department'], // Asegúrate de incluir la relación con el departamento
-    });
+// Método para actualizar el estado de la solicitud de vacaciones 
+async updateVacationRequestStatus(
+  id: number,
+  status: string,
+  supervisorId: number,
+): Promise<VacationRequestDTO> {
+  // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user', 'approvedBy', 'user.department'], // Incluir la relación con el aprobador y el departamento
+  });
 
-    if (!request) {
-      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-    }
-
-    // Verificar que el supervisor tenga permiso para actualizar solicitudes de su departamento
-    const supervisor = await this.userService.findById(supervisorId);
-    if (!supervisor || supervisor.department.id !== request.user.department.id) {
-      throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
-    }
-
-    // Verificar que el estado enviado sea un valor válido del enum
-    const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
-    if (!validStatuses.includes(status)) {
-      throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
-    }
-
-    // Actualizar el estado y el valor de approvedBySupervisor
-    request.status = status;
-    request.approvedBySupervisor = true; // Siempre se marca como aprobado por el supervisor al actualizar el estado
-
-    // Guardar la solicitud
-    await this.vacationRequestRepository.save(request);
-
-    // Mapear a DTO
-    const vacationRequestDTO: VacationRequestDTO = {
-      id: request.id,
-      position: request.position,
-      requestDate: request.requestDate,
-      startDate: request.startDate,
-      endDate: request.endDate,
-      totalDays: request.totalDays,
-      status: request.status,
-      returnDate: request.returnDate,
-      postponedDate: request.postponedDate,
-      postponedReason: request.postponedReason,
-      approvedByHR: request.approvedByHR,
-      approvedBySupervisor: request.approvedBySupervisor,
-      user: {
-        id: request.user.id,
-        ci: request.user.ci,
-        fecha_ingreso: request.user.fecha_ingreso,
-        username: request.user.username,
-        // No incluimos el password ni otros datos sensibles
-      },
-    };
-
-    return vacationRequestDTO;
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
   }
+
+  // Verificar que el supervisor tenga permiso para actualizar solicitudes de su departamento
+  const supervisor = await this.userService.findById(supervisorId);
+  if (!supervisor || supervisor.department.id !== request.user.department.id) {
+    throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
+  }
+
+  // Verificar que el estado enviado sea un valor válido del enum
+  const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
+  if (!validStatuses.includes(status)) {
+    throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
+  }
+
+  // Actualizar el estado y el valor de approvedBySupervisor
+  request.status = status;
+  request.approvedBySupervisor = true; // Siempre se marca como aprobado por el supervisor al actualizar el estado
+
+  // Guardar la solicitud
+  await this.vacationRequestRepository.save(request);
+
+  // Mapear a DTO
+  const vacationRequestDTO: VacationRequestDTO = {
+    id: request.id,
+    position: request.position,
+    requestDate: request.requestDate,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    user: {
+      id: request.user.id,
+      ci: request.user.ci,
+      fecha_ingreso: request.user.fecha_ingreso,
+      username: request.user.username,
+    },
+    managementPeriodStart: request.managementPeriodStart, // Agregar el período de gestión
+    managementPeriodEnd: request.managementPeriodEnd,     // Agregar el período de gestión
+    approvedBy: request.approvedBy ? {
+      id: request.approvedBy.id,
+      ci: request.approvedBy.ci,
+      fecha_ingreso: request.approvedBy.fecha_ingreso,
+      username: request.approvedBy.username,
+    } : undefined, // Manejar caso en que no hay aprobador
+  };
+
+  return vacationRequestDTO;
+}
+
 
   // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
   async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
@@ -267,13 +276,14 @@ export class VacationRequestService {
     });
   }
   
-  
+
+
 // Método para obtener una solicitud de vacaciones por su ID
 async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
   // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
   const request = await this.vacationRequestRepository.findOne({
     where: { id },
-    relations: ['user'], // Incluir la relación con el usuario
+    relations: ['user', 'approvedBy'], // Incluir la relación con el usuario y con el aprobador
   });
 
   // Si la solicitud no se encuentra, lanzar una excepción
@@ -300,8 +310,15 @@ async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
       ci: request.user.ci,
       fecha_ingreso: request.user.fecha_ingreso,
       username: request.user.username,
-      // No incluir datos sensibles como la contraseña
     },
+    managementPeriodStart: request.managementPeriodStart,
+    managementPeriodEnd: request.managementPeriodEnd,
+    approvedBy: request.approvedBy ? {
+      id: request.approvedBy.id,
+      ci: request.approvedBy.ci,
+      fecha_ingreso: request.approvedBy.fecha_ingreso,
+      username: request.approvedBy.username,
+    } : undefined, // Manejar caso en que no hay aprobador
   };
 
   return vacationRequestDTO;

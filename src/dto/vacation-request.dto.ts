@@ -1,4 +1,5 @@
 export class VacationRequestDTO {
+  id: number;
   position: string;
   requestDate: string;
   startDate: string;
@@ -6,16 +7,22 @@ export class VacationRequestDTO {
   totalDays: number;
   status: string;
   returnDate: string;
+  postponedDate?: string;
+  postponedReason?: string;
+  approvedByHR: boolean;
+  approvedBySupervisor: boolean;
+  approvedBy?: {
+    id: number;
+    ci: string;
+    fecha_ingreso: string;
+    username: string;
+  };
+  managementPeriodStart: string; // Período de gestión
+  managementPeriodEnd: string;   // Período de gestión
   user: {
     id: number;
     ci: string;
     fecha_ingreso: string;
     username: string;
-    // No incluimos el password ni otros datos sensibles
   };
-  postponedDate: string | null;
-  postponedReason: string | null;
-  id: number;
-  approvedByHR: boolean;
-  approvedBySupervisor: boolean; // Añadir este campo para el DTO
 }
