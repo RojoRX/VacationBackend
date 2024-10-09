@@ -152,5 +152,18 @@ async getVacationRequestById(@Param('id') id: number): Promise<VacationRequestDT
   }
 }
 
+@Get(':id/details')
+@ApiOperation({ summary: 'Obtener detalles de la solicitud de vacaciones por ID' })
+@ApiResponse({ status: 200, description: 'Detalles de la solicitud de vacaciones encontrados' })
+@ApiResponse({ status: 404, description: 'Solicitud de vacaciones no encontrada' })
+async getVacationRequestDetails(@Param('id') id: number): Promise<any> {
+  try {
+    const vacationRequestDetails = await this.vacationRequestService.getVacationRequestDetails(id);
+    return vacationRequestDetails; // Retorna directamente el objeto creado en el servicio
+  } catch (error) {
+    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+}
+
 }
 

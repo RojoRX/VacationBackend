@@ -33,62 +33,57 @@ export class VacationRequestService {
     position: string,
     managementPeriod: { startPeriod: string; endPeriod: string },
   ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
-
+  
     // Buscar el usuario por CI
     const user = await this.userService.findByCarnet(ci);
-
     if (!user) {
-
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
-
-
-
+  
     // Obtener los días restantes de vacaciones del empleado
     const vacationResponse = await this.vacationService.calculateVacationDays(ci, new Date(managementPeriod.startPeriod), new Date(managementPeriod.endPeriod));
-
-
+  
     // Verificar si los días restantes son suficientes
     const daysRequested = await calculateVacationDays(startDate, endDate, this.nonHolidayService); // Días solicitados
     const remainingVacationDays = vacationResponse.diasDeVacacionRestantes;
-
+  
     if (daysRequested > remainingVacationDays) {
       throw new HttpException(
         `No puedes solicitar más de ${remainingVacationDays} días de vacaciones. Has solicitado ${daysRequested} días.`,
         HttpStatus.BAD_REQUEST
       );
     }
-
+  
     // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
     await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
+  
     // Calcular la fecha de retorno
     const returnDate = await calculateReturnDate(startDate, daysRequested, this.nonHolidayService);
-
+  
     // Crear y guardar la solicitud de vacaciones
     const vacationRequest = this.vacationRequestRepository.create({
-      user,  // Asignamos el usuario correctamente
+      user,
       position,
-      requestDate: new Date().toISOString().split('T')[0], // Fecha actual de solicitud en formato YYYY-MM-DD
-      startDate: new Date(startDate).toISOString().split('T')[0], // Convertimos fecha de inicio
-      endDate: new Date(endDate).toISOString().split('T')[0], // Convertimos fecha de fin
+      requestDate: new Date().toISOString(), // Usar la fecha y hora actual en formato ISO
+      startDate: new Date(startDate).toISOString(), // Mantener el formato ISO para la fecha de inicio
+      endDate: new Date(endDate).toISOString(), // Mantener el formato ISO para la fecha de fin
       totalDays: daysRequested,
       status: 'PENDING', // Estado inicial
-      returnDate: new Date(returnDate).toISOString().split('T')[0], // Convertimos la fecha de retorno
+      returnDate: new Date(returnDate).toISOString(), // Usar el formato ISO para la fecha de retorno
       managementPeriodStart: managementPeriod.startPeriod, // Asignar startPeriod
       managementPeriodEnd: managementPeriod.endPeriod, // Asignar endPeriod
     });
-
-
+  
     // Guardar la solicitud en la base de datos
     const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-
+  
     // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
     const response = { ...requestWithoutSensitiveData, ci: user.ci };
-
-
+  
     return response;
   }
+  
 
 
 
@@ -278,6 +273,7 @@ async updateVacationRequestStatus(
   
 
 
+
 // Método para obtener una solicitud de vacaciones por su ID
 async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
   // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
@@ -325,5 +321,69 @@ async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
 }
 
 
+
+async getVacationRequestDetails(id: number): Promise<any> {
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user', 'user.department'], // Asegúrate de que las relaciones estén correctamente configuradas
+  });
+
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+  }
+
+  if (!request.user) {
+    throw new HttpException('User not found for this vacation request', HttpStatus.NOT_FOUND);
+  }
+
+  // Obtener los datos necesarios
+  const ci = request.user.ci; // Asegúrate de que este campo esté disponible
+  const managementPeriodStart = request.managementPeriodStart; // Cambiado
+  const managementPeriodEnd = request.managementPeriodEnd; // Cambiado
+
+  if (!managementPeriodStart || !managementPeriodEnd) {
+    throw new HttpException('Management period not found for this request', HttpStatus.NOT_FOUND);
+  }
+
+  // Obtener los días restantes de vacaciones del empleado
+  let vacationResponse;
+  try {
+    vacationResponse = await this.vacationService.calculateVacationDays(
+      ci,
+      new Date(managementPeriodStart),
+      new Date(managementPeriodEnd)
+    );
+  } catch (error) {
+    console.error('Error al calcular los días de vacaciones:', error);
+    throw new HttpException('Error al calcular los días de vacaciones', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  // Construir la respuesta con la información deseada
+  return {
+    requestId: request.id,
+    userName: request.user.fullName,
+    requestDate: request.requestDate,
+    department: request.user.department ? request.user.department.name : null,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    managementPeriodStart: managementPeriodStart,
+    managementPeriodEnd: managementPeriodEnd,
+    // Agregar los datos calculados
+    fechaIngreso: vacationResponse.fechaIngreso,
+    antiguedadEnAnios: vacationResponse.antiguedadEnAnios,
+    diasDeVacacion: vacationResponse.diasDeVacacion,
+    diasDeVacacionRestantes: vacationResponse.diasDeVacacionRestantes,
+    recesos: vacationResponse.recesos,
+    licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
+    solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
+  };
+}
 
 }
