@@ -1,5 +1,5 @@
 // src/controllers/userholidayperiod.controller.ts
-import { Controller, Get, Post, Put, Delete, Param, Body, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Res, HttpStatus, NotFoundException } from '@nestjs/common';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
 import { Response } from 'express';
@@ -10,7 +10,7 @@ import { CreateUserHolidayPeriodDto } from 'src/dto/create-user-holiday-period.d
 @ApiTags('Recesos Personalizados')
 @Controller('user-holiday-periods')
 export class UserHolidayPeriodController {
-  constructor(private readonly userHolidayPeriodService: UserHolidayPeriodService) {}
+  constructor(private readonly userHolidayPeriodService: UserHolidayPeriodService) { }
 
   @Post()
   @ApiOperation({ summary: 'Crear un período de vacaciones para un usuario' })
@@ -79,4 +79,20 @@ export class UserHolidayPeriodController {
       res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error deleting holiday period', error });
     }
   }
+  @Get('custom-holidays/:userId')
+  @ApiOperation({ summary: 'Obtener todos los recesos personalizados de un usuario' })
+  @ApiResponse({ status: 200, description: 'Recesos personalizados obtenidos exitosamente' })
+  @ApiResponse({ status: 404, description: 'No se encontraron recesos personalizados' })
+  async getAllCustomHolidaysByUserId(
+    @Param('userId') userId: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const customHolidays = await this.userHolidayPeriodService.getAllCustomHolidaysByUserId(userId);
+      res.status(HttpStatus.OK).json(customHolidays);
+    } catch (error) {
+      res.status(error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
+    }
+  }
+
 }

@@ -88,4 +88,31 @@ export class UserHolidayPeriodService {
       throw new NotFoundException(`Receso con id ${id} no encontrado.`);
     }
   }
+
+  async getAllCustomHolidaysByUserId(userId: number): Promise<UserHolidayPeriodDto[]> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID ${userId} no encontrado.`);
+    }
+
+    const customHolidays = await this.userHolidayPeriodRepository.find({
+      where: { user: { id: userId } },
+      relations: ['user'],  // Asegúrate de que se relacionen correctamente con el usuario
+    });
+
+    if (!customHolidays || customHolidays.length === 0) {
+      throw new NotFoundException(`No se encontraron recesos personalizados para el usuario con ID ${userId}.`);
+    }
+
+    // Mapear los resultados a UserHolidayPeriodDto para ser retornados
+    return customHolidays.map(holidayPeriod => ({
+      id: holidayPeriod.id,
+      name: holidayPeriod.name,
+      startDate: holidayPeriod.startDate,
+      endDate: holidayPeriod.endDate,
+      year: holidayPeriod.year,
+    }));
+  }
+
 }
