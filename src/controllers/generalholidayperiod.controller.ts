@@ -1,7 +1,6 @@
-// src/controllers/general-holiday-period.controller.ts
-import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put } from "@nestjs/common";
-import { GeneralHolidayPeriod } from "src/entities/generalHolidayPeriod.entity";
-import { GeneralHolidayPeriodService } from "src/services/generalHolidayPeriod.service";
+import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put, Delete } from '@nestjs/common';
+import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
+import { GeneralHolidayPeriodService } from 'src/services/generalHolidayPeriod.service';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 
@@ -10,6 +9,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 export class GeneralHolidayPeriodController {
   constructor(private readonly generalHolidayPeriodService: GeneralHolidayPeriodService) {}
 
+  // Obtener recesos por año específico
   @Get(':year')
   @ApiOperation({ summary: 'Obtener periodos de vacaciones generales por año' })
   @ApiResponse({ status: 200, description: 'Lista de periodos de vacaciones generales', type: [GeneralHolidayPeriod] })
@@ -24,6 +24,20 @@ export class GeneralHolidayPeriodController {
     }
   }
 
+  // Obtener todos los recesos existentes
+  @Get()
+  @ApiOperation({ summary: 'Obtener todos los periodos de vacaciones generales' })
+  @ApiResponse({ status: 200, description: 'Lista completa de periodos de vacaciones generales', type: [GeneralHolidayPeriod] })
+  async getAllGeneralHolidayPeriods(@Res() res: Response): Promise<void> {
+    try {
+      const allHolidayPeriods = await this.generalHolidayPeriodService.getAllGeneralHolidayPeriods();
+      res.status(HttpStatus.OK).json(allHolidayPeriods);
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving all general holiday periods', error });
+    }
+  }
+
+  // Crear un nuevo receso general
   @Post()
   @ApiOperation({ summary: 'Crear un nuevo periodo de vacaciones generales' })
   @ApiResponse({ status: 201, description: 'Periodo de vacaciones general creado exitosamente', type: GeneralHolidayPeriod })
@@ -38,6 +52,7 @@ export class GeneralHolidayPeriodController {
     }
   }
 
+  // Actualizar un receso general existente
   @Put(':id')
   @ApiOperation({ summary: 'Actualizar un periodo de vacaciones generales' })
   @ApiResponse({ status: 200, description: 'Periodo de vacaciones general actualizado exitosamente', type: GeneralHolidayPeriod })
@@ -55,6 +70,21 @@ export class GeneralHolidayPeriodController {
       res.status(HttpStatus.OK).json(updatedHolidayPeriod);
     } catch (error) {
       res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error updating general holiday period', error });
+    }
+  }
+
+  // Eliminar un receso general
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar un periodo de vacaciones generales' })
+  @ApiResponse({ status: 200, description: 'Periodo de vacaciones general eliminado exitosamente' })
+  @ApiResponse({ status: 404, description: 'Periodo de vacaciones generales no encontrado' })
+  @ApiParam({ name: 'id', required: true, description: 'ID del periodo de vacaciones a eliminar' })
+  async deleteGeneralHolidayPeriod(@Param('id') id: number, @Res() res: Response): Promise<void> {
+    try {
+      await this.generalHolidayPeriodService.deleteGeneralHolidayPeriod(id);
+      res.status(HttpStatus.OK).json({ message: 'Periodo de vacaciones general eliminado exitosamente' });
+    } catch (error) {
+      res.status(HttpStatus.NOT_FOUND).json({ message: 'Error deleting general holiday period', error });
     }
   }
 }
