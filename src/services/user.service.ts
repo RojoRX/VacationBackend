@@ -17,9 +17,7 @@ export class UserService {
     private readonly httpService: HttpService,
     @InjectRepository(Department)
     private readonly departmentRepository: Repository<Department>,
-
-  ) { }
-
+  ) {}
 
   async verifyWithExternalApi(ci: string): Promise<any> {
     try {
@@ -55,9 +53,9 @@ export class UserService {
     return this.userRepository.save(newUser);
   }
 
-
-  async findByCarnet(ci: string): Promise<User | undefined> {
-    return this.userRepository.findOne({ where: { ci } });
+  async findByCarnet(ci: string): Promise<Omit<User, 'password'> | undefined> {
+    const user = await this.userRepository.findOne({ where: { ci } });
+    return this.transformUser(user);
   }
 
   async findByUsername(username: string): Promise<User | undefined> {
@@ -70,7 +68,7 @@ export class UserService {
     return bcrypt.compare(password, user.password);
   }
 
-  //permitir la actualización del departamento de un usuario.
+  // Permitir la actualización del departamento de un usuario.
   async updateDepartment(userId: number, departmentId: number): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -84,12 +82,12 @@ export class UserService {
     await this.userRepository.save(user);
   }
 
-  async findById(userId: number): Promise<User | undefined> {
-    return this.userRepository.findOne({
+  async findById(userId: number): Promise<Omit<User, 'password'> | undefined> {
+    const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['department'],
-      select: ['id', 'ci', 'fullName', 'position', 'profesion', 'fecha_ingreso', 'role'], // Incluir el campo position
     });
+    return this.transformUser(user);
   }
 
   // user.service.ts
@@ -106,6 +104,7 @@ export class UserService {
         profesion: user.profesion,
         fecha_ingreso: user.fecha_ingreso,
         position: user.position, // Incluir el campo position
+        // Excluir la contraseña del retorno
       };
     }
 
@@ -139,5 +138,11 @@ export class UserService {
     user.role = newRole;
     await this.userRepository.save(user);
   }
-
+  
+    // Método helper para transformar el usuario
+    private transformUser(user?: User): Omit<User, 'password'> | undefined {
+      if (!user) return undefined;
+      const { password, ...userData } = user; // Desestructuramos para omitir el password
+      return userData; // Retornamos solo los campos que queremos
+    }
 }
