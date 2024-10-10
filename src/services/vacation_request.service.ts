@@ -362,6 +362,7 @@ async getVacationRequestDetails(id: number): Promise<any> {
   return {
     requestId: request.id,
     userName: request.user.fullName,
+    position: request.user.position,
     requestDate: request.requestDate,
     department: request.user.department ? request.user.department.name : null,
     startDate: request.startDate,

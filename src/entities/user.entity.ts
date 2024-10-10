@@ -37,6 +37,10 @@ export class User {
   @Column({ nullable: true })
   profesion: string;
 
+  @Column({ nullable: true })
+  position: string;
+
+
   @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
   holidayPeriods: UserHolidayPeriod[];
 

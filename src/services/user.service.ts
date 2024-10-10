@@ -18,7 +18,7 @@ export class UserService {
     @InjectRepository(Department)
     private readonly departmentRepository: Repository<Department>,
 
-  ) {}
+  ) { }
 
 
   async verifyWithExternalApi(ci: string): Promise<any> {
@@ -35,24 +35,27 @@ export class UserService {
     const apiData = await this.verifyWithExternalApi(ci);
 
     if (!apiData) {
-        throw new HttpException('User not found in external API', HttpStatus.NOT_FOUND);
+      throw new HttpException('User not found in external API', HttpStatus.NOT_FOUND);
     }
 
     const attributes = apiData.attributes;
 
     const newUser = this.userRepository.create({
-        ci,
-        username,
-        password: hashedPassword,
-        fullName: `${attributes.nombres || ''} ${attributes.apellido_paterno || ''} ${attributes.apellido_materno || ''}`.trim(),
-        celular: attributes.celular || '',
-        profesion: attributes.profesion || '',
-        fecha_ingreso: attributes.fecha_ingreso,
-        role: RoleEnum.USER,
+      ci,
+      username,
+      password: hashedPassword,
+      fullName: `${attributes.nombres || ''} ${attributes.apellido_paterno || ''} ${attributes.apellido_materno || ''}`.trim(),
+      celular: attributes.celular || '',
+      profesion: attributes.profesion || '',
+      fecha_ingreso: attributes.fecha_ingreso,
+      role: RoleEnum.USER,
+      position: '', // Dejar vacío ya que no viene desde la API externa
     });
 
     return this.userRepository.save(newUser);
-}
+  }
+
+
   async findByCarnet(ci: string): Promise<User | undefined> {
     return this.userRepository.findOne({ where: { ci } });
   }
@@ -82,54 +85,59 @@ export class UserService {
   }
 
   async findById(userId: number): Promise<User | undefined> {
-    return this.userRepository.findOne({ where: { id: userId }, relations: ['department'] });
+    return this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['department'],
+      select: ['id', 'ci', 'fullName', 'position', 'profesion', 'fecha_ingreso', 'role'], // Incluir el campo position
+    });
   }
 
-    // user.service.ts
-async getUserData(carnetIdentidad: string): Promise<any> {
-  // Buscar usuario en la base de datos
-  const user = await this.findByCarnet(carnetIdentidad);
-  
-  if (user) {
+  // user.service.ts
+  async getUserData(carnetIdentidad: string): Promise<any> {
+    // Buscar usuario en la base de datos
+    const user = await this.findByCarnet(carnetIdentidad);
+
+    if (user) {
       // Retornar datos del usuario desde la base de datos
       return {
-          id: user.id,
-          nombres: user.fullName,
-          correo_electronico: user.username,
-          profesion: user.profesion,
-          fecha_ingreso: user.fecha_ingreso,
+        id: user.id,
+        nombres: user.fullName,
+        correo_electronico: user.username,
+        profesion: user.profesion,
+        fecha_ingreso: user.fecha_ingreso,
+        position: user.position, // Incluir el campo position
       };
-  }
+    }
 
-  // Si el usuario no se encuentra en la base de datos, intentar consultar la API externa
-  try {
+    // Si el usuario no se encuentra en la base de datos, intentar consultar la API externa
+    try {
       const apiUserData = await this.verifyWithExternalApi(carnetIdentidad);
       if (apiUserData) {
-          return apiUserData.attributes;
+        return apiUserData.attributes;
       }
-  } catch (error) {
+    } catch (error) {
       console.warn('Error verificando usuario con la API externa:', error.message);
+    }
+
+    // Si no se encuentra información, lanzar un error
+    throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
   }
 
-  // Si no se encuentra información, lanzar un error
-  throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
-}
+  async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
+    // Verificar si el usuario existe
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
 
-async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
-  // Verificar si el usuario existe
-  const user = await this.userRepository.findOne({ where: { id: userId } });
-  if (!user) {
-    throw new BadRequestException('Usuario no encontrado.');
+    // Verificar si el nuevo rol es válido
+    if (!Object.values(RoleEnum).includes(newRole)) {
+      throw new BadRequestException('Rol inválido.');
+    }
+
+    // Actualizar el rol del usuario
+    user.role = newRole;
+    await this.userRepository.save(user);
   }
-
-  // Verificar si el nuevo rol es válido
-  if (!Object.values(RoleEnum).includes(newRole)) {
-    throw new BadRequestException('Rol inválido.');
-  }
-
-  // Actualizar el rol del usuario
-  user.role = newRole;
-  await this.userRepository.save(user);
-}
 
 }
