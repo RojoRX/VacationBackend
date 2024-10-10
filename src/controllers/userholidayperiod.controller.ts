@@ -1,11 +1,12 @@
 // src/controllers/userholidayperiod.controller.ts
-import { Controller, Get, Post, Put, Delete, Param, Body, Res, HttpStatus, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Res, HttpStatus, NotFoundException, BadRequestException, HttpException, ParseIntPipe } from '@nestjs/common';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
 import { Response } from 'express';
 import { HolidayPeriodName } from 'src/entities/holydayperiod.entity'; // Asegúrate de importar el enum desde el archivo correcto
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { CreateUserHolidayPeriodDto } from 'src/dto/create-user-holiday-period.dto';
+import { UserHolidayPeriodDto } from 'src/dto/userholidayperiod.dto';
 
 @ApiTags('Recesos Personalizados')
 @Controller('user-holiday-periods')
@@ -79,20 +80,19 @@ export class UserHolidayPeriodController {
       res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error deleting holiday period', error });
     }
   }
-  @Get('custom-holidays/:userId')
-  @ApiOperation({ summary: 'Obtener todos los recesos personalizados de un usuario' })
-  @ApiResponse({ status: 200, description: 'Recesos personalizados obtenidos exitosamente' })
-  @ApiResponse({ status: 404, description: 'No se encontraron recesos personalizados' })
-  async getAllCustomHolidaysByUserId(
-    @Param('userId') userId: number,
-    @Res() res: Response,
-  ): Promise<void> {
-    try {
-      const customHolidays = await this.userHolidayPeriodService.getAllCustomHolidaysByUserId(userId);
-      res.status(HttpStatus.OK).json(customHolidays);
-    } catch (error) {
-      res.status(error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
-    }
-  }
+
+
+
+
+  @Get(':userId')
+  @ApiOperation({ summary: 'Obtener todos períodos de vacaciones de un usuario' })
+  @ApiResponse({ status: 200, description: 'Períodos de vacaciones obtenidos exitosamente' })
+  @ApiResponse({ status: 404, description: 'No se encontraron períodos de vacaciones' })
+  async getHolidays(@Param('userId', ParseIntPipe) userId: number): Promise<UserHolidayPeriodDto[]> {
+    console.log(`Recibiendo userId: ${userId} de la solicitud.`);
+    return this.userHolidayPeriodService.getAllUserHolidayPeriods(userId);
+}
+
+
 
 }
