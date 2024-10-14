@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
@@ -83,12 +83,6 @@ export class VacationRequestService {
   
     return response;
   }
-  
-
-
-
-
-
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
@@ -112,9 +106,6 @@ export class VacationRequestService {
       return { ...requestWithoutSensitiveData, ci: user.ci };
     });
   }
-
-
-
   async countAuthorizedVacationDaysInRange(
     ci: string,
     startDate: string,
@@ -160,11 +151,6 @@ export class VacationRequestService {
       totalAuthorizedVacationDays: totalAuthorizedDays,
     };
   }
-
-
-
-
-
 
 // Método para actualizar el estado de la solicitud de vacaciones 
 async updateVacationRequestStatus(
@@ -234,7 +220,6 @@ async updateVacationRequestStatus(
   return vacationRequestDTO;
 }
 
-
 // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
 async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
   // Buscar el supervisor por su ID
@@ -274,9 +259,6 @@ async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationReq
     } as VacationRequestDTO;
   });
 }
-
-
-
 
 // Método para obtener una solicitud de vacaciones por su ID
 async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
@@ -323,8 +305,6 @@ async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
 
   return vacationRequestDTO;
 }
-
-
 
 async getVacationRequestDetails(id: number): Promise<any> {
   const request = await this.vacationRequestRepository.findOne({
@@ -391,5 +371,29 @@ async getVacationRequestDetails(id: number): Promise<any> {
   };
 }
 
+async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
+  // Verifica si el nuevo estado es válido
+  const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
+  if (!validStatuses.includes(newStatus)) {
+    throw new Error('Invalid status');
+  }
+
+  // Busca la entidad por ID
+  const entity = await this.vacationRequestRepository.findOne({where:{id}});
+  if (!entity) {
+    throw new NotFoundException('Entity not found');
+  }
+
+  // Actualiza el estado
+  entity.status = newStatus;
+
+  // Cambia approvedBySupervisor a true si aún no se ha hecho
+  if (!entity.approvedBySupervisor) {
+    entity.approvedBySupervisor = true;
+  }
+
+  // Guarda los cambios en la base de datos
+  return this.vacationRequestRepository.save(entity);
+}
 
 }

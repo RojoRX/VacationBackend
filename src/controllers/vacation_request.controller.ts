@@ -13,6 +13,7 @@ import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
 import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { UpdateStatusDto } from 'src/dto/updateStatus.dto';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -165,5 +166,14 @@ async getVacationRequestDetails(@Param('id') id: number): Promise<any> {
   }
 }
 
+
+@Patch(':id/status')
+@ApiOperation({ summary: 'Cambiar el estado de una Solicitud por el supervisor' })
+@ApiResponse({ status: 200, description: 'Estado modificado con éxito' })
+@ApiResponse({ status: 404, description: 'No se encontró la solicitud' })
+@ApiResponse({ status: 400, description: 'Estado inválido' }) // Agregar esta respuesta
+async updateStatus(@Param('id') id: number, @Body() updateStatusDto: UpdateStatusDto) {
+  return this.vacationRequestService.updateStatus(id, updateStatusDto.status);
+}
 }
 
