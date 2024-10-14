@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
@@ -371,15 +371,16 @@ async getVacationRequestDetails(id: number): Promise<any> {
   };
 }
 
+// Actualizar el estado de una solicitud por el supervisor 
 async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
   // Verifica si el nuevo estado es válido
   const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
   if (!validStatuses.includes(newStatus)) {
-    throw new Error('Invalid status');
+    throw new BadRequestException('Invalid status');
   }
 
   // Busca la entidad por ID
-  const entity = await this.vacationRequestRepository.findOne({where:{id}});
+  const entity = await this.vacationRequestRepository.findOne({ where: { id } });
   if (!entity) {
     throw new NotFoundException('Entity not found');
   }
