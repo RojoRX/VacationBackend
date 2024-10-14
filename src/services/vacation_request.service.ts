@@ -235,42 +235,46 @@ async updateVacationRequestStatus(
 }
 
 
-  // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
-  async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
-    const supervisor = await this.userService.findById(supervisorId);
-    if (!supervisor) {
-      throw new HttpException('Supervisor not found', HttpStatus.NOT_FOUND);
-    }
-
-    const departmentId = supervisor.department.id;
-    if (!departmentId) {
-      throw new HttpException('Supervisor does not belong to any department', HttpStatus.BAD_REQUEST);
-    }
-
-    const requests = await this.vacationRequestRepository.find({
-      where: { user: { department: { id: departmentId } } },
-      relations: ['user'],
-    });
-
-    if (requests.length === 0) {
-      throw new HttpException('No vacation requests found for this department', HttpStatus.NOT_FOUND);
-    }
-
-    // Mapeo de las solicitudes a DTO
-    return requests.map(request => {
-      const { user, ...rest } = request;
-      return {
-        ...rest,
-        user: {
-          id: user.id,
-          ci: user.ci,
-          fecha_ingreso: user.fecha_ingreso,
-          username: user.username,
-        },
-      } as VacationRequestDTO;
-    });
+// Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
+async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
+  // Buscar el supervisor por su ID
+  const supervisor = await this.userService.findById(supervisorId);
+  if (!supervisor) {
+    throw new HttpException('Supervisor not found', HttpStatus.NOT_FOUND);
   }
-  
+
+  // Obtener el departmentId del supervisor
+  const departmentId = supervisor.department.id;
+  if (!departmentId) {
+    throw new HttpException('Supervisor does not belong to any department', HttpStatus.BAD_REQUEST);
+  }
+
+  // Buscar todas las solicitudes de vacaciones de los usuarios en el mismo departamento que el supervisor
+  const requests = await this.vacationRequestRepository.find({
+    where: { user: { department: { id: departmentId } } },
+    relations: ['user'],
+  });
+
+  // Si no hay solicitudes en el departamento, lanzar excepción
+  if (requests.length === 0) {
+    throw new HttpException('No vacation requests found for this department', HttpStatus.NOT_FOUND);
+  }
+
+  // Mapeo de las solicitudes a DTO
+  return requests.map(request => {
+    const { user, ...rest } = request;
+    return {
+      ...rest,
+      user: {
+        id: user.id,
+        ci: user.ci,
+        fecha_ingreso: user.fecha_ingreso,
+        username: user.username,
+      },
+    } as VacationRequestDTO;
+  });
+}
+
 
 
 
@@ -386,5 +390,6 @@ async getVacationRequestDetails(id: number): Promise<any> {
     solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
   };
 }
+
 
 }
