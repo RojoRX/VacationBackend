@@ -8,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Patch,
+  Put,
 } from '@nestjs/common';
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
@@ -175,5 +176,21 @@ async getVacationRequestDetails(@Param('id') id: number): Promise<any> {
 async updateStatus(@Param('id') id: number, @Body() updateStatusDto: UpdateStatusDto) {
   return this.vacationRequestService.updateStatus(id, updateStatusDto.status);
 }
+
+@Put(':id/toggle-approved-by-hr')
+  @ApiOperation({ summary: 'Alternar el estado de ApprovedByHR de una solicitud de vacaciones' })
+  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada con éxito' })
+  async toggleApprovedByHR(@Param('id') id: number) {
+    return this.vacationRequestService.toggleApprovedByHR(id);
+  }
+
+// // Endpoint para obtener todas las solicitudes de vacaciones con el departamento y ordenadas por las más recientes
+// @Get('department')
+// @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones con departamento' })
+// @ApiResponse({ status: 200, description: 'Listado de solicitudes obtenidas con éxito' })
+// async getAllVacationRequestsWithDepartment() {
+//   return this.vacationRequestService.getAllVacationRequestsWithDepartment();
+// }
+
 }
 
