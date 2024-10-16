@@ -32,15 +32,32 @@ export class NonHolidayService {
   }
 
   async addNonHoliday(nonHoliday: NonHoliday): Promise<NonHoliday> {
+    // Extraer el año de la fecha
+    nonHoliday.year = new Date(nonHoliday.date).getFullYear();
+
     // Verifica que no exista otro día no hábil en la misma fecha
     const existing = await this.getNonHolidayByDate(nonHoliday.year, nonHoliday.date);
     if (existing) {
       throw new BadRequestException(`El día ${nonHoliday.date} ya está registrado como no hábil.`);
     }
+
+    // Convertir la descripción a mayúsculas
+    nonHoliday.description = nonHoliday.description.toUpperCase();
+
     return this.nonHolidayRepository.save(nonHoliday);
   }
 
   async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
+    // Si se proporciona una nueva fecha, extraer el año de la fecha
+    if (nonHoliday.date) {
+      nonHoliday.year = new Date(nonHoliday.date).getFullYear();
+    }
+
+    // Si se está actualizando la descripción, convertirla a mayúsculas
+    if (nonHoliday.description) {
+      nonHoliday.description = nonHoliday.description.toUpperCase();
+    }
+
     await this.nonHolidayRepository.update(id, nonHoliday);
     return this.nonHolidayRepository.findOne({ where: { id } });
   }

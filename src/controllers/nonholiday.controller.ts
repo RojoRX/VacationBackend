@@ -1,10 +1,9 @@
-// src/controllers/nonholiday.controller.ts
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 
-@ApiTags('Feriados o dias No Habiles')
+@ApiTags('Feriados o días No Hábiles')
 @Controller('non-holidays')
 export class NonHolidayController {
   constructor(private readonly nonHolidayService: NonHolidayService) {}
@@ -19,7 +18,10 @@ export class NonHolidayController {
 
   @Post()
   @ApiOperation({ summary: 'Agregar un nuevo día no hábil' })
-  @ApiBody({ type: NonHoliday, description: 'Datos del día no hábil a agregar' })
+  @ApiBody({ 
+    type: NonHoliday, 
+    description: 'Datos del día no hábil a agregar, incluye el campo "description" para identificar el motivo (ej. "Día del Padre")'
+  })
   @ApiResponse({ status: 201, description: 'Día no hábil agregado exitosamente', type: NonHoliday })
   async add(@Body() nonHoliday: NonHoliday): Promise<NonHoliday> {
     return this.nonHolidayService.addNonHoliday(nonHoliday);
@@ -28,7 +30,10 @@ export class NonHolidayController {
   @Put(':id')
   @ApiOperation({ summary: 'Actualizar un día no hábil por ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID del día no hábil a actualizar' })
-  @ApiBody({ type: NonHoliday, description: 'Datos del día no hábil a actualizar' })
+  @ApiBody({ 
+    type: NonHoliday, 
+    description: 'Datos del día no hábil a actualizar, incluye el campo "description" para identificar el motivo (ej. "Día del Padre")'
+  })
   @ApiResponse({ status: 200, description: 'Día no hábil actualizado', type: NonHoliday })
   @ApiResponse({ status: 404, description: 'Día no hábil no encontrado' })
   async update(

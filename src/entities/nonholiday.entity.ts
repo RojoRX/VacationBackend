@@ -10,4 +10,7 @@ export class NonHoliday {
 
   @Column({ type: 'date' })
   date: string; // Fecha específica del día no hábil
+
+  @Column({ type: 'varchar', length: 255 })
+  description: string; // Descripción del día no hábil
 }
