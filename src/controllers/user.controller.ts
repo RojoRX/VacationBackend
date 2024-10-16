@@ -1,10 +1,10 @@
 // src/controllers/user.controller.ts
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
 import { RoleEnum } from 'src/enums/role.enum';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { UpdateRoleDto } from 'src/dto/update-role.dto';
 
 @ApiTags('Usuarios')
@@ -83,5 +83,30 @@ export class UserController {
   ) {
     await this.userService.updateUserRole(userId, updateRoleDto.role);
     return { message: 'Rol actualizado correctamente.' };
+  }
+
+  @ApiOperation({ summary: 'Search for users by CI' })
+  @ApiQuery({ name: 'ci', required: true, description: 'Carnet de Identidad (CI) to search for users' })
+  @ApiQuery({ name: 'skip', required: false, description: 'Number of records to skip for pagination', type: Number })
+  @ApiQuery({ name: 'take', required: false, description: 'Number of records to take for pagination', type: Number })
+  @ApiResponse({ status: 200, description: 'List of users that match the search criteria', type: [User] })
+  @ApiResponse({ status: 404, description: 'No users found matching the criteria' })
+  @Get('search-by-ci')
+  async searchUsersByCI(
+    @Query('ci') ci: string,
+    @Query('skip') skip: number = 0,
+    @Query('take') take: number = 10,
+  ): Promise<Omit<User, 'password'>[]> {
+    if (!ci || ci.trim() === '') {
+      throw new HttpException('CI is required', HttpStatus.BAD_REQUEST);
+    }
+
+    const users = await this.userService.searchUsersByCI(ci, skip, take);
+
+    if (users.length === 0) {
+      throw new HttpException('No users found', HttpStatus.NOT_FOUND);
+    }
+
+    return users;
   }
 }

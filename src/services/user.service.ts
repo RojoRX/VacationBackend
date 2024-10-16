@@ -1,7 +1,7 @@
 import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Like, Repository } from 'typeorm';
 import { User } from 'src/entities/user.entity'; // Ajusta la ruta según tu estructura
 import * as bcrypt from 'bcrypt';
 import { Department } from 'src/entities/department.entity';
@@ -17,7 +17,7 @@ export class UserService {
     private readonly httpService: HttpService,
     @InjectRepository(Department)
     private readonly departmentRepository: Repository<Department>,
-  ) {}
+  ) { }
 
   async verifyWithExternalApi(ci: string): Promise<any> {
     try {
@@ -138,11 +138,24 @@ export class UserService {
     user.role = newRole;
     await this.userRepository.save(user);
   }
-  
-    // Método helper para transformar el usuario
-    private transformUser(user?: User): Omit<User, 'password'> | undefined {
-      if (!user) return undefined;
-      const { password, ...userData } = user; // Desestructuramos para omitir el password
-      return userData; // Retornamos solo los campos que queremos
-    }
+
+  // Método helper para transformar el usuario
+  private transformUser(user?: User): Omit<User, 'password'> | undefined {
+    if (!user) return undefined;
+    const { password, ...userData } = user; // Desestructuramos para omitir el password
+    return userData; // Retornamos solo los campos que queremos
+  }
+
+  async searchUsersByCI(ci: string, skip = 0, take = 10): Promise<Omit<User, 'password'>[]> {
+    // Buscar usuarios que coincidan parcial o completamente con el CI, con paginación
+    const users = await this.userRepository.find({
+      where: { ci: Like(`%${ci}%`) },
+      skip,
+      take,
+    });
+
+    // Transformar los usuarios para excluir el campo password antes de devolver
+    return users.map(user => this.transformUser(user));
+  }
+
 }
