@@ -58,7 +58,7 @@ export class VacationRequestService {
     await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
 
     // Calcular la fecha de retorno
-    const returnDate = await calculateReturnDate(startDate, daysRequested, this.nonHolidayService);
+    const returnDate = await calculateReturnDate(endDate, daysRequested, this.nonHolidayService);
 
     // Crear y guardar la solicitud de vacaciones
     const vacationRequest = this.vacationRequestRepository.create({
