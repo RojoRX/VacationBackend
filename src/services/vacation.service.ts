@@ -123,5 +123,30 @@ export class VacationService {
       }
     };
   }
-  
+  /**
+   * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.
+   * Solo requiere el CI del usuario.
+   */
+  async calculateVacationPeriodByCI(ci: string): Promise<VacationResponse> {
+    // Paso 1: Buscar el usuario por CI
+    const user = await this.userService.findByCarnet(ci);
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    // Paso 2: Obtener la fecha de ingreso
+    const fechaIngreso = DateTime.fromISO(user.fecha_ingreso); // Suponiendo que la fecha de ingreso es un string en formato ISO
+
+    // Paso 3: Ajustar la fecha de ingreso al año actual
+    const currentYear = DateTime.now().year;
+    const startDate = fechaIngreso.set({ year: currentYear }).startOf('day'); // Mismo día/mes pero del año actual
+
+    // Paso 4: Calcular el endDate (un día antes de que se cumpla el siguiente año desde startDate)
+    const endDate = startDate.plus({ year: 1 }).minus({ day: 1 });
+
+    // Paso 5: Reusar el método calculateVacationDays, pasándole el startDate y endDate calculados
+    const vacationResponse = await this.calculateVacationDays(ci, startDate.toJSDate(), endDate.toJSDate());
+    // Retornar la respuesta final con los datos de vacaciones
+    return vacationResponse;
+  }
 }

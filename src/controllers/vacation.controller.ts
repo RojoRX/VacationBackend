@@ -42,4 +42,24 @@ export class VacationController {
 
     return this.vacationService.calculateVacationDays(carnetIdentidad, startDateTime, endDateTime);
   }
+
+   // Nuevo endpoint que calcula automáticamente el período basado en el CI
+   @Get('automatic-period')
+   @ApiOperation({ summary: 'Calcular automáticamente el período de vacaciones basado en el CI' })
+   @ApiQuery({ name: 'carnetIdentidad', required: true, description: 'Carnet de identidad del usuario' })
+   @ApiResponse({
+     status: 200,
+     description: 'Información de vacaciones calculada exitosamente con fechas automáticas',
+     type: Object, // Usa Object aquí si VacationResponse es solo un tipo
+   })
+   @ApiResponse({ status: 400, description: 'El usuario no existe o no tiene fecha de ingreso válida' })
+   async getAutomaticVacationPeriod(
+     @Query('carnetIdentidad') carnetIdentidad: string
+   ): Promise<VacationResponse> {
+     if (!carnetIdentidad) {
+       throw new BadRequestException('El carnet de identidad es obligatorio.');
+     }
+ 
+     return this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
+   }
 }
