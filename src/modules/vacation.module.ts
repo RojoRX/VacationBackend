@@ -25,7 +25,7 @@ import { VacationRequestModule } from './vacation_request.module';
     UserModule,
     NonHolidayModule,
     UserHolidayPeriodModule,
-    LicenseModule,
+    LicenseModule, // Aquí se usa forwardRef
     forwardRef(() => VacationRequestModule),
   ],
   controllers: [VacationController],
