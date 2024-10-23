@@ -96,14 +96,13 @@ export class LicenseController {
   @Patch(':licenseId/supervisor-approval')
   @ApiOperation({ summary: 'Actualizar la aprobación del supervisor inmediato' })
   @ApiParam({ name: 'licenseId', required: true, description: 'ID de la licencia' })
-  @ApiBody({ type: Boolean, description: 'Estado de aprobación' })
   @ApiResponse({ status: 200, description: 'Licencia actualizada', type: License })
   async updateImmediateSupervisorApproval(
     @Param('licenseId') licenseId: number,
-    @Body('approval') approval: boolean,
   ): Promise<License> {
-    return this.licenseService.updateImmediateSupervisorApproval(licenseId, approval);
+    return this.licenseService.toggleImmediateSupervisorApproval(licenseId);
   }
+  
 
   @Patch(':licenseId/personal-approval')
   @ApiOperation({ summary: 'Actualizar la aprobación del departamento personal' })
@@ -134,12 +133,13 @@ export class LicenseController {
   @Get('department/:supervisorId')
   @ApiOperation({ summary: 'Obtener las licencias del departamento del supervisor' })
   @ApiParam({ name: 'supervisorId', required: true, description: 'ID del supervisor' })
-  @ApiResponse({ status: 200, description: 'Lista de licencias del departamento', type: [License] })
+  @ApiResponse({ status: 200, description: 'Lista de licencias del departamento', type: [LicenseResponseDto] }) // Cambia License a LicenseResponseDto
   async findLicensesByDepartment(
     @Param('supervisorId') supervisorId: number,
-  ): Promise<License[]> {
+  ): Promise<LicenseResponseDto[]> { // Cambia el tipo de retorno a LicenseResponseDto[]
     return this.licenseService.findLicensesByDepartment(supervisorId);
   }
+  
 
   
   @Get('user/:userId')

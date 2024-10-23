@@ -135,7 +135,7 @@ export class LicenseService {
     await this.licenseRepository.delete(id);
   }
 
-  async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
+async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
     // Verificar si el usuario existe
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -274,17 +274,20 @@ export class LicenseService {
     }
   }
   
-  // Método para actualizar el estado de aprobación del supervisor inmediato
-  async updateImmediateSupervisorApproval(licenseId: number, approval: boolean): Promise<License> {
-    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
+// Método para alternar el estado de aprobación del supervisor inmediato
+async toggleImmediateSupervisorApproval(licenseId: number): Promise<License> {
+  const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
 
-    if (!license) {
-      throw new NotFoundException('Licencia no encontrada');
-    }
-
-    license.immediateSupervisorApproval = approval;
-    return this.licenseRepository.save(license);
+  if (!license) {
+    throw new NotFoundException('Licencia no encontrada');
   }
+
+  // Alternar el estado de aprobación
+  license.immediateSupervisorApproval = !license.immediateSupervisorApproval;
+  
+  return this.licenseRepository.save(license);
+}
+
 
   // Método para actualizar el estado de aprobación del departamento personal
   async updatePersonalDepartmentApproval(licenseId: number, approval: boolean): Promise<License> {
@@ -299,7 +302,7 @@ export class LicenseService {
   }
 
 // Método para obtener las licencias del departamento del supervisor
-async findLicensesByDepartment(supervisorId: number): Promise<License[]> {
+async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
   const supervisor = await this.userService.findById(supervisorId);
 
   if (!supervisor || !supervisor.department) {
@@ -307,11 +310,26 @@ async findLicensesByDepartment(supervisorId: number): Promise<License[]> {
   }
 
   // Obtener todas las licencias de los usuarios que pertenecen al departamento del supervisor
-  return this.licenseRepository.createQueryBuilder('license')
+  const licenses = await this.licenseRepository.createQueryBuilder('license')
     .leftJoinAndSelect('license.user', 'user')
     .where('user.departmentId = :departmentId', { departmentId: supervisor.department.id })
     .getMany();
+
+  // Mapear cada licencia al DTO con userId en lugar del objeto user
+  return licenses.map(license => ({
+    id: license.id,
+    licenseType: license.licenseType,
+    timeRequested: license.timeRequested,
+    startDate: license.startDate,
+    endDate: license.endDate,
+    totalDays: license.totalDays,
+    issuedDate: license.issuedDate,
+    immediateSupervisorApproval: license.immediateSupervisorApproval,
+    personalDepartmentApproval: license.personalDepartmentApproval,
+    userId: license.user.id,  // Extraer el userId del objeto user
+  }));
 }
+
 
  // Método para que un supervisor apruebe o rechace una licencia
  async approveLicense(
