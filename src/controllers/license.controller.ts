@@ -1,5 +1,5 @@
 // src/controllers/license.controller.ts
-import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch } from '@nestjs/common';
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
@@ -139,5 +139,36 @@ export class LicenseController {
     @Param('supervisorId') supervisorId: number,
   ): Promise<License[]> {
     return this.licenseService.findLicensesByDepartment(supervisorId);
+  }
+
+  
+  @Get('user/:userId')
+  @ApiOperation({ summary: 'Obtener todas las licencias de un usuario' }) // Descripción del endpoint
+  @ApiParam({ name: 'userId', type: Number, description: 'ID del usuario' }) // Parámetro documentado
+  @ApiResponse({
+    status: 200,
+    description: 'Licencias obtenidas con éxito.',
+    type: [LicenseResponseDto], // Tipo de respuesta esperada (lista de DTOs)
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Usuario o licencias no encontradas.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Solicitud incorrecta o parámetro inválido.',
+  })
+  async getAllLicensesForUser(
+    @Param('userId', ParseIntPipe) userId: number, // Parseamos el parámetro userId como entero
+  ): Promise<LicenseResponseDto[]> {
+    try {
+      // Llamada al servicio para obtener las licencias
+      return await this.licenseService.getAllLicensesForUser(userId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException('Usuario o licencias no encontradas');
+      }
+      throw new BadRequestException('Solicitud incorrecta');
+    }
   }
 }

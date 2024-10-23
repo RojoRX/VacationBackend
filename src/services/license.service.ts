@@ -135,6 +135,27 @@ export class LicenseService {
     await this.licenseRepository.delete(id);
   }
 
+  async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
+    // Verificar si el usuario existe
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    // Buscar todas las licencias asociadas al usuario
+    const licenses = await this.licenseRepository.find({
+      where: { user: { id: userId } }, // Buscar por ID del usuario
+      order: { issuedDate: 'DESC' },
+    });
+    if (!licenses || licenses.length === 0) {
+      throw new NotFoundException('No se encontraron licencias para este usuario');
+    }
+    
+    // Mapear las licencias a DTOs
+    return licenses.map(this.mapLicenseToDto);
+  }
+
+
+
   private mapLicenseToDto(license: License): LicenseResponseDto {
     // Depuración del objeto License
 
@@ -355,4 +376,6 @@ async findLicensesByDepartment(supervisorId: number): Promise<License[]> {
     supervisorDepartmentName: approval ? supervisor.department.name : undefined,
   };
 }
+
+
 }
