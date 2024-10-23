@@ -158,4 +158,12 @@ export class UserService {
     return users.map(user => this.transformUser(user));
   }
 
+  async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+    return this.transformUser(user) as Omit<User, 'password'>;
+  }
+  
 }

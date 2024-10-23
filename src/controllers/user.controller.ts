@@ -109,4 +109,13 @@ export class UserController {
 
     return users;
   }
+
+  @Get(':userId')
+  @ApiOperation({ summary: 'Obtener información básica de un usuario por su ID' })
+  @ApiParam({ name: 'userId', required: true, description: 'ID del usuario' })
+  @ApiResponse({ status: 200, description: 'Información básica del usuario', type: User })
+  @ApiResponse({ status: 400, description: 'Usuario no encontrado' })
+  async getUserBasicInfo(@Param('userId') userId: number): Promise<Omit<User, 'password'>> {
+    return this.userService.getUserBasicInfoById(userId);
+  }
 }
