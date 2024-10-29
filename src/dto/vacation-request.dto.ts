@@ -7,6 +7,7 @@ export class VacationRequestDTO {
   totalDays: number;
   status: string;
   returnDate: string;
+  reviewDate: string;
   postponedDate?: string;
   postponedReason?: string;
   approvedByHR: boolean;

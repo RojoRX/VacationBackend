@@ -13,8 +13,9 @@ import {
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
 import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { UpdateStatusDto } from 'src/dto/updateStatus.dto';
+import { PostponeVacationRequestDTO } from 'src/dto/postponed-vacation-request.dto';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -192,5 +193,35 @@ async updateStatus(@Param('id') id: number, @Body() updateStatusDto: UpdateStatu
 //   return this.vacationRequestService.getAllVacationRequestsWithDepartment();
 // }
 
+
+@Patch(':id/postpone')
+@ApiOperation({ summary: 'Postpone a vacation request', description: 'Allows a supervisor to postpone a vacation request by providing a new date and a reason.' })
+@ApiParam({ name: 'id', description: 'The ID of the vacation request to be postponed', type: Number })
+@ApiBody({ type: PostponeVacationRequestDTO, description: 'Details for postponing the vacation request, including postponed date and reason' })
+@ApiResponse({
+  status: 200,
+  description: 'Vacation request successfully postponed.',
+  type: VacationRequestDTO,
+})
+@ApiResponse({
+  status: 400,
+  description: 'Invalid postponed date or other validation errors.',
+})
+@ApiResponse({
+  status: 404,
+  description: 'Vacation request not found.',
+})
+@ApiResponse({
+  status: 401,
+  description: 'Unauthorized to postpone requests outside your department.',
+})
+async postponeVacationRequest(
+  @Param('id') id: number,
+  @Body() postponeData: PostponeVacationRequestDTO,
+  @Param('supervisorId') supervisorId: number,
+): Promise<VacationRequestDTO> {
+  const { postponedDate, postponedReason } = postponeData;
+  return this.vacationRequestService.postponeVacationRequest(id, postponedDate, postponedReason, supervisorId);
+}
 }
 

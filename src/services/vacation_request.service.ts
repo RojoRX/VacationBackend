@@ -155,72 +155,78 @@ export class VacationRequestService {
   }
 
   // Método para actualizar el estado de la solicitud de vacaciones 
-  async updateVacationRequestStatus(
-    id: number,
-    status: string,
-    supervisorId: number,
-  ): Promise<VacationRequestDTO> {
-    // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user', 'approvedBy', 'user.department'], // Incluir la relación con el aprobador y el departamento
-    });
+// Método para actualizar el estado de la solicitud de vacaciones 
+async updateVacationRequestStatus(
+  id: number,
+  status: string,
+  supervisorId: number,
+): Promise<VacationRequestDTO> {
+  // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user', 'approvedBy', 'user.department'], // Incluir la relación con el aprobador y el departamento
+  });
 
-    if (!request) {
-      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-    }
-
-    // Verificar que el supervisor tenga permiso para actualizar solicitudes de su departamento
-    const supervisor = await this.userService.findById(supervisorId);
-    if (!supervisor || supervisor.department.id !== request.user.department.id) {
-      throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
-    }
-
-    // Verificar que el estado enviado sea un valor válido del enum
-    const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
-    if (!validStatuses.includes(status)) {
-      throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
-    }
-
-    // Actualizar el estado y el valor de approvedBySupervisor
-    request.status = status;
-    request.approvedBySupervisor = true; // Siempre se marca como aprobado por el supervisor al actualizar el estado
-
-    // Guardar la solicitud
-    await this.vacationRequestRepository.save(request);
-
-    // Mapear a DTO
-    const vacationRequestDTO: VacationRequestDTO = {
-      id: request.id,
-      position: request.position,
-      requestDate: request.requestDate,
-      startDate: request.startDate,
-      endDate: request.endDate,
-      totalDays: request.totalDays,
-      status: request.status,
-      returnDate: request.returnDate,
-      postponedDate: request.postponedDate,
-      postponedReason: request.postponedReason,
-      approvedByHR: request.approvedByHR,
-      approvedBySupervisor: request.approvedBySupervisor,
-      user: {
-        id: request.user.id,
-        ci: request.user.ci,
-        fecha_ingreso: request.user.fecha_ingreso,
-        username: request.user.username,
-      },
-      managementPeriodStart: request.managementPeriodStart, // Agregar el período de gestión
-      managementPeriodEnd: request.managementPeriodEnd,     // Agregar el período de gestión
-      approvedBy: request.approvedBy ? {
-        id: request.approvedBy.id,
-        ci: request.approvedBy.ci,
-        fecha_ingreso: request.approvedBy.fecha_ingreso,
-        username: request.approvedBy.username,
-      } : undefined, // Manejar caso en que no hay aprobador
-    };
-
-    return vacationRequestDTO;
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
   }
+
+  // Verificar que el supervisor tenga permiso para actualizar solicitudes de su departamento
+  const supervisor = await this.userService.findById(supervisorId);
+  if (!supervisor || supervisor.department.id !== request.user.department.id) {
+    throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
+  }
+
+  // Verificar que el estado enviado sea un valor válido del enum
+  const validStatuses = ['PENDING', 'AUTHORIZED', 'DENIED', 'SUSPENDED'];
+  if (!validStatuses.includes(status)) {
+    throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
+  }
+
+  // Actualizar el estado, el valor de approvedBySupervisor, y la fecha de revisión
+  request.status = status;
+  request.approvedBySupervisor = true; // Siempre se marca como aprobado por el supervisor al actualizar el estado
+
+  // Actualiza el campo reviewDate con la fecha actual en formato 'YYYY-MM-DD'
+  const today = new Date();
+  request.reviewDate = today.toISOString().split('T')[0];
+
+  // Guardar la solicitud
+  await this.vacationRequestRepository.save(request);
+
+  // Mapear a DTO
+  const vacationRequestDTO: VacationRequestDTO = {
+    id: request.id,
+    position: request.position,
+    requestDate: request.requestDate,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    reviewDate: request.reviewDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    user: {
+      id: request.user.id,
+      ci: request.user.ci,
+      fecha_ingreso: request.user.fecha_ingreso,
+      username: request.user.username,
+    },
+    managementPeriodStart: request.managementPeriodStart,
+    managementPeriodEnd: request.managementPeriodEnd,
+    approvedBy: request.approvedBy ? {
+      id: request.approvedBy.id,
+      ci: request.approvedBy.ci,
+      fecha_ingreso: request.approvedBy.fecha_ingreso,
+      username: request.approvedBy.username,
+    } : undefined,
+  };
+
+  return vacationRequestDTO;
+}
 
   // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
   async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
@@ -286,6 +292,7 @@ export class VacationRequestService {
       status: request.status,
       returnDate: request.returnDate,
       postponedDate: request.postponedDate,
+      reviewDate: request.reviewDate,
       postponedReason: request.postponedReason,
       approvedByHR: request.approvedByHR,
       approvedBySupervisor: request.approvedBySupervisor,
@@ -353,6 +360,7 @@ export class VacationRequestService {
       department: request.user.department ? request.user.department.name : null,
       startDate: request.startDate,
       endDate: request.endDate,
+      reviewDate: request.reviewDate,
       totalDays: request.totalDays,
       status: request.status,
       returnDate: request.returnDate,
@@ -373,31 +381,32 @@ export class VacationRequestService {
     };
   }
 
-  // Actualizar el estado de una solicitud por el supervisor 
-  async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
-    // Verifica si el nuevo estado es válido
-    const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
-    if (!validStatuses.includes(newStatus)) {
-      throw new BadRequestException('Invalid status');
-    }
-
-    // Busca la entidad por ID
-    const entity = await this.vacationRequestRepository.findOne({ where: { id } });
-    if (!entity) {
-      throw new NotFoundException('Entity not found');
-    }
-
-    // Actualiza el estado
-    entity.status = newStatus;
-
-    // Cambia approvedBySupervisor a true si aún no se ha hecho
-    if (!entity.approvedBySupervisor) {
-      entity.approvedBySupervisor = true;
-    }
-
-    // Guarda los cambios en la base de datos
-    return this.vacationRequestRepository.save(entity);
+// Actualizar el estado de una solicitud por el supervisor
+async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
+  // Verifica si el nuevo estado es válido
+  const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
+  if (!validStatuses.includes(newStatus)) {
+    throw new BadRequestException('Invalid status');
   }
+
+  // Busca la entidad por ID
+  const entity = await this.vacationRequestRepository.findOne({ where: { id } });
+  if (!entity) {
+    throw new NotFoundException('Entity not found');
+  }
+  // Actualiza el estado
+  entity.status = newStatus;
+  // Cambia approvedBySupervisor a true si aún no se ha hecho
+  if (!entity.approvedBySupervisor) {
+    entity.approvedBySupervisor = true;
+  }
+  // Actualiza la fecha de revisión con la fecha actual en formato 'YYYY-MM-DD'
+  const today = new Date();
+  entity.reviewDate = today.toISOString().split('T')[0];
+  // Guarda los cambios en la base de datos
+  return this.vacationRequestRepository.save(entity);
+}
+
 
 
   // async getAllVacationRequestsWithDepartment(): Promise<any[]> {
@@ -437,5 +446,79 @@ export class VacationRequestService {
   
     return vacationRequest;
   }
+
+
+  // Método para posponer una solicitud de vacaciones
+  async postponeVacationRequest(
+    id: number,
+    postponedDate: string,
+    postponedReason: string,
+    supervisorId: number,
+  ): Promise<VacationRequestDTO> {
+    // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user', 'approvedBy', 'user.department'], // Incluir la relación con el aprobador y el departamento
+    });
   
+    if (!request) {
+      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+    }
+  
+    // Verificar que el supervisor tenga permiso para posponer solicitudes de su departamento
+    const supervisor = await this.userService.findById(supervisorId);
+    if (!supervisor || supervisor.department.id !== request.user.department.id) {
+      throw new HttpException('Unauthorized to postpone requests outside your department', HttpStatus.UNAUTHORIZED);
+    }
+  
+    // Validar que la fecha de posposición no sea anterior a la fecha actual
+    const currentDate = new Date().toISOString().split('T')[0];
+    if (postponedDate < currentDate) {
+      throw new HttpException('Postponed date cannot be in the past', HttpStatus.BAD_REQUEST);
+    }
+  
+    // Actualizar los campos de posposición y el estado de la solicitud
+    request.status = 'POSTPONED';
+    request.postponedDate = postponedDate;
+    request.postponedReason = postponedReason;
+    request.approvedBySupervisor = true; // Indica que fue aprobado por el supervisor
+  
+    // Guardar los cambios en la base de datos
+    await this.vacationRequestRepository.save(request);
+  
+    // Mapear a DTO
+    const vacationRequestDTO: VacationRequestDTO = {
+      id: request.id,
+      position: request.position,
+      requestDate: request.requestDate,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      totalDays: request.totalDays,
+      status: request.status,
+      returnDate: request.returnDate,
+      reviewDate: request.reviewDate,
+      postponedDate: request.postponedDate,
+      postponedReason: request.postponedReason,
+      approvedByHR: request.approvedByHR,
+      approvedBySupervisor: request.approvedBySupervisor,
+      user: {
+        id: request.user.id,
+        ci: request.user.ci,
+        fecha_ingreso: request.user.fecha_ingreso,
+        username: request.user.username,
+      },
+      managementPeriodStart: request.managementPeriodStart,
+      managementPeriodEnd: request.managementPeriodEnd,
+      approvedBy: request.approvedBy ? {
+        id: request.approvedBy.id,
+        ci: request.approvedBy.ci,
+        fecha_ingreso: request.approvedBy.fecha_ingreso,
+        username: request.approvedBy.username,
+      } : undefined,
+    };
+  
+    return vacationRequestDTO;
+  }
+  
+
 }
