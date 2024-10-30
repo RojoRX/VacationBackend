@@ -11,6 +11,7 @@ import { LicenseModule } from './modules/license.module';
 import { UserHolidayPeriodModule } from './modules/userholidayperiod.module';
 import { VacationRequestModule } from './modules/vacation_request.module';
 import { DepartmentModule } from './modules/department.module';
+import { VacationPolicyModule } from './modules/vacationPolicyModule.module';
 
 @Module({
   imports: [
@@ -34,7 +35,8 @@ import { DepartmentModule } from './modules/department.module';
     LicenseModule, 
     UserHolidayPeriodModule,
     VacationRequestModule,
-    DepartmentModule
+    DepartmentModule, 
+    VacationPolicyModule
   ],
   controllers: [],
   providers: [AppService],
