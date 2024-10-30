@@ -113,47 +113,46 @@ export class VacationRequestService {
     startDate: string,
     endDate: string,
   ): Promise<{ requests: VacationRequest[]; totalAuthorizedVacationDays: number }> {
-    // Validate the dates
+    // Validar que la fecha de inicio no sea mayor que la fecha de fin
     if (new Date(startDate) > new Date(endDate)) {
       throw new HttpException('Invalid date range', HttpStatus.BAD_REQUEST);
     }
-
+  
     // Buscar usuario por carnet de identidad
     const user = await this.userService.findByCarnet(ci);
-
     if (!user) {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
-
-    // Get dates without timezones for comparison
+  
+    // Convertir fechas sin parte horaria para asegurar precisión en comparación
     const startDateWithoutTime = new Date(startDate).toISOString().split('T')[0];
     const endDateWithoutTime = new Date(endDate).toISOString().split('T')[0];
-
-    // Obtener las solicitudes autorizadas que coincidan con el rango de fechas proporcionado
-    // Obtener las solicitudes autorizadas que coincidan con el rango de fechas proporcionado
+  
+    // Obtener solicitudes autorizadas y aprobadas por Recursos Humanos en el rango de fechas
     const authorizedVacationDays = await this.vacationRequestRepository.find({
       where: {
         user: { id: user.id },
         status: 'AUTHORIZED',
+        approvedByHR: true,
         managementPeriodStart: LessThanOrEqual(endDateWithoutTime),
         managementPeriodEnd: MoreThanOrEqual(startDateWithoutTime),
       },
     });
-
+  
     // Verificar que authorizedVacationDays no sea nulo o vacío
     if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays)) {
       throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
+  
     // Calcular el total de días autorizados
     const totalAuthorizedDays = authorizedVacationDays.reduce((total, request) => total + request.totalDays, 0);
-
+  
     return {
       requests: authorizedVacationDays,
       totalAuthorizedVacationDays: totalAuthorizedDays,
     };
   }
-
+  
   // Método para actualizar el estado de la solicitud de vacaciones 
 // Método para actualizar el estado de la solicitud de vacaciones 
 async updateVacationRequestStatus(
