@@ -18,6 +18,7 @@ import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseModule } from './license.module';
 import { VacationRequestModule } from './vacation_request.module';
+import { VacationPolicyModule } from './vacationPolicyModule.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { VacationRequestModule } from './vacation_request.module';
     NonHolidayModule,
     UserHolidayPeriodModule,
     LicenseModule, // Aquí se usa forwardRef
+    VacationPolicyModule,
     forwardRef(() => VacationRequestModule),
   ],
   controllers: [VacationController],

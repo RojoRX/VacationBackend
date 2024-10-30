@@ -25,7 +25,7 @@ export class VacationService {
     // Obtener datos del usuario
     const userData = await this.userService.getUserData(carnetIdentidad);
     if (!userData) {
-      throw new BadRequestException('Usuario no encontrado.');
+        throw new BadRequestException('Usuario no encontrado.');
     }
   
     // Convertir fechas para cálculos
@@ -35,7 +35,7 @@ export class VacationService {
   
     // Calcular antigüedad y días de vacaciones
     const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
-    const vacationDays = this.vacationCalculatorService.calculateVacationDays(yearsOfService);
+    const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService); // Asegúrate de usar await aquí
   
     // Extraer los años de startDate y endDate
     const startYear = startDateTime.year;
@@ -54,35 +54,35 @@ export class VacationService {
   
     // Procesar recesos
     for (const period of holidayPeriods) {
-      const personalizedReceso = personalizedRecesses.find(p => p.name === period.name) || period;
+        const personalizedReceso = personalizedRecesses.find(p => p.name === period.name) || period;
   
-      const startDateHol = DateTime.fromJSDate(personalizedReceso.startDate).startOf('day');
-      const endDateHol = DateTime.fromJSDate(personalizedReceso.endDate).endOf('day');
+        const startDateHol = DateTime.fromJSDate(personalizedReceso.startDate).startOf('day');
+        const endDateHol = DateTime.fromJSDate(personalizedReceso.endDate).endOf('day');
   
-      const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
-      const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
+        const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+        const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
   
-      totalNonHolidayDays += nonHolidayDaysCount;
+        totalNonHolidayDays += nonHolidayDaysCount;
   
-      nonHolidayDays.forEach(nonHoliday => {
-        const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
-        if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
-          nonHolidayDaysDetails.push({
-            date: nonHoliday.date,
-            reason: `Dentro del receso ${personalizedReceso.name}`
-          });
-        }
-      });
+        nonHolidayDays.forEach(nonHoliday => {
+            const nonHolidayDate = DateTime.fromISO(nonHoliday.date).startOf('day');
+            if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
+                nonHolidayDaysDetails.push({
+                    date: nonHoliday.date,
+                    reason: `Dentro del receso ${personalizedReceso.name}`
+                });
+            }
+        });
   
-      recesos.push({
-        name: personalizedReceso.name,
-        startDate: personalizedReceso.startDate,
-        endDate: personalizedReceso.endDate,
-        totalDays,
-        nonHolidayDays: nonHolidayDaysCount,
-        daysCount: totalDays - nonHolidayDaysCount,
-        type: personalizedReceso === period ? 'general' : 'personalizado'
-      });
+        recesos.push({
+            name: personalizedReceso.name,
+            startDate: personalizedReceso.startDate,
+            endDate: personalizedReceso.endDate,
+            totalDays,
+            nonHolidayDays: nonHolidayDaysCount,
+            daysCount: totalDays - nonHolidayDaysCount,
+            type: personalizedReceso === period ? 'general' : 'personalizado'
+        });
     }
   
     const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
@@ -100,29 +100,31 @@ export class VacationService {
     remainingVacationDays -= (totalAuthorizedLicenseDays + totalAuthorizedVacationDays);
   
     return {
-      carnetIdentidad: userData.carnetIdentidad,
-      name: userData.nombres,
-      email: userData.correo_electronico,
-      position: userData.profesion,
-      fechaIngreso: new Date(userData.fecha_ingreso),
-      antiguedadEnAnios: Math.floor(yearsOfService),
-      antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
-      antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
-      diasDeVacacion: vacationDays,
-      diasDeVacacionRestantes: remainingVacationDays,
-      recesos,
-      diasNoHabiles: totalNonHolidayDays,
-      nonHolidayDaysDetails,
-      licenciasAutorizadas: {
-        totalAuthorizedDays: totalAuthorizedLicenseDays,
-        requests: licenseRequests
-      },
-      solicitudesDeVacacionAutorizadas: {
-        totalAuthorizedVacationDays,
-        requests: vacationRequests
-      }
+        carnetIdentidad: userData.carnetIdentidad,
+        name: userData.nombres,
+        email: userData.correo_electronico,
+        position: userData.profesion,
+        fechaIngreso: new Date(userData.fecha_ingreso),
+        antiguedadEnAnios: Math.floor(yearsOfService),
+        antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
+        antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
+        diasDeVacacion: vacationDays, // Asegúrate de que esto sea un número
+        diasDeVacacionRestantes: remainingVacationDays,
+        recesos,
+        diasNoHabiles: totalNonHolidayDays,
+        nonHolidayDaysDetails,
+        licenciasAutorizadas: {
+            totalAuthorizedDays: totalAuthorizedLicenseDays,
+            requests: licenseRequests
+        },
+        solicitudesDeVacacionAutorizadas: {
+            totalAuthorizedVacationDays,
+            requests: vacationRequests
+        }
     };
-  }
+}
+
+
   /**
    * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.
    * Solo requiere el CI del usuario.

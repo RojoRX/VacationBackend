@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { VacationPolicyService } from './vacation-policy.service'; // Asegúrate de que la ruta sea correcta
 
 @Injectable()
 export class VacationCalculatorService {
+  constructor(private readonly vacationPolicyService: VacationPolicyService) {}
+
   calculateYearsOfService(startDate: DateTime, endDate: DateTime): number {
     return endDate.year - startDate.year - (endDate < startDate.plus({ years: endDate.year - startDate.year }) ? 1 : 0);
   }
@@ -15,28 +18,34 @@ export class VacationCalculatorService {
     return Math.floor(endDate.diff(startDate, 'days').days);
   }
 
-  calculateVacationDays(yearsOfService: number): number {
-    if (yearsOfService < 1) return 0;
-    if (yearsOfService <= 5) return 15;
-    if (yearsOfService <= 10) return 20;
-    return 30;
-  }
+  async calculateVacationDays(yearsOfService: number): Promise<number> {
+    if (yearsOfService < 1) return 0; // Manejo de antigüedad menor a 1 año
 
- // Función para contar los días hábiles en el rango
- countWeekdays(startDate: DateTime, endDate: DateTime): number {
-  let count = 0;
-  let current = startDate.startOf('day').plus({ days: 1 }); // Inicia al siguiente día
-
-  while (current < endDate) {
-    if (current.weekday >= 1 && current.weekday <= 5) {
-      count++;
+    // Obtener la política de vacaciones correspondiente a los años de servicio
+    const policy = await this.vacationPolicyService.getPolicyByYears(yearsOfService);
+    
+    if (policy) {
+      return policy.vacationDays; // Retorna los días de vacaciones desde la política
+    } else {
+      return 0; // Si no hay política definida, devuelve 0 o maneja como desees
     }
-    current = current.plus({ days: 1 });
-  }
-
-  return count;
 }
 
+
+  // Función para contar los días hábiles en el rango
+  countWeekdays(startDate: DateTime, endDate: DateTime): number {
+    let count = 0;
+    let current = startDate.startOf('day').plus({ days: 1 }); // Inicia al siguiente día
+
+    while (current < endDate) {
+      if (current.weekday >= 1 && current.weekday <= 5) {
+        count++;
+      }
+      current = current.plus({ days: 1 });
+    }
+
+    return count;
+  }
 
   getIntersectionDays(startDateHol: DateTime, endDateHol: DateTime, nonHolidayDays: any[]): number {
     return nonHolidayDays.filter(nonHoliday => {

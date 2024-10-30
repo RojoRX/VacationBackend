@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common'; 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VacationPolicy } from 'src/entities/vacationPolicy.entity';
@@ -43,6 +43,15 @@ export class VacationPolicyService {
     }
 
     return policy.vacationDays;
+  }
+
+  // Obtener política de vacaciones por años de servicio
+  async getPolicyByYears(yearsOfService: number): Promise<VacationPolicy | null> {
+    return await this.vacationPolicyRepository
+      .createQueryBuilder('policy')
+      .where('policy.minYears <= :yearsOfService', { yearsOfService })
+      .andWhere('policy.maxYears IS NULL OR policy.maxYears >= :yearsOfService', { yearsOfService })
+      .getOne(); // Retorna la política o null si no se encuentra
   }
 
   // Actualizar una política de vacaciones existente
