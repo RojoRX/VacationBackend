@@ -51,8 +51,10 @@ export class VacationPolicyService {
       .createQueryBuilder('policy')
       .where('policy.minYears <= :yearsOfService', { yearsOfService })
       .andWhere('policy.maxYears IS NULL OR policy.maxYears >= :yearsOfService', { yearsOfService })
-      .getOne(); // Retorna la política o null si no se encuentra
-  }
+      .orderBy('policy.minYears', 'ASC') // Asegúrate de obtener el rango más bajo primero
+      .getOne();
+}
+
 
   // Actualizar una política de vacaciones existente
   async updatePolicy(id: number, minYears: number, maxYears: number | null, vacationDays: number): Promise<VacationPolicy> {

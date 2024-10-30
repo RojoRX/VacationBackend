@@ -25,11 +25,13 @@ export class VacationCalculatorService {
     const policy = await this.vacationPolicyService.getPolicyByYears(yearsOfService);
     
     if (policy) {
-      return policy.vacationDays; // Retorna los días de vacaciones desde la política
+        return policy.vacationDays; // Retorna los días de vacaciones desde la política
     } else {
-      return 0; // Si no hay política definida, devuelve 0 o maneja como desees
+        console.warn(`No se encontró política para ${yearsOfService} años de antigüedad.`);
+        return 0; // Si no hay política definida, devuelve 0 o maneja como desees
     }
 }
+
 
 
   // Función para contar los días hábiles en el rango
