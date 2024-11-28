@@ -116,6 +116,46 @@ export class UserController {
   @ApiResponse({ status: 200, description: 'Información básica del usuario', type: User })
   @ApiResponse({ status: 400, description: 'Usuario no encontrado' })
   async getUserBasicInfo(@Param('userId') userId: number): Promise<Omit<User, 'password'>> {
-    return this.userService.getUserBasicInfoById(userId);
+    return this.userService.findById(userId);
   }
+
+  @Patch(':userId')
+@ApiOperation({ summary: 'Actualizar campos específicos de un usuario' })
+@ApiParam({ name: 'userId', required: true, description: 'ID del usuario a actualizar' })
+@ApiBody({
+  description: 'Datos a actualizar del usuario',
+  schema: {
+    type: 'object',
+    properties: {
+      fullName: { type: 'string', description: 'Nombre completo del usuario' },
+      celular: { type: 'string', description: 'Número de celular del usuario' },
+      profesion: { type: 'string', description: 'Profesión del usuario' },
+      position: { type: 'string', description: 'Puesto del usuario' },
+      departmentId: { type: 'number', description: 'ID del departamento al que pertenece el usuario' },
+    },
+  },
+})
+
+
+@ApiResponse({ status: 200, description: 'Usuario actualizado exitosamente', type: User })
+@ApiResponse({ status: 400, description: 'Datos inválidos o usuario/departamento no encontrado' })
+async updateUserFields(
+  @Param('userId', ParseIntPipe) userId: number,
+  @Body() updateData: Partial<{
+    fullName: string;
+    celular: string;
+    profesion: string;
+    position: string;
+    departmentId: number;
+  }>,
+  @Res() res: Response
+) {
+  try {
+    const updatedUser = await this.userService.updateUserFields(userId, updateData);
+    return res.status(HttpStatus.OK).json(updatedUser);
+  } catch (error) {
+    return res.status(error.status || HttpStatus.BAD_REQUEST).json({ message: error.message });
+  }
+}
+
 }

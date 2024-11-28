@@ -166,4 +166,51 @@ export class UserService {
     return this.transformUser(user) as Omit<User, 'password'>;
   }
   
+  async updateUserFields(
+    userId: number,
+    updateData: Partial<{
+      fullName: string;
+      celular: string;
+      profesion: string;
+      position: string;
+      departmentId: number;
+    }>
+  ): Promise<Omit<User, 'password'>> {
+    // Buscar el usuario existente
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['department'], // Incluye el departamento en las relaciones
+    });
+  
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+  
+    // Si se incluye departmentId, buscar el departamento relacionado
+    if (updateData.departmentId !== undefined) {
+      const department = await this.departmentRepository.findOne({
+        where: { id: updateData.departmentId },
+      });
+  
+      if (!department) {
+        throw new BadRequestException('Departamento no encontrado.');
+      }
+  
+      user.department = department; // Asignar el nuevo departamento
+    }
+  
+    // Actualizar solo los campos proporcionados en updateData
+    user.fullName = updateData.fullName ?? user.fullName;
+    user.celular = updateData.celular ?? user.celular;
+    user.profesion = updateData.profesion ?? user.profesion;
+    user.position = updateData.position ?? user.position;
+  
+    // Guardar los cambios en la base de datos
+    await this.userRepository.save(user);
+  
+    // Retornar los datos actualizados sin el campo password
+    return this.transformUser(user) as Omit<User, 'password'>;
+  }
+  
+  
 }
