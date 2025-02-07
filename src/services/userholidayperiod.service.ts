@@ -16,43 +16,52 @@ export class UserHolidayPeriodService {
     private userRepository: Repository<User>,
   ) {}
 
-  async createUserHolidayPeriod(createHolidayPeriodDto: { name: HolidayPeriodName; startDate: string; endDate: string; year: number; userId: number }): Promise<UserHolidayPeriod> {
+  async createUserHolidayPeriod(createHolidayPeriodDto: { 
+    name: HolidayPeriodName; 
+    startDate: string; 
+    endDate: string; 
+    userId: number; 
+  }): Promise<UserHolidayPeriod> {
     // Busca el usuario correspondiente
     const user = await this.userRepository.findOne({ where: { id: createHolidayPeriodDto.userId } });
     if (!user) {
       throw new BadRequestException('El usuario especificado no existe.');
     }
-
+  
     // Verifica que la fecha de inicio sea anterior a la fecha de fin
     if (new Date(createHolidayPeriodDto.startDate) >= new Date(createHolidayPeriodDto.endDate)) {
       throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
     }
-
+  
+    // Calcular el año a partir de la fecha de inicio
+    const year = new Date(createHolidayPeriodDto.startDate).getFullYear();
+  
     // Verificar si ya existe un período de vacaciones del mismo tipo para el año especificado
     const existingPeriod = await this.userHolidayPeriodRepository.findOne({
       where: { 
         user: { id: createHolidayPeriodDto.userId }, 
-        year: createHolidayPeriodDto.year, 
+        year, 
         name: createHolidayPeriodDto.name 
       },
     });
-
+  
     if (existingPeriod) {
-      throw new BadRequestException(`Ya existe un receso específico de ${createHolidayPeriodDto.name} para este usuario en el año ${createHolidayPeriodDto.year}.`);
+      throw new BadRequestException(`Ya existe un receso específico de ${createHolidayPeriodDto.name} para este usuario en el año ${year}.`);
     }
-
+  
     // Crea un nuevo período de vacaciones con el usuario asignado
     const newHolidayPeriod = this.userHolidayPeriodRepository.create({
       user,
       startDate: new Date(createHolidayPeriodDto.startDate),
       endDate: new Date(createHolidayPeriodDto.endDate),
       name: createHolidayPeriodDto.name,
-      year: createHolidayPeriodDto.year,
+      year,
     });
-
+  
     // Guarda el nuevo período de vacaciones en la base de datos
     return this.userHolidayPeriodRepository.save(newHolidayPeriod);
-}
+  }
+  
 
 
   async getUserHolidayPeriods(userId: number, year: number): Promise<UserHolidayPeriodDto[]> {
@@ -77,10 +86,16 @@ export class UserHolidayPeriodService {
     if (!existingPeriod) {
       throw new NotFoundException(`Receso con id ${id} no encontrado.`);
     }
-
+  
+    // Si se proporciona una nueva fecha de inicio, recalcular el año
+    if (holidayPeriod.startDate) {
+      holidayPeriod.year = new Date(holidayPeriod.startDate).getFullYear();
+    }
+  
     await this.userHolidayPeriodRepository.update(id, holidayPeriod);
     return this.userHolidayPeriodRepository.findOne({ where: { id } });
   }
+  
 
   async deleteUserHolidayPeriod(id: number): Promise<void> {
     const result = await this.userHolidayPeriodRepository.delete(id);

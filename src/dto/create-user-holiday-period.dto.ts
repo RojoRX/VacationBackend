@@ -13,8 +13,5 @@ export class CreateUserHolidayPeriodDto {
   endDate: string;
 
   @IsNumber()
-  year: number;
-
-  @IsNumber()
   userId: number;
 }
