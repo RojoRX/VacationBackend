@@ -123,15 +123,18 @@ export class VacationRequestController {
   @ApiResponse({ status: 400, description: 'Error al actualizar el estado' })
   async updateVacationRequestStatus(
     @Param('vacationRequestId') vacationRequestId: number,
-    @Query('supervisorId') supervisorId: number,
-    @Body() body: { status: string },
-  ): Promise<VacationRequestDTO> {
+    @Body() body: { status: string; supervisorId: number }, // Tipado correcto para el body
+): Promise<VacationRequestDTO> {
     try {
-      return await this.vacationRequestService.updateVacationRequestStatus(vacationRequestId, body.status, supervisorId);
+        return await this.vacationRequestService.updateVacationRequestStatus(
+            vacationRequestId,
+            body.status,
+            body.supervisorId, // Accede a supervisorId desde body
+        );
     } catch (error) {
-      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+        throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
-  }
+}
 
   // Endpoint para obtener solicitudes de vacaciones por supervisor
   @Get('supervisor/:supervisorId')

@@ -46,25 +46,36 @@ export class VacationService {
 
         // Obtener recesos personalizados del usuario
         const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(userData.id, year);
+        //console.log("Recesos personalizados obtenidos:", personalizedRecesses);
 
-        // Determinar los recesos a utilizar 
+        // Determinar los recesos a utilizar
         const recesos = [];
         let totalNonHolidayDays = 0;
         const nonHolidayDaysDetails = [];
 
-        // Si no hay recesos generales, usa los personalizados
-        const periodsToProcess = holidayPeriods.length > 0 ? holidayPeriods : personalizedRecesses;
+        // Si existen recesos personalizados, usarlos completamente o combinarlos con los generales
+        const allRecessesMap = new Map<string, any>();
 
-        for (const period of periodsToProcess) {
-            // Verifica si existe un receso personalizado con el mismo nombre (solo si hay recesos generales)
-            const personalizedReceso = personalizedRecesses.find(p => p.name.trim().toLowerCase() === period.name.trim().toLowerCase());
+        // Agregar recesos generales al mapa (clave: nombre en minúsculas)
+        for (const generalRecess of holidayPeriods) {
+            allRecessesMap.set(generalRecess.name.trim().toLowerCase(), generalRecess);
+        }
 
-            // Si hay recesos generales, prioriza el personalizado si existe
-            const recesoFinal = personalizedReceso || period;
+        // Agregar o sobrescribir con recesos personalizados
+        for (const personalizedRecess of personalizedRecesses) {
+            allRecessesMap.set(personalizedRecess.name.trim().toLowerCase(), personalizedRecess);
+        }
 
-            // Si no hay recesos generales y ya estamos procesando los personalizados, asegúrate de que los campos existan
-            const startDateHol = DateTime.fromJSDate(recesoFinal.startDate).startOf('day');
-            const endDateHol = DateTime.fromJSDate(recesoFinal.endDate).endOf('day');
+        // Convertir el mapa de vuelta a un array con los recesos finales
+        const finalRecesses = Array.from(allRecessesMap.values());
+        //console.log("Recesos finales a procesar:", finalRecesses);
+
+        for (const receso of finalRecesses) {
+            //console.log("Procesando receso:", receso.name);
+
+            // Definir fechas del receso
+            const startDateHol = DateTime.fromJSDate(receso.startDate).startOf('day');
+            const endDateHol = DateTime.fromJSDate(receso.endDate).endOf('day');
 
             const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
             const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
@@ -76,22 +87,31 @@ export class VacationService {
                 if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
                     nonHolidayDaysDetails.push({
                         date: nonHoliday.date,
-                        reason: `Dentro del receso ${recesoFinal.name}`
+                        reason: `Dentro del receso ${receso.name}`
                     });
                 }
             });
 
-            // Agregar el receso al array de recesos
+            // Determinar tipo de receso
+            const isPersonalized = personalizedRecesses.some(p => p.name.trim().toLowerCase() === receso.name.trim().toLowerCase());
+
             recesos.push({
-                name: recesoFinal.name,
-                startDate: recesoFinal.startDate,
-                endDate: recesoFinal.endDate,
+                name: receso.name,
+                startDate: receso.startDate,
+                endDate: receso.endDate,
                 totalDays,
                 nonHolidayDays: nonHolidayDaysCount,
                 daysCount: totalDays - nonHolidayDaysCount,
-                type: personalizedReceso ? 'personalizado' : (holidayPeriods.length > 0 ? 'general' : 'personalizado')
+                type: isPersonalized ? 'personalizado' : 'general'
             });
         }
+
+        //console.log("Recesos finales procesados:", recesos);
+
+
+        // Ver el resultado final de los recesos procesados
+       // console.log("Recesos procesados:", recesos);
+
         // Calcular los días usados por recesos
         const totalVacationDaysUsed = recesos.reduce((total, receso) => total + receso.daysCount, 0);
 
@@ -113,6 +133,7 @@ export class VacationService {
             deuda = Math.abs(remainingVacationDays);
             remainingVacationDays = 0;  // Evitar que los días disponibles sean negativos
         }
+        console.log(` Recibi esta fecha ${startDate} y ${endDate} `)
 
         return {
             carnetIdentidad: userData.carnetIdentidad,
