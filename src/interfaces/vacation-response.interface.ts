@@ -12,6 +12,7 @@ export interface VacationResponse {
   antiguedadEnDias: number;
   diasDeVacacion: number;
   diasDeVacacionRestantes: number;
+  deuda:number;
   recesos: {
     name: string;
     startDate: Date;

@@ -23,10 +23,9 @@ export class GestionPeriodService {
 
       gestions.push({
         startDate: currentStartDate.toJSDate(),
-        endDate: nextYearDate.minus({ days: 1 }).toJSDate(),
+        endDate: nextYearDate.toJSDate(), // ✅ Ahora coincide exactamente con la fecha del siguiente año
         label: `GESTION ${currentStartDate.year} - ${nextYearDate.year}`
       });
-
       currentStartDate = nextYearDate;
     }
 
