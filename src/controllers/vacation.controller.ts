@@ -62,4 +62,51 @@ export class VacationController {
  
      return this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
    }
+
+   @Get('accumulated-debt')
+  @ApiOperation({ summary: 'Calcular la deuda acumulativa de días de vacaciones hasta una fecha específica' })
+  @ApiQuery({ name: 'carnetIdentidad', required: true, description: 'Carnet de identidad del usuario' })
+  @ApiQuery({ name: 'endDate', required: true, description: 'Fecha de fin del rango para calcular la deuda acumulativa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Deuda acumulativa calculada exitosamente',
+    schema: {
+      example: {
+        deudaAcumulativa: 10,
+        detalles: [
+          {
+            startDate: '2018-03-15',
+            endDate: '2019-03-14',
+            deuda: 2,
+            diasDeVacacion: 15,
+            diasDeVacacionRestantes: 13
+          },
+          {
+            startDate: '2019-03-15',
+            endDate: '2020-03-14',
+            deuda: 3,
+            diasDeVacacion: 15,
+            diasDeVacacionRestantes: 12
+          }
+        ]
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'El usuario no existe o la fecha es inválida' })
+  async getAccumulatedDebt(
+    @Query('carnetIdentidad') carnetIdentidad: string,
+    @Query('endDate') endDate: string
+  ): Promise<{ deudaAcumulativa: number, detalles: any[] }> {
+    if (!carnetIdentidad || !endDate) {
+      throw new BadRequestException('Faltan parámetros obligatorios.');
+    }
+
+    const endDateTime = new Date(endDate);
+
+    if (isNaN(endDateTime.getTime())) {
+      throw new BadRequestException('Fecha inválida.');
+    }
+
+    return this.vacationService.calculateAccumulatedDebt(carnetIdentidad, endDateTime);
+  }
 }

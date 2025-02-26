@@ -37,17 +37,20 @@ export class VacationCalculatorService {
   // Función para contar los días hábiles en el rango
   countWeekdays(startDate: DateTime, endDate: DateTime): number {
     let count = 0;
-    let current = startDate.startOf('day').plus({ days: 1 }); // Inicia al siguiente día
+    let currentDate = startDate;
 
-    while (current < endDate) {
-      if (current.weekday >= 1 && current.weekday <= 5) {
-        count++;
-      }
-      current = current.plus({ days: 1 });
+    // Asegurarse de que el rango sea inclusivo
+    while (currentDate <= endDate) {
+        // Verificar si el día actual es un día hábil (lunes a viernes)
+        if (currentDate.weekday >= 1 && currentDate.weekday <= 5) {
+            count++;
+        }
+        // Avanzar al siguiente día
+        currentDate = currentDate.plus({ days: 1 });
     }
 
     return count;
-  }
+}
 
   getIntersectionDays(startDateHol: DateTime, endDateHol: DateTime, nonHolidayDays: any[]): number {
     return nonHolidayDays.filter(nonHoliday => {
