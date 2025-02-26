@@ -25,82 +25,73 @@ export class VacationRequestService {
     private readonly vacationService: VacationService,
   ) { }
 
-  async createVacationRequest(
-    ci: string,
-    startDate: string,
-    endDate: string,
-    position: string,
-    managementPeriod: { startPeriod: string; endPeriod: string },
-  ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
+async createVacationRequest(
+  ci: string,
+  startDate: string,
+  endDate: string,
+  position: string,
+  managementPeriod: { startPeriod: string; endPeriod: string },
+): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
 
-    // Buscar el usuario por CI
-    const user = await this.userService.findByCarnet(ci);
-    if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-    }
-
-    // Agregar logs para depuración
-
-
-    // Crear fechas sin que JS modifique la zona horaria
-    const startPeriodDate = new Date(managementPeriod.startPeriod + "T00:00:00");
-    const endPeriodDate = new Date(managementPeriod.endPeriod + "T23:59:59");
-
-
-    // Obtener los días restantes de vacaciones asegurando que las fechas no cambien
-    const vacationResponse = await this.vacationService.calculateVacationDays(
-      ci,
-      startPeriodDate,
-      endPeriodDate
-    );
-
-    // Convertir fechas de solicitud correctamente
-    const startDateISO = new Date(startDate + "T00:00:00").toISOString();
-    const endDateISO = new Date(endDate + "T23:59:59").toISOString();
-
-    // Verificar si los días restantes son suficientes
-    const daysRequested = await calculateVacationDays(startDateISO, endDateISO, this.nonHolidayService);
-    const remainingVacationDays = vacationResponse.diasDeVacacionRestantes;
-
-    if (daysRequested > remainingVacationDays) {
-      throw new HttpException(
-        `No puedes solicitar más de ${remainingVacationDays} días de vacaciones. Has solicitado ${daysRequested} días.`,
-        HttpStatus.BAD_REQUEST
-      );
-    }
-
-    // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
-    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDateISO, endDateISO);
-
-    // Calcular la fecha de retorno y convertir a ISO string
-    const returnDateISO = new Date(await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)).toISOString();
-
-
-    // Crear y guardar la solicitud de vacaciones con las fechas corregidas
-    const vacationRequest = this.vacationRequestRepository.create({
-      user,
-      position,
-      requestDate: new Date().toISOString(), // Fecha actual en formato ISO
-      startDate: startDateISO, // Fecha de inicio en formato ISO
-      endDate: endDateISO, // Fecha de fin en formato ISO
-      totalDays: daysRequested,
-      status: 'PENDING', // Estado inicial
-      returnDate: returnDateISO, // Fecha de retorno en formato ISO
-      managementPeriodStart: startPeriodDate.toISOString(), // Usar la fecha corregida en formato ISO
-      managementPeriodEnd: endPeriodDate.toISOString(), // Usar la fecha corregida en formato ISO
-    });
-
-
-    // Guardar la solicitud en la base de datos
-    const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-
-    // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
-    const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-    const response = { ...requestWithoutSensitiveData, ci: user.ci };
-
-    return response;
-
+  // Buscar el usuario por CI
+  const user = await this.userService.findByCarnet(ci);
+  if (!user) {
+    throw new HttpException('User not found', HttpStatus.NOT_FOUND);
   }
+
+  // Crear fechas sin que JS modifique la zona horaria
+  const startPeriodDate = new Date(managementPeriod.startPeriod + "T00:00:00");
+  const endPeriodDate = managementPeriod.endPeriod;
+
+  // Obtener la deuda acumulativa
+  const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, new Date (endPeriodDate));
+console.log(`Enviando el date de ${endPeriodDate}`)
+  // Verificar si la deuda acumulativa es mayor a 0
+  if (accumulatedDebtResponse.deudaAcumulativa > 0) {
+    throw new HttpException(
+      `No puedes solicitar vacaciones. Tienes una deuda acumulada de ${accumulatedDebtResponse.deudaAcumulativa} días.`,
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Convertir fechas de solicitud correctamente
+  const startDateISO = new Date(startDate + "T00:00:00").toISOString();
+  const endDateISO = new Date(endDate + "T23:59:59").toISOString();
+
+  // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
+  await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDateISO, endDateISO);
+
+  // Calcular los días solicitados para la solicitud de vacaciones
+  const daysRequested = await calculateVacationDays(startDateISO, endDateISO, this.nonHolidayService);
+
+  // Calcular la fecha de retorno y convertir a ISO string
+  const returnDateISO = new Date(await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)).toISOString();
+
+  // Crear y guardar la solicitud de vacaciones con las fechas corregidas
+  const vacationRequest = this.vacationRequestRepository.create({
+    user,
+    position,
+    requestDate: new Date().toISOString(), // Fecha actual en formato ISO
+    startDate: startDateISO, // Fecha de inicio en formato ISO
+    endDate: endDateISO, // Fecha de fin en formato ISO
+    totalDays: daysRequested,
+    status: 'PENDING', // Estado inicial
+    returnDate: returnDateISO, // Fecha de retorno en formato ISO
+    managementPeriodStart: startPeriodDate.toISOString(), // Usar la fecha corregida en formato ISO
+    managementPeriodEnd: endPeriodDate, // Usar la fecha corregida en formato ISO
+  });
+
+  // Guardar la solicitud en la base de datos
+  const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
+
+  // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
+  const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
+  const response = { ...requestWithoutSensitiveData, ci: user.ci };
+
+  return response;
+}
+
+  
 
 
 
