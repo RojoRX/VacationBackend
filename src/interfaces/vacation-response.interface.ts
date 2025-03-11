@@ -13,6 +13,7 @@ export interface VacationResponse {
   diasDeVacacion: number;
   diasDeVacacionRestantes: number;
   deuda:number;
+  //deudaAcumulativa: number,
   recesos: {
     name: string;
     startDate: Date;
