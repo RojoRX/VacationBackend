@@ -96,7 +96,7 @@ export class VacationRequestService {
     // Verificar si hay días disponibles en la gestión correspondiente
     if (gestionCorrespondiente.diasDisponibles <= 0) {
       throw new HttpException(
-        `No puedes solicitar vacaciones. No tienes días disponibles en la gestión actual. Días disponibles: ${gestionCorrespondiente.diasDisponibles}`,
+        `No puedes solicitar vacaciones. No tienes días disponibles en la gestión seleccionada. Días disponibles: ${gestionCorrespondiente.diasDisponibles}`,
         HttpStatus.BAD_REQUEST
       );
     }
@@ -138,12 +138,6 @@ export class VacationRequestService {
     return response;
   }
   
-  
-
-  
-
-
-
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -171,42 +165,42 @@ export class VacationRequestService {
   async countAuthorizedVacationDaysInRange(
     ci: string,
     startDate: string,
-    endDate: string,
+    endDate: string
   ): Promise<{ requests: VacationRequest[]; totalAuthorizedVacationDays: number }> {
     // Validar que la fecha de inicio no sea mayor que la fecha de fin
     if (new Date(startDate) > new Date(endDate)) {
       throw new HttpException('Invalid date range', HttpStatus.BAD_REQUEST);
     }
-
+  
     // Buscar usuario por carnet de identidad
     const user = await this.userService.findByCarnet(ci);
     if (!user) {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
-
+  
     // Convertir fechas sin parte horaria para asegurar precisión en comparación
     const startDateWithoutTime = new Date(startDate).toISOString().split('T')[0];
     const endDateWithoutTime = new Date(endDate).toISOString().split('T')[0];
-
+  
     // Obtener solicitudes autorizadas y aprobadas por Recursos Humanos en el rango de fechas
     const authorizedVacationDays = await this.vacationRequestRepository.find({
       where: {
         user: { id: user.id },
         status: 'AUTHORIZED',
         approvedByHR: true,
-        managementPeriodStart: LessThanOrEqual(endDateWithoutTime),
-        managementPeriodEnd: MoreThanOrEqual(startDateWithoutTime),
+        managementPeriodStart: startDateWithoutTime, // Filtro exacto
+        managementPeriodEnd: endDateWithoutTime,     // Filtro exacto
       },
     });
-
+  
     // Verificar que authorizedVacationDays no sea nulo o vacío
     if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays)) {
       throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
+  
     // Calcular el total de días autorizados
     const totalAuthorizedDays = authorizedVacationDays.reduce((total, request) => total + request.totalDays, 0);
-
+  
     return {
       requests: authorizedVacationDays,
       totalAuthorizedVacationDays: totalAuthorizedDays,
@@ -415,6 +409,7 @@ export class VacationRequestService {
     return {
       requestId: request.id,
       userName: request.user.fullName,
+      ci:request.user.ci,
       position: request.user.position,
       requestDate: request.requestDate,
       department: request.user.department ? request.user.department.name : null,
