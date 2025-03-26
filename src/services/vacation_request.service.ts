@@ -31,112 +31,104 @@ export class VacationRequestService {
     endDate: string,
     position: string,
     managementPeriod: { startPeriod: string; endPeriod: string },
-  ): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
+): Promise<Omit<VacationRequest, 'user'> & { ci: string }> {
     // Buscar el usuario por CI
     const user = await this.userService.findByCarnet(ci);
     if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
-  
+
+    // Verificar la última solicitud de vacaciones para el usuario
+    const lastVacationRequest = await this.vacationRequestRepository.findOne({
+        where: { user: { id: user.id } },
+        order: { requestDate: 'DESC' },
+    });
+
+    // Verificar si la última solicitud tiene estado 'AUTHORIZED' y los campos 'approvedByHR' y 'approvedBySupervisor' en true
+    if (lastVacationRequest) {
+        if (lastVacationRequest.status !== 'AUTHORIZED') {
+            throw new HttpException(
+                'No puedes crear una nueva solicitud. La última solicitud no está autorizada.',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        if (!lastVacationRequest.approvedByHR || !lastVacationRequest.approvedBySupervisor) {
+            throw new HttpException(
+                'No puedes crear una nueva solicitud. La última solicitud no ha sido aprobada por Recursos Humanos o Supervisor.',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+    }
+
     // Crear fechas asegurando que no haya desfase de zona horaria
     const startPeriodDate = new Date(Date.UTC(
-      parseInt(managementPeriod.startPeriod.substring(0, 4)), // Año
-      parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1, // Mes (base 0)
-      parseInt(managementPeriod.startPeriod.substring(8, 10)) // Día
+        parseInt(managementPeriod.startPeriod.substring(0, 4)),
+        parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1,
+        parseInt(managementPeriod.startPeriod.substring(8, 10))
     ));
-  
+
     const endPeriodDate = new Date(Date.UTC(
-      parseInt(managementPeriod.endPeriod.substring(0, 4)),
-      parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
-      parseInt(managementPeriod.endPeriod.substring(8, 10))
+        parseInt(managementPeriod.endPeriod.substring(0, 4)),
+        parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
+        parseInt(managementPeriod.endPeriod.substring(8, 10))
     ));
-  
-    // Obtener la deuda acumulativa y los detalles de las gestiones
+
+    // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
+    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
+
+    // Calcular los días solicitados para la solicitud de vacaciones
+    const daysRequested = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
+
+    // Lógica para encontrar la gestión correspondiente, similar a lo que ya tienes
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodDate);
-    console.log(`Enviando el date de ${endPeriodDate.toISOString()}`);
-  
-    // Depuración: Mostrar la fecha de fin del período de gestión
-    console.log(`[Depuración] Fecha de fin del período de gestión: ${endPeriodDate.toISOString()}`);
-  
-    // Depuración: Mostrar todas las gestiones y sus fechas
-    console.log(`[Depuración] Detalles de las gestiones:`);
-    accumulatedDebtResponse.detalles.forEach((gestion, index) => {
-      console.log(`- Gestión ${index + 1}:`);
-      console.log(`  - startDate: ${gestion.startDate}`);
-      console.log(`  - endDate: ${gestion.endDate}`);
-      console.log(`  - diasDisponibles: ${gestion.diasDisponibles}`);
+    const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
+        return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
     });
-  
-    // Encontrar la gestión correspondiente a la fecha de fin del período de gestión
-    const gestionCorrespondiente = accumulatedDebtResponse.detalles.find(
-      (gestion) => {
-        const gestionEndDate = new Date(gestion.endDate);
-        
-        // Normalizar fechas a timestamps numéricos antes de comparar
-        const gestionEndTime = gestionEndDate.getTime();
-        const endPeriodTime = endPeriodDate.getTime();
-  
-        // Depuración: Mostrar las fechas de la gestión actual y la comparación
-        console.log(`[Depuración] Comparando con gestión ${gestion.startDate} - ${gestion.endDate}`);
-        console.log(`- endDate gestion: ${gestionEndDate.toISOString()}`);
-        console.log(`- endPeriodDate: ${endPeriodDate.toISOString()}`);
-        console.log(`- ¿endDate coincide con endPeriodDate? ${gestionEndTime === endPeriodTime}`);
-  
-        return gestionEndTime === endPeriodTime;
-      }
-    );
-  
+
     if (!gestionCorrespondiente) {
-      throw new HttpException(
-        `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
-        HttpStatus.BAD_REQUEST
-      );
+        throw new HttpException(
+            `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
+            HttpStatus.BAD_REQUEST,
+        );
     }
-  
+
     // Verificar si hay días disponibles en la gestión correspondiente
     if (gestionCorrespondiente.diasDisponibles <= 0) {
-      throw new HttpException(
-        `No puedes solicitar vacaciones. No tienes días disponibles en la gestión seleccionada. Días disponibles: ${gestionCorrespondiente.diasDisponibles}`,
-        HttpStatus.BAD_REQUEST
-      );
+        throw new HttpException(
+            `No puedes solicitar vacaciones. No tienes días disponibles en la gestión seleccionada.`,
+            HttpStatus.BAD_REQUEST,
+        );
     }
-  
-    // Convertir fechas de solicitud correctamente
+
+    // Continuar con el cálculo y creación de la solicitud
     const startDateISO = new Date(startDate + "T00:00:00Z").toISOString();
     const endDateISO = new Date(endDate + "T23:59:59Z").toISOString();
-  
-    // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
-    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDateISO, endDateISO);
-  
-    // Calcular los días solicitados para la solicitud de vacaciones
-    const daysRequested = await calculateVacationDays(startDateISO, endDateISO, this.nonHolidayService);
-  
-    // Calcular la fecha de retorno y convertir a ISO string
     const returnDateISO = new Date(await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)).toISOString();
-  
-    // Crear y guardar la solicitud de vacaciones con las fechas corregidas
+
     const vacationRequest = this.vacationRequestRepository.create({
-      user,
-      position,
-      requestDate: new Date().toISOString(), // Fecha actual en formato ISO
-      startDate: startDateISO, // Fecha de inicio en formato ISO
-      endDate: endDateISO, // Fecha de fin en formato ISO
-      totalDays: daysRequested,
-      status: 'PENDING', // Estado inicial
-      returnDate: returnDateISO, // Fecha de retorno en formato ISO
-      managementPeriodStart: startPeriodDate.toISOString(), // Usar la fecha corregida en formato ISO
-      managementPeriodEnd: endPeriodDate.toISOString(), // Usar la fecha corregida en formato ISO
+        user,
+        position,
+        requestDate: new Date().toISOString(),
+        startDate: startDateISO,
+        endDate: endDateISO,
+        totalDays: daysRequested,
+        status: 'PENDING',
+        returnDate: returnDateISO,
+        managementPeriodStart: startPeriodDate.toISOString(),
+        managementPeriodEnd: endPeriodDate.toISOString(),
     });
-  
+
     // Guardar la solicitud en la base de datos
     const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-  
+
     // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-    const response = { ...requestWithoutSensitiveData, ci: user.ci };
+    return { ...requestWithoutSensitiveData, ci: user.ci };
+}
+
   
-    return response;
-  }
+  
   
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {

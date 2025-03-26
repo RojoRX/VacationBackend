@@ -10,8 +10,11 @@ export async function calculateVacationDays(
     endDate: string,
     nonHolidayService: NonHolidayService
 ): Promise<number> {
-    const start = DateTime.fromISO(startDate);
-    const end = DateTime.fromISO(endDate);
+    // Asegurar que las fechas sean tratadas como UTC y al inicio del día
+    const start = DateTime.fromISO(startDate, { zone: 'utc' }).startOf('day');
+    const end = DateTime.fromISO(endDate, { zone: 'utc' }).startOf('day');
+
+    console.log(`Start Date: ${start.toISODate()} | End Date: ${end.toISODate()}`);
 
     if (end < start) {
         throw new Error('End date must be after start date');
@@ -21,17 +24,28 @@ export async function calculateVacationDays(
     const year = start.year;
     const nonHolidays = await nonHolidayService.getNonHolidayDays(year);
 
+    // Iterar día por día (incluyendo el último día)
     for (let day = start; day <= end; day = day.plus({ days: 1 })) {
-        const isWeekend = day.weekday === 6 || day.weekday === 7; // Sábado o domingo
-        const isNonHoliday = nonHolidays.some((nonHoliday) => nonHoliday.date === day.toISODate());
+        const isWeekend = day.weekday === 6 || day.weekday === 7; // 6 = sábado, 7 = domingo
+        const isNonHoliday = nonHolidays.some(nh => 
+            DateTime.fromISO(nh.date).toISODate() === day.toISODate()
+        );
+
+        console.log(`Checking: ${day.toISODate()} | Weekend: ${isWeekend} | Non-Holiday: ${isNonHoliday}`);
 
         if (!isWeekend && !isNonHoliday) {
             totalDays++;
         }
     }
 
+    console.log(`Total Vacation Days: ${totalDays}`);
     return totalDays;
 }
+
+
+
+
+
 
 
 // Calcular la fecha de retorno asegurando que sea un día hábil
@@ -66,23 +80,23 @@ export async function ensureNoOverlappingVacations(
     startDate: string,
     endDate: string
 ): Promise<void> {
+    // Consulta para encontrar solicitudes solapadas con el estado "AUTHORIZED"
     const overlappingRequests = await vacationRequestRepository.find({
-        where: [
-            {
-                user: { id: userId },
-                startDate: DateTime.fromISO(startDate).toISODate(),
-            },
-            {
-                user: { id: userId },
-                endDate: DateTime.fromISO(endDate).toISODate(),
-            },
-        ],
+        where: {
+            user: { id: userId },
+            status: 'AUTHORIZED', // Solo solicitudes autorizadas
+            approvedByHR: true,
+            approvedBySupervisor: true,
+            startDate: LessThanOrEqual(endDate), // Solicitudes que terminan antes o en la fecha final
+            endDate: MoreThanOrEqual(startDate), // Solicitudes que comienzan después o en la fecha inicial
+        },
     });
 
     if (overlappingRequests.length > 0) {
-        throw new Error('Vacation request overlaps with existing requests');
+        throw new Error('La solicitud de vacaciones se solapa con una solicitud autorizada existente');
     }
 }
+
 
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(
