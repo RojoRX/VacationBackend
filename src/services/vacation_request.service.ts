@@ -143,12 +143,6 @@ export class VacationRequestService {
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
     return { ...requestWithoutSensitiveData, ci: user.ci };
   }
-  
-
-
-
-
-
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
