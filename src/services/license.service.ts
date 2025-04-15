@@ -108,7 +108,11 @@ export class LicenseService {
   
 
   async findAllLicenses(): Promise<LicenseResponseDto[]> {
-    const licenses = await this.licenseRepository.find({ relations: ['user'] });
+    const licenses = await this.licenseRepository.find({
+      relations: ['user'],
+    });
+    
+
     return licenses.map(license => this.mapLicenseToDto(license));
   }
 
@@ -274,32 +278,37 @@ async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
     }
   }
   
-// Método para alternar el estado de aprobación del supervisor inmediato
-async toggleImmediateSupervisorApproval(licenseId: number): Promise<License> {
+// Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
+async updatePersonalDepartmentApproval(
+  licenseId: number,
+  userId: number, // quien realiza la aprobación
+  approval: boolean
+): Promise<License> {
+  // Buscar la licencia por ID
   const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
 
   if (!license) {
     throw new NotFoundException('Licencia no encontrada');
   }
 
-  // Alternar el estado de aprobación
-  license.immediateSupervisorApproval = !license.immediateSupervisorApproval;
-  
+  // Buscar al usuario que intenta aprobar/rechazar
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado');
+  }
+
+  // Verificar si el usuario tiene el rol ADMIN
+  if (user.role !== 'ADMIN') {
+    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+  }
+
+  // Actualizar el estado de aprobación
+  license.personalDepartmentApproval = approval;
+
+  // Guardar y devolver la licencia actualizada
   return this.licenseRepository.save(license);
 }
-
-
-  // Método para actualizar el estado de aprobación del departamento personal
-  async updatePersonalDepartmentApproval(licenseId: number, approval: boolean): Promise<License> {
-    const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
-
-    if (!license) {
-      throw new NotFoundException('Licencia no encontrada');
-    }
-
-    license.personalDepartmentApproval = approval;
-    return this.licenseRepository.save(license);
-  }
 
 // Método para obtener las licencias del departamento del supervisor
 async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {

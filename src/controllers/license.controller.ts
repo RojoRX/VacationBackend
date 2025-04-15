@@ -93,34 +93,43 @@ export class LicenseController {
     return this.licenseService.getTotalAuthorizedLicensesForUser(userId, start, end);
   }
 
-  @Patch(':licenseId/supervisor-approval')
-  @ApiOperation({ summary: 'Actualizar la aprobación del supervisor inmediato' })
-  @ApiParam({ name: 'licenseId', required: true, description: 'ID de la licencia' })
-  @ApiResponse({ status: 200, description: 'Licencia actualizada', type: License })
-  async updateImmediateSupervisorApproval(
-    @Param('licenseId') licenseId: number,
-  ): Promise<License> {
-    return this.licenseService.toggleImmediateSupervisorApproval(licenseId);
-  }
   
-
   @Patch(':licenseId/personal-approval')
   @ApiOperation({ summary: 'Actualizar la aprobación del departamento personal' })
   @ApiParam({ name: 'licenseId', required: true, description: 'ID de la licencia' })
-  @ApiBody({ type: Boolean, description: 'Estado de aprobación' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        approval: { type: 'boolean', description: 'Estado de aprobación' },
+        userId: { type: 'number', description: 'ID del usuario que realiza la acción' },
+      },
+      required: ['approval', 'userId'],
+    },
+  })
   @ApiResponse({ status: 200, description: 'Licencia actualizada', type: License })
   async updatePersonalDepartmentApproval(
     @Param('licenseId') licenseId: number,
     @Body('approval') approval: boolean,
+    @Body('userId') userId: number,
   ): Promise<License> {
-    return this.licenseService.updatePersonalDepartmentApproval(licenseId, approval);
+    return this.licenseService.updatePersonalDepartmentApproval(licenseId, userId, approval);
   }
+  
 
   @Patch(':licenseId/approve')
   @ApiOperation({ summary: 'Aprobar o rechazar una licencia por el supervisor' })
   @ApiParam({ name: 'licenseId', required: true, description: 'ID de la licencia' })
   @ApiQuery({ name: 'supervisorId', required: true, type: Number, description: 'ID del supervisor' })
-  @ApiBody({ type: Boolean, description: 'Estado de aprobación' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        approval: { type: 'boolean', description: 'true para aprobar, false para rechazar' },
+      },
+      required: ['approval'],
+    },
+  })
   @ApiResponse({ status: 200, description: 'Licencia aprobada o rechazada', type: LicenseResponseDto })
   async approveLicense(
     @Param('licenseId') licenseId: number,
@@ -129,6 +138,7 @@ export class LicenseController {
   ): Promise<LicenseResponseDto> {
     return this.licenseService.approveLicense(licenseId, supervisorId, approval);
   }
+  
 
   @Get('department/:supervisorId')
   @ApiOperation({ summary: 'Obtener las licencias del departamento del supervisor' })
