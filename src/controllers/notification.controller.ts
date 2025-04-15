@@ -1,13 +1,14 @@
 import { Controller, Post, Body, Param, Get, Patch } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiResponse } from "@nestjs/swagger";
+import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiParam } from "@nestjs/swagger";
 import { NotificationService } from "src/services/notification.service";
 import { NotificationResponseDto } from "src/dto/notification-response.dto";
 
-@ApiTags('Notificaciones') // Agrupa las rutas bajo esta etiqueta en Swagger
+@ApiTags('Notificaciones')
 @Controller('notifications')
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
+  // Notificar a un usuario específico
   @Post(':recipientId')
   @ApiOperation({ summary: 'Notificar a un usuario' })
   @ApiParam({ name: 'recipientId', description: 'ID del usuario que recibirá la notificación' })
@@ -22,6 +23,25 @@ export class NotificationController {
     return await this.notificationService.notifyUser(recipientId, message, senderId);
   }
 
+  // Notificar a todos los administradores
+  @Post('admins')
+  @ApiOperation({ summary: 'Notificar a todos los administradores' })
+  @ApiBody({ schema: { properties: { message: { type: 'string' }, senderId: { type: 'number', required: null } } } })
+  @ApiResponse({ status: 201, description: 'Notificación enviada a todos los administradores.' })
+  async notifyAdmins(
+    @Body('message') message: string,
+    @Body('senderId') senderId?: number,
+  ) {
+    return await this.notificationService.notifyAdmins(message, senderId);
+  }
+  // Aquí va el método de las notificaciones
+  @Get('admins')
+  @ApiOperation({ summary: 'Obtener todas las notificaciones de los administradores' })
+  @ApiResponse({ status: 200, description: 'Lista de notificaciones para todos los administradores.' })
+  async getNotificationsForAdmins(): Promise<NotificationResponseDto[]> {
+    return await this.notificationService.getNotificationsForAdmins();
+  }
+  // Obtener notificaciones no leídas de un usuario
   @Get(':userId/unread')
   @ApiOperation({ summary: 'Obtener notificaciones no leídas de un usuario' })
   @ApiParam({ name: 'userId', description: 'ID del usuario' })
@@ -30,6 +50,7 @@ export class NotificationController {
     return await this.notificationService.getUnreadNotifications(userId);
   }
 
+  // Marcar una notificación como leída
   @Patch(':notificationId/read')
   @ApiOperation({ summary: 'Marcar una notificación como leída' })
   @ApiParam({ name: 'notificationId', description: 'ID de la notificación' })
@@ -39,6 +60,7 @@ export class NotificationController {
     return await this.notificationService.markAsRead(notificationId);
   }
 
+  // Obtener todas las notificaciones de un usuario
   @Get(':userId')
   @ApiOperation({ summary: 'Obtener todas las notificaciones de un usuario' })
   @ApiParam({ name: 'userId', description: 'ID del usuario' })
@@ -46,4 +68,6 @@ export class NotificationController {
   async getNotificationsByUser(@Param('userId') userId: number): Promise<NotificationResponseDto[]> {
     return await this.notificationService.getNotificationsByUser(userId);
   }
+
+
 }
