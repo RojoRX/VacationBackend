@@ -7,7 +7,7 @@ import { User } from 'src/entities/user.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
 import { UserService } from './user.service';
 import { VacationService } from './vacation.service';
-
+import { NotificationService } from './notification.service';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -20,6 +20,7 @@ export class LicenseService {
     private userService: UserService,
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
+    private readonly notificationService: NotificationService,
 
   ) { }
 
@@ -278,37 +279,6 @@ async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
     }
   }
   
-// Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-async updatePersonalDepartmentApproval(
-  licenseId: number,
-  userId: number, // quien realiza la aprobación
-  approval: boolean
-): Promise<License> {
-  // Buscar la licencia por ID
-  const license = await this.licenseRepository.findOne({ where: { id: licenseId } });
-
-  if (!license) {
-    throw new NotFoundException('Licencia no encontrada');
-  }
-
-  // Buscar al usuario que intenta aprobar/rechazar
-  const user = await this.userRepository.findOne({ where: { id: userId } });
-
-  if (!user) {
-    throw new BadRequestException('Usuario no encontrado');
-  }
-
-  // Verificar si el usuario tiene el rol ADMIN
-  if (user.role !== 'ADMIN') {
-    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-  }
-
-  // Actualizar el estado de aprobación
-  license.personalDepartmentApproval = approval;
-
-  // Guardar y devolver la licencia actualizada
-  return this.licenseRepository.save(license);
-}
 
 // Método para obtener las licencias del departamento del supervisor
 async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
@@ -340,8 +310,8 @@ async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto
 }
 
 
- // Método para que un supervisor apruebe o rechace una licencia
- async approveLicense(
+// Método para que un supervisor apruebe o rechace una licencia
+async approveLicense(
   licenseId: number,
   supervisorId: number,
   approval: boolean
@@ -383,6 +353,14 @@ async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto
   // Guardar los cambios en la licencia
   await this.licenseRepository.save(license);
 
+  // Notificar al usuario sobre la aprobación o rechazo de la licencia
+  const message = approval
+    ? `Tu licencia fue aprobada por el supervisor ${supervisor.fullName}.`
+    : `Tu licencia fue rechazada por el supervisor ${supervisor.fullName}.`;
+
+  // Llamar al servicio de notificaciones para enviar la notificación
+  await this.notificationService.notifyUser(license.user.id, message, supervisor.id);
+
   // Devolver la licencia con la estructura del DTO actualizado
   return {
     id: license.id,
@@ -403,6 +381,52 @@ async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto
     supervisorDepartmentName: approval ? supervisor.department.name : undefined,
   };
 }
+// Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
+async updatePersonalDepartmentApproval(
+  licenseId: number,
+  userId: number, // quien realiza la aprobación
+  approval: boolean
+): Promise<License> {
+  // Buscar la licencia por ID
+  const license = await this.licenseRepository.findOne({
+    where: { id: licenseId },
+    relations: ['user'],
+  });
+
+  if (!license || !license.user) {
+    throw new BadRequestException('Licencia o usuario asociado no encontrado');
+  }
+
+  // Buscar al usuario que intenta aprobar/rechazar
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado');
+  }
+
+  // Verificar si el usuario tiene el rol ADMIN
+  if (user.role !== 'ADMIN') {
+    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+  }
+
+  // Actualizar el estado de aprobación
+  license.personalDepartmentApproval = approval;
+
+  // Guardar y devolver la licencia actualizada
+  const updatedLicense = await this.licenseRepository.save(license);
+
+  // Notificar al usuario sobre la aprobación o rechazo de la licencia
+  const message = approval
+    ? `Tu licencia fue aprobada por el departamento de personal.`
+    : `Tu licencia fue rechazada por el departamento de personal.`;
+
+  // Llamar al servicio de notificaciones para enviar la notificación
+  await this.notificationService.notifyUser(license.user.id, message, user.id);
+
+  return updatedLicense;
+}
+
+
 
 
 }

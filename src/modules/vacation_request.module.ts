@@ -20,16 +20,18 @@ import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
 import { License } from 'src/entities/license.entity';
 import { VacationPolicyModule } from './vacationPolicyModule.module';
+import { Notification } from 'src/entities/notification.entity';
+import { NotificationService } from 'src/services/notification.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday, Department, GeneralHolidayPeriod, UserHolidayPeriod, License]),
+    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday, Department, GeneralHolidayPeriod, UserHolidayPeriod, License, Notification]),
     HttpModule,
     VacationPolicyModule,
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],
-  providers: [VacationRequestService, UserService, NonHolidayService, VacationService, VacationCalculatorService, RecesoService, UserHolidayPeriodService, LicenseService],
+  providers: [VacationRequestService, UserService, NonHolidayService, VacationService, VacationCalculatorService, RecesoService, UserHolidayPeriodService, LicenseService, NotificationService],
   exports: [VacationRequestService],
 })
 export class VacationRequestModule {}

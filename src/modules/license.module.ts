@@ -6,12 +6,15 @@ import { LicenseController } from 'src/controllers/license.controller';
 import { User } from 'src/entities/user.entity';
 import { UserModule } from './user.module';
 import { VacationModule } from './vacation.module'; // forwardRef para evitar la referencia circular
+import { NotificationModule } from './notification.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([License, User]),
     UserModule,
     forwardRef(() => VacationModule), // Aquí se usa forwardRef
+    NotificationModule,
+
   ],
   providers: [LicenseService],
   controllers: [LicenseController],

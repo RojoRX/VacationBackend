@@ -4,7 +4,7 @@ import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la en
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
 import { Department } from './department.entity';
 import { RoleEnum } from 'src/enums/role.enum';
-
+import { Notification } from './notification.entity';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -55,4 +55,7 @@ export class User {
   @Column({ type: 'enum', enum: RoleEnum, default: RoleEnum.USER })
   role: RoleEnum; // Usa el enum para el rol del usuario
 
+  @OneToMany(() => Notification, notification => notification.recipient)
+  notifications: Notification[];
+  
 }

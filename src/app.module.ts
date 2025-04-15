@@ -12,6 +12,7 @@ import { UserHolidayPeriodModule } from './modules/userholidayperiod.module';
 import { VacationRequestModule } from './modules/vacation_request.module';
 import { DepartmentModule } from './modules/department.module';
 import { VacationPolicyModule } from './modules/vacationPolicyModule.module';
+import { NotificationModule } from './modules/notification.module';
 
 @Module({
   imports: [
@@ -36,7 +37,8 @@ import { VacationPolicyModule } from './modules/vacationPolicyModule.module';
     UserHolidayPeriodModule,
     VacationRequestModule,
     DepartmentModule, 
-    VacationPolicyModule
+    VacationPolicyModule,
+    NotificationModule
   ],
   controllers: [],
   providers: [AppService],
