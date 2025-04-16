@@ -182,11 +182,15 @@ async updateStatus(@Param('id') id: number, @Body() updateStatusDto: UpdateStatu
 }
 
 @Put(':id/toggle-approved-by-hr')
-  @ApiOperation({ summary: 'Alternar el estado de ApprovedByHR de una solicitud de vacaciones' })
-  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada con éxito' })
-  async toggleApprovedByHR(@Param('id') id: number) {
-    return this.vacationRequestService.toggleApprovedByHR(id);
-  }
+@ApiOperation({ summary: 'Alternar el estado de ApprovedByHR de una solicitud de vacaciones' })
+@ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada con éxito' })
+async toggleApprovedByHR(
+  @Param('id') id: number,
+  @Body('hrUserId') hrUserId: number,
+) {
+  return this.vacationRequestService.toggleApprovedByHR(id, hrUserId);
+}
+
 
 // // Endpoint para obtener todas las solicitudes de vacaciones con el departamento y ordenadas por las más recientes
 // @Get('department')

@@ -13,6 +13,7 @@ import {
 } from 'src/utils/vacation-request-utils';
 import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 import { VacationService } from './vacation.service';
+import { NotificationService } from './notification.service';
 
 @Injectable()
 export class VacationRequestService {
@@ -23,6 +24,7 @@ export class VacationRequestService {
     private readonly nonHolidayService: NonHolidayService,
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
+    private readonly notificationService: NotificationService,
   ) { }
 
   async createVacationRequest(
@@ -37,13 +39,13 @@ export class VacationRequestService {
     if (!user) {
       throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
-  
+
     // Verificar TODAS las solicitudes de vacaciones para el usuario, ordenadas por fecha descendente
     const allVacationRequests = await this.vacationRequestRepository.find({
       where: { user: { id: user.id } },
       order: { requestDate: 'DESC' },
     });
-  
+
     // Si hay solicitudes previas
     if (allVacationRequests.length > 0) {
       // Verificar si hay alguna solicitud PENDING (independientemente de si es la más reciente)
@@ -54,21 +56,21 @@ export class VacationRequestService {
           HttpStatus.BAD_REQUEST,
         );
       }
-  
+
       // Obtener la última solicitud (la más reciente)
       const lastVacationRequest = allVacationRequests[0];
-  
+
       // Solo permitir nueva solicitud si la última está AUTHORIZED y aprobada por ambos
-      if (lastVacationRequest.status !== 'AUTHORIZED' || 
-          !lastVacationRequest.approvedByHR || 
-          !lastVacationRequest.approvedBySupervisor) {
+      if (lastVacationRequest.status !== 'AUTHORIZED' ||
+        !lastVacationRequest.approvedByHR ||
+        !lastVacationRequest.approvedBySupervisor) {
         throw new HttpException(
           'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada y aprobada.',
           HttpStatus.BAD_REQUEST,
         );
       }
     }
-  
+
     // Resto del método permanece igual...
     // Crear fechas asegurando que no haya desfase de zona horaria
     const startPeriodDate = new Date(Date.UTC(
@@ -76,32 +78,32 @@ export class VacationRequestService {
       parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1,
       parseInt(managementPeriod.startPeriod.substring(8, 10))
     ));
-  
+
     const endPeriodDate = new Date(Date.UTC(
       parseInt(managementPeriod.endPeriod.substring(0, 4)),
       parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
       parseInt(managementPeriod.endPeriod.substring(8, 10))
     ));
-  
+
     // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
     await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
-  
+
     // Calcular los días solicitados para la solicitud de vacaciones
     const daysRequested = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
-  
+
     // Lógica para encontrar la gestión correspondiente
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodDate);
     const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
       return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
     });
-  
+
     if (!gestionCorrespondiente) {
       throw new HttpException(
         `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
         HttpStatus.BAD_REQUEST,
       );
     }
-  
+
     // Verificar si hay días disponibles en la gestión correspondiente
     if (gestionCorrespondiente.diasDisponibles <= 0) {
       throw new HttpException(
@@ -109,7 +111,7 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-  
+
     // Verificar si los días solicitados exceden los días disponibles
     if (daysRequested > gestionCorrespondiente.diasDisponibles) {
       throw new HttpException(
@@ -117,12 +119,12 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-  
+
     // Continuar con el cálculo y creación de la solicitud
     const startDateISO = new Date(startDate + "T00:00:00Z").toISOString();
     const endDateISO = new Date(endDate + "T23:59:59Z").toISOString();
     const returnDateISO = new Date(await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)).toISOString();
-  
+
     const vacationRequest = this.vacationRequestRepository.create({
       user,
       position,
@@ -135,10 +137,15 @@ export class VacationRequestService {
       managementPeriodStart: startPeriodDate.toISOString(),
       managementPeriodEnd: endPeriodDate.toISOString(),
     });
-  
+
     // Guardar la solicitud en la base de datos
     const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-  
+    await this.notificationService.notifyAdminsAndSupervisors(
+      `El usuario ${user.fullName} ha creado una nueva solicitud de vacaciones del ${startDate} al ${endDate} (${daysRequested} días).`,
+      user.id
+    );
+
+
     // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
     return { ...requestWithoutSensitiveData, ci: user.ci };
@@ -213,12 +220,13 @@ export class VacationRequestService {
   }
 
   // Método para actualizar el estado de la solicitud de vacaciones 
-  // Método para actualizar el estado de la solicitud de vacaciones 
+  // Método para actualizar el estado de la solicitud de vacaciones METODO USADO 
   async updateVacationRequestStatus(
     id: number,
     status: string,
     supervisorId: number, // Recibe el ID del supervisor
   ): Promise<VacationRequestDTO> {
+    console.log('Usando este metodo')
     console.log("updateVacationRequestStatus - Received supervisorId:", supervisorId);
 
     const request: VacationRequest = await this.vacationRequestRepository.findOne({
@@ -257,8 +265,31 @@ export class VacationRequestService {
     const today = new Date();
     request.reviewDate = today.toLocaleDateString('en-CA'); // Formato YYYY-MM-DD
 
+    // Guardar la solicitud
     await this.vacationRequestRepository.save(request);
 
+    // NUEVO: Crear notificación
+    try {
+      const statusLabels: Record<string, string> = {
+        PENDING: 'Pendiente',
+        AUTHORIZED: 'Autorizada',
+        DENIED: 'Rechazada',
+        SUSPENDED: 'Suspendida',
+      };
+
+      const statusLabel = statusLabels[status] || status;
+
+      console.log('Notificando al usuario:', request.user.id);
+
+      const notification = await this.notificationService.notifyUser(
+        request.user.id,
+        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`
+      );
+
+      console.log('Notificación creada:', notification);
+    } catch (error) {
+      console.error('Error al crear la notificación:', error);
+    }
     const vacationRequestDTO: VacationRequestDTO = {
       id: request.id,
       position: request.position,
@@ -441,71 +472,92 @@ export class VacationRequestService {
     };
   }
 
+
   // Actualizar el estado de una solicitud por el supervisor
   async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
-    // Verifica si el nuevo estado es válido
     const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
     if (!validStatuses.includes(newStatus)) {
       throw new BadRequestException('Invalid status');
     }
 
-    // Busca la entidad por ID
-    const entity = await this.vacationRequestRepository.findOne({ where: { id } });
+    // Carga también el usuario relacionado
+    const entity = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user'], // 👈 necesario para acceder a user.id
+    });
+
     if (!entity) {
       throw new NotFoundException('Entity not found');
     }
-    // Actualiza el estado
+
+    console.log('Usuario relacionado con la solicitud:', entity.user);
+
     entity.status = newStatus;
-    // Cambia approvedBySupervisor a true si aún no se ha hecho
     if (!entity.approvedBySupervisor) {
       entity.approvedBySupervisor = true;
     }
-    // Actualiza la fecha de revisión con la fecha actual en formato 'YYYY-MM-DD'
+
     const today = new Date();
     entity.reviewDate = today.toISOString().split('T')[0];
-    // Guarda los cambios en la base de datos
-    return this.vacationRequestRepository.save(entity);
+
+    // Guarda primero
+    const updatedRequest = await this.vacationRequestRepository.save(entity);
+    console.log('Solicitud actualizada:', updatedRequest);
+
+    // Luego notifica
+    const statusLabels: Record<string, string> = {
+      PENDING: 'Pendiente',
+      AUTHORIZED: 'Autorizada',
+      POSTPONED: 'Postergada',
+      DENIED: 'Rechazada',
+      SUSPENDED: 'Suspendida',
+    };
+
+    const statusLabel = statusLabels[newStatus] || newStatus;
+
+    console.log('Intentando notificar al usuario con ID:', updatedRequest.user.id);
+
+    try {
+      const notification = await this.notificationService.notifyUser(
+        updatedRequest.user.id,
+        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`
+      );
+      console.log('Notificación guardada correctamente:', notification);
+    } catch (error) {
+      console.error('Error al guardar la notificación:', error);
+    }
+
+    return updatedRequest;
   }
 
-
-
-  // async getAllVacationRequestsWithDepartment(): Promise<any[]> {
-  //   const vacationRequests = await this.vacationRequestRepository
-  //     .createQueryBuilder('vacationRequest')
-  //     .leftJoinAndSelect('vacationRequest.user', 'user')
-  //     .leftJoinAndSelect('user.department', 'department')
-  //     .select([
-  //       'vacationRequest',
-  //       'user.ci',
-  //       'department.id AS departmentId' // Selecciona el ID del departamento
-  //     ])
-  //     .orderBy('vacationRequest.requestDate', 'DESC')
-  //     .getRawMany();
-
-  //   return vacationRequests.map(request => ({
-  //     ...request.vacationRequest, // Agrega todos los campos de la solicitud de vacaciones
-  //     ci: request.ci,
-  //     departmentId: request.departmentId, // Agrega el ID del departamento
-  //   }));
-  // }
-
-  async toggleApprovedByHR(vacationRequestId: number): Promise<VacationRequest> {
+  async toggleApprovedByHR(
+    vacationRequestId: number,
+    hrUserId: number
+  ): Promise<VacationRequest> {
     const vacationRequest = await this.vacationRequestRepository.findOne({
-      where: { id: vacationRequestId }
+      where: { id: vacationRequestId },
+      relations: ['user'], // Asegura que el usuario esté cargado para la notificación
     });
 
     if (!vacationRequest) {
       throw new Error('Solicitud de vacaciones no encontrada');
     }
 
-    // Alterna el valor de approvedByHR
+    // Alternar la aprobación
     vacationRequest.approvedByHR = !vacationRequest.approvedByHR;
 
     // Guarda los cambios
     await this.vacationRequestRepository.save(vacationRequest);
 
+    // Notifica al usuario solicitante
+    await this.notificationService.notifyUser(
+      vacationRequest.user.id,
+      `Tu solicitud de vacaciones fue ${vacationRequest.approvedByHR ? 'aprobada' : 'rechazada'} por Recursos Humanos.`
+    );
+
     return vacationRequest;
   }
+
 
 
   // Método para posponer una solicitud de vacaciones
