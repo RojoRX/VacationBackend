@@ -32,29 +32,64 @@ export class NonHolidayService {
   }
 
   async addNonHoliday(nonHoliday: NonHoliday): Promise<NonHoliday> {
-    // Extraer el año de la fecha
-    nonHoliday.year = new Date(nonHoliday.date).getFullYear();
+    const date = DateTime.fromISO(nonHoliday.date);
+    if (!date.isValid) {
+      throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
+    }
 
-    // Verifica que no exista otro día no hábil en la misma fecha
-    const existing = await this.getNonHolidayByDate(nonHoliday.year, nonHoliday.date);
+    const year = date.year;
+    if (year < 2000 || year > 2100) {
+      throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
+    }
+
+    nonHoliday.date = date.toISODate(); // Normalizar fecha
+    nonHoliday.year = year;
+
+    if (!nonHoliday.description || nonHoliday.description.trim().length < 3) {
+      throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
+    }
+
+    nonHoliday.description = nonHoliday.description.toUpperCase();
+
+    const existing = await this.getNonHolidayByDate(year, nonHoliday.date);
     if (existing) {
       throw new BadRequestException(`El día ${nonHoliday.date} ya está registrado como no hábil.`);
     }
-
-    // Convertir la descripción a mayúsculas
-    nonHoliday.description = nonHoliday.description.toUpperCase();
 
     return this.nonHolidayRepository.save(nonHoliday);
   }
 
   async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
-    // Si se proporciona una nueva fecha, extraer el año de la fecha
-    if (nonHoliday.date) {
-      nonHoliday.year = new Date(nonHoliday.date).getFullYear();
+    const existing = await this.nonHolidayRepository.findOne({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException(`No se encontró el día no hábil con ID ${id}.`);
     }
 
-    // Si se está actualizando la descripción, convertirla a mayúsculas
+    if (nonHoliday.date) {
+      const date = DateTime.fromISO(nonHoliday.date);
+      if (!date.isValid) {
+        throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
+      }
+
+      const year = date.year;
+      if (year < 2000 || year > 2100) {
+        throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
+      }
+
+      nonHoliday.date = date.toISODate();
+      nonHoliday.year = year;
+
+      // Validar que no exista otro día no hábil en la nueva fecha
+      const duplicate = await this.getNonHolidayByDate(year, nonHoliday.date);
+      if (duplicate && duplicate.id !== id) {
+        throw new BadRequestException(`Ya existe un día no hábil registrado para la fecha ${nonHoliday.date}.`);
+      }
+    }
+
     if (nonHoliday.description) {
+      if (nonHoliday.description.trim().length < 3) {
+        throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
+      }
       nonHoliday.description = nonHoliday.description.toUpperCase();
     }
 
@@ -67,6 +102,7 @@ export class NonHolidayService {
   }
 
   async getNonHolidayByDate(year: number, date: string): Promise<NonHoliday | null> {
-    return this.nonHolidayRepository.findOne({ where: { year, date } });
+    const normalizedDate = DateTime.fromISO(date).toISODate();
+    return this.nonHolidayRepository.findOne({ where: { year, date: normalizedDate } });
   }
 }
