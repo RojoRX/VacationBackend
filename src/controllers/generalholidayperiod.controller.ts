@@ -1,13 +1,14 @@
-import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put, Delete } from '@nestjs/common';
+import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put, Delete, HttpCode } from '@nestjs/common';
 import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 import { GeneralHolidayPeriodService } from 'src/services/generalHolidayPeriod.service';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { CreateGeneralHolidayPeriodDto } from 'src/dto/create-general-holiday-period.dto';
 
 @ApiTags('Recesos Generales')
 @Controller('general-holiday-periods')
 export class GeneralHolidayPeriodController {
-  constructor(private readonly generalHolidayPeriodService: GeneralHolidayPeriodService) {}
+  constructor(private readonly generalHolidayPeriodService: GeneralHolidayPeriodService) { }
 
   // Obtener recesos por año específico
   @Get(':year')
@@ -36,21 +37,29 @@ export class GeneralHolidayPeriodController {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving all general holiday periods', error });
     }
   }
-
-  // Crear un nuevo receso general
+//Crear nuevo receso
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear un nuevo periodo de vacaciones generales' })
-  @ApiResponse({ status: 201, description: 'Periodo de vacaciones general creado exitosamente', type: GeneralHolidayPeriod })
-  @ApiResponse({ status: 400, description: 'Error al crear el periodo de vacaciones generales' })
-  @ApiBody({ type: GeneralHolidayPeriod, description: 'Datos del periodo de vacaciones a crear' })
-  async createGeneralHolidayPeriod(@Body() holidayPeriod: GeneralHolidayPeriod, @Res() res: Response): Promise<void> {
-    try {
-      const newHolidayPeriod = await this.generalHolidayPeriodService.createGeneralHolidayPeriod(holidayPeriod);
-      res.status(HttpStatus.CREATED).json(newHolidayPeriod);
-    } catch (error) {
-      res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error creating general holiday period', error });
-    }
+  @ApiResponse({
+    status: 201,
+    description: 'Periodo de vacaciones general creado exitosamente',
+    type: GeneralHolidayPeriod,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Error al crear el periodo de vacaciones generales',
+  })
+  @ApiBody({
+    type: CreateGeneralHolidayPeriodDto,
+    description: 'Datos del periodo de vacaciones a crear (el año será calculado automáticamente a partir de la fecha de inicio)',
+  })
+  async createGeneralHolidayPeriod(
+    @Body() dto: CreateGeneralHolidayPeriodDto,
+  ): Promise<GeneralHolidayPeriod> {
+    return this.generalHolidayPeriodService.createGeneralHolidayPeriod(dto);
   }
+  
 
   // Actualizar un receso general existente
   @Put(':id')
