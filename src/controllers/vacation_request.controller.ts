@@ -29,18 +29,14 @@ export class VacationRequestController {
   @ApiResponse({ status: 201, description: 'Solicitud de vacaciones creada exitosamente' })
   @ApiResponse({ status: 400, description: 'Error al crear la solicitud de vacaciones' })
   async createVacationRequest(@Body() createVacationRequestDto: CreateVacationRequestDto) {
-    const { ci, startDate, endDate, position, managementPeriodStart, managementPeriodEnd } = createVacationRequestDto;
+    const { ci, startDate, position, managementPeriod } = createVacationRequestDto;
 
     try {
       const vacationRequest = await this.vacationRequestService.createVacationRequest(
         ci,
         startDate,
-        endDate,
         position,
-        {
-          startPeriod: managementPeriodStart, // Usamos managementPeriodStart
-          endPeriod: managementPeriodEnd,     // Usamos managementPeriodEnd
-        },
+        managementPeriod,
       );
       return vacationRequest;
     } catch (error) {

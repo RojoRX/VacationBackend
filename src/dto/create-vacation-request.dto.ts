@@ -1,8 +1,31 @@
-export class CreateVacationRequestDto {
-  ci: string;                     // Carnet de identidad del usuario
-  startDate: string;              // Fecha de inicio de vacaciones
-  endDate: string;                // Fecha de fin de vacaciones
-  position: string;               // Cargo del usuario
-  managementPeriodStart: string;  // Fecha de inicio del período de gestión
-  managementPeriodEnd: string;    // Fecha de fin del período de gestión
+import { IsNotEmpty, IsString, IsObject, ValidateNested } from "class-validator";
+export class ManagementPeriodDto {
+  @IsNotEmpty()
+  @IsString()
+  startPeriod: string;
+
+  @IsNotEmpty()
+  @IsString()
+  endPeriod: string;
 }
+export class CreateVacationRequestDto {
+  @IsNotEmpty()
+  @IsString()
+  ci: string;
+
+  @IsNotEmpty()
+  @IsString()
+  startDate: string;
+
+  @IsNotEmpty()
+  @IsString()
+  position: string;
+
+  @IsNotEmpty()
+  @IsObject()
+  @ValidateNested()
+  managementPeriod: ManagementPeriodDto;
+
+  // El campo endDate se elimina de aquí
+}
+

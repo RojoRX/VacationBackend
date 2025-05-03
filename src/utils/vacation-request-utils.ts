@@ -42,12 +42,6 @@ export async function calculateVacationDays(
     return totalDays;
 }
 
-
-
-
-
-
-
 // Calcular la fecha de retorno asegurando que sea un día hábil
 export async function calculateReturnDate(
     endDate: string,
@@ -69,9 +63,6 @@ export async function calculateReturnDate(
         day = day.plus({ days: 1 }); // Avanzar al siguiente día
     }
 }
-
-
-
 
 // Verificar solapamiento de vacaciones
 export async function ensureNoOverlappingVacations(
@@ -96,7 +87,6 @@ export async function ensureNoOverlappingVacations(
         throw new Error('La solicitud de vacaciones se solapa con una solicitud autorizada existente');
     }
 }
-
 
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(
@@ -139,7 +129,6 @@ export async function countAuthorizedVacationDaysInRange(
 
     return totalDays;
 }
-
 
 // Función para obtener las solicitudes autorizadas en un rango de fechas y contar los días
 export async function getAuthorizedVacationRequestsInRange(
@@ -186,32 +175,26 @@ export function validateVacationRequest(
     }
 }
 
-// Método auxiliar para calcular la fecha de fin de vacaciones considerando solo días hábiles
-export async function getFechaFinPorDiasHabilesSoloLaborables(
-    startDate: string,
-    diasHabiles: number,
-    
-): Promise<Date> {
-    let currentDate = DateTime.fromISO(startDate, { zone: 'utc' }).startOf('day');
+// startDate: string en formato ISO, dias: número de días hábiles a contar
+export async function getFechaFinPorDiasHabilesSoloLaborables(startDate: string, dias: number): Promise<Date> {
+    let fecha = new Date(startDate);
     let count = 0;
-
-    // Obtener los días no hábiles para el año correspondiente
-    const year = currentDate.year;
-
-    // Iterar mientras no se alcancen los días hábiles
-    while (count < diasHabiles) {
-        currentDate = currentDate.plus({ days: 1 });
-        const dayOfWeek = currentDate.weekday; // 6 = sábado, 7 = domingo
-
-
-
-        if (dayOfWeek !== 6 && dayOfWeek !== 7) {
-            count++;
-        }
+  
+    while (count < dias) {
+      fecha.setDate(fecha.getDate() + 1);
+      if (esDiaLaborable(fecha)) {
+        count++;
+      }
     }
-
-    return currentDate.toJSDate();
-}
-
+  
+    return fecha;
+  }
+  
+  function esDiaLaborable(date: Date): boolean {
+    const day = date.getDay();
+    return day !== 0 && day !== 6; // domingo = 0, sábado = 6
+    // Aquí también deberías excluir días no hábiles si tienes una lista
+  }
+  
   
 
