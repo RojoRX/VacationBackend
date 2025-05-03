@@ -165,5 +165,53 @@ export async function getAuthorizedVacationRequestsInRange(
       totalAuthorizedDays,
     };
   }
+
+  // Método auxiliar para validar gestiones anteriores con días disponibles
+export function validateVacationRequest(
+    detalles: any[],  // Array de gestiones (vacation details)
+    startPeriod: string,
+    endPeriod: string
+): void {
+    const requestedStartDate = DateTime.fromISO(startPeriod, { zone: 'utc' }).startOf('day');
+  
+    const hayGestionesAnterioresConDiasDisponibles = detalles.some((gestion) => {
+        const gestionStartDate = DateTime.fromISO(gestion.startDate, { zone: 'utc' }).startOf('day');
+        return gestionStartDate < requestedStartDate && gestion.diasDisponibles > 0;
+    });
+  
+    if (hayGestionesAnterioresConDiasDisponibles) {
+        throw new Error(
+            'No se puede crear la solicitud de vacaciones: existen gestiones anteriores con días disponibles.'
+        );
+    }
+}
+
+// Método auxiliar para calcular la fecha de fin de vacaciones considerando solo días hábiles
+export async function getFechaFinPorDiasHabilesSoloLaborables(
+    startDate: string,
+    diasHabiles: number,
+    
+): Promise<Date> {
+    let currentDate = DateTime.fromISO(startDate, { zone: 'utc' }).startOf('day');
+    let count = 0;
+
+    // Obtener los días no hábiles para el año correspondiente
+    const year = currentDate.year;
+
+    // Iterar mientras no se alcancen los días hábiles
+    while (count < diasHabiles) {
+        currentDate = currentDate.plus({ days: 1 });
+        const dayOfWeek = currentDate.weekday; // 6 = sábado, 7 = domingo
+
+
+
+        if (dayOfWeek !== 6 && dayOfWeek !== 7) {
+            count++;
+        }
+    }
+
+    return currentDate.toJSDate();
+}
+
   
 

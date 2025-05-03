@@ -14,6 +14,7 @@ import {
 import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 import { VacationService } from './vacation.service';
 import { NotificationService } from './notification.service';
+import { VacationDetail } from 'src/interfaces/vacation-detail';
 
 @Injectable()
 export class VacationRequestService {
@@ -39,13 +40,13 @@ export class VacationRequestService {
     if (!user) {
       throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
-
+  
     // Verificar TODAS las solicitudes de vacaciones para el usuario, ordenadas por fecha descendente
     const allVacationRequests = await this.vacationRequestRepository.find({
       where: { user: { id: user.id } },
       order: { requestDate: 'DESC' },
     });
-
+  
     // Si hay solicitudes previas
     if (allVacationRequests.length > 0) {
       // Verificar si hay alguna solicitud PENDING (independientemente de si es la más reciente)
@@ -56,54 +57,64 @@ export class VacationRequestService {
           HttpStatus.BAD_REQUEST,
         );
       }
-
+  
       // Obtener la última solicitud (la más reciente)
       const lastVacationRequest = allVacationRequests[0];
-
+  
       // Solo permitir nueva solicitud si la última está AUTHORIZED y aprobada por ambos
-      if (lastVacationRequest.status !== 'AUTHORIZED' ||
+      if (
+        lastVacationRequest.status !== 'AUTHORIZED' ||
         !lastVacationRequest.approvedByHR ||
-        !lastVacationRequest.approvedBySupervisor) {
+        !lastVacationRequest.approvedBySupervisor
+      ) {
         throw new HttpException(
           'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada y aprobada.',
           HttpStatus.BAD_REQUEST,
         );
       }
     }
-
-    // Resto del método permanece igual...
+  
     // Crear fechas asegurando que no haya desfase de zona horaria
     const startPeriodDate = new Date(Date.UTC(
       parseInt(managementPeriod.startPeriod.substring(0, 4)),
       parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1,
       parseInt(managementPeriod.startPeriod.substring(8, 10))
     ));
-
+  
     const endPeriodDate = new Date(Date.UTC(
       parseInt(managementPeriod.endPeriod.substring(0, 4)),
       parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
       parseInt(managementPeriod.endPeriod.substring(8, 10))
     ));
-
+  
     // Verificar si las fechas se solapan con otras solicitudes del mismo usuario
     await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDate);
-
+  
     // Calcular los días solicitados para la solicitud de vacaciones
     const daysRequested = await calculateVacationDays(startDate, endDate, this.nonHolidayService);
-
-    // Lógica para encontrar la gestión correspondiente
+  
+    // Obtener las gestiones acumuladas
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodDate);
+  
+    // Validar que no existan gestiones anteriores con días disponibles
+    this.validateVacationRequest(
+      accumulatedDebtResponse.detalles,
+      managementPeriod.startPeriod,
+      managementPeriod.endPeriod
+    );
+  
+    // Lógica para encontrar la gestión correspondiente
     const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
       return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
     });
-
+  
     if (!gestionCorrespondiente) {
       throw new HttpException(
         `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
         HttpStatus.BAD_REQUEST,
       );
     }
-
+  
     // Verificar si hay días disponibles en la gestión correspondiente
     if (gestionCorrespondiente.diasDisponibles <= 0) {
       throw new HttpException(
@@ -111,7 +122,7 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-
+  
     // Verificar si los días solicitados exceden los días disponibles
     if (daysRequested > gestionCorrespondiente.diasDisponibles) {
       throw new HttpException(
@@ -119,12 +130,15 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    // Continuar con el cálculo y creación de la solicitud
+  
+    // Preparar fechas ISO y calcular fecha de reincorporación
     const startDateISO = new Date(startDate + "T00:00:00Z").toISOString();
     const endDateISO = new Date(endDate + "T23:59:59Z").toISOString();
-    const returnDateISO = new Date(await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)).toISOString();
-
+    const returnDateISO = new Date(
+      await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)
+    ).toISOString();
+  
+    // Crear y guardar la solicitud
     const vacationRequest = this.vacationRequestRepository.create({
       user,
       position,
@@ -137,19 +151,56 @@ export class VacationRequestService {
       managementPeriodStart: startPeriodDate.toISOString(),
       managementPeriodEnd: endPeriodDate.toISOString(),
     });
-
-    // Guardar la solicitud en la base de datos
+  
     const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
+  
+    // Notificar
     await this.notificationService.notifyAdminsAndSupervisors(
       `El usuario ${user.fullName} ha creado una nueva solicitud de vacaciones del ${startDate} al ${endDate} (${daysRequested} días).`,
       user.id
     );
-
-
-    // Retornar la solicitud sin los datos sensibles del usuario, pero incluyendo el CI
+  
+    // Retornar sin datos sensibles
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
     return { ...requestWithoutSensitiveData, ci: user.ci };
   }
+  
+  // Método auxiliar para validar gestiones anteriores con días disponibles
+  private validateVacationRequest(
+    detalles: VacationDetail[],
+    startPeriod: string,
+    endPeriod: string
+  ): void {
+    const requestedStartDate = new Date(startPeriod);
+  
+    const hayGestionesAnterioresConDiasDisponibles = detalles.some((gestion) => {
+      const gestionStartDate = new Date(gestion.startDate);
+      return gestionStartDate < requestedStartDate && gestion.diasDisponibles > 0;
+    });
+  
+    if (hayGestionesAnterioresConDiasDisponibles) {
+      throw new BadRequestException(
+        'No se puede crear la solicitud de vacaciones: existen gestiones anteriores con días disponibles.'
+      );
+    }
+  }
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({

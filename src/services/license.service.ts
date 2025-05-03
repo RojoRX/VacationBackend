@@ -36,12 +36,12 @@ export class LicenseService {
     const { startDate, endDate, totalDays } = this.calculateLicenseDays(licenseData);
   
     // Validar días de vacaciones disponibles
-    const vacationInfo = await this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
-    const remainingVacationDays = vacationInfo.diasDeVacacionRestantes;
+    //const vacationInfo = await this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
+   // const remainingVacationDays = vacationInfo.diasDeVacacionRestantes;
   
-    if (totalDays > remainingVacationDays) {
-      throw new BadRequestException(`No tiene suficientes días de vacaciones disponibles. Solicitó ${totalDays} días, pero solo le quedan ${remainingVacationDays} días.`);
-    }
+    //if (totalDays > remainingVacationDays) {
+    //  throw new BadRequestException(`No tiene suficientes días de vacaciones disponibles. Solicitó ${totalDays} días, pero solo le quedan ${remainingVacationDays} días.`);
+    //}
   
     await this.validateNoExistingLicense(userId, startDate, endDate);
   
