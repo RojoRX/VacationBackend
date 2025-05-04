@@ -66,34 +66,49 @@ export async function calculateReturnDate(
 
 // Verificar solapamiento de vacaciones
 export async function ensureNoOverlappingVacations(
-    vacationRequestRepository: any,
-    userId: number,
-    startDate: string,
-    endDate: string,
-    excludeRequestId?: number // nuevo parámetro opcional
-  ): Promise<void> {
-    // Armar condiciones base
-    const where: any = {
+  vacationRequestRepository: any,
+  userId: number,
+  startDate: string,
+  endDate: string,
+  excludeRequestId?: number
+): Promise<void> {
+  // Verificamos todas las solicitudes relevantes, no solo las autorizadas
+  const where: any = [
+    {
       user: { id: userId },
       status: 'AUTHORIZED',
       approvedByHR: true,
       approvedBySupervisor: true,
       startDate: LessThanOrEqual(endDate),
       endDate: MoreThanOrEqual(startDate),
-    };
-  
-    // Excluir una solicitud específica si se proporciona
-    if (excludeRequestId) {
-      where.id = Not(excludeRequestId);
-    }
-  
-    const overlappingRequests = await vacationRequestRepository.find({ where });
-  
-    if (overlappingRequests.length > 0) {
-      throw new Error('La solicitud de vacaciones se solapa con una solicitud autorizada existente');
-    }
+    },
+    {
+      user: { id: userId },
+      status: 'PENDING',
+      startDate: LessThanOrEqual(endDate),
+      endDate: MoreThanOrEqual(startDate),
+    },
+    {
+      user: { id: userId },
+      status: 'SUSPENDED',
+      startDate: LessThanOrEqual(endDate),
+      endDate: MoreThanOrEqual(startDate),
+    },
+  ];
+
+  if (excludeRequestId) {
+    where.forEach((condition) => {
+      condition.id = Not(excludeRequestId);
+    });
   }
-  
+
+  const overlappingRequests = await vacationRequestRepository.find({ where });
+
+  if (overlappingRequests.length > 0) {
+    throw new Error('La solicitud de vacaciones se solapa con otra solicitud activa (pendiente, suspendida o autorizada)');
+  }
+}
+
 
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(

@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { UserService } from 'src/services/user.service';
 import { NonHolidayService } from 'src/services/nonholiday.service';
@@ -58,12 +58,16 @@ export class VacationRequestService {
         throw new HttpException('No puedes crear una nueva solicitud. Hay una solicitud pendiente.', HttpStatus.BAD_REQUEST);
       }
       const lastVacationRequest = allVacationRequests[0];
-      if (
-        lastVacationRequest.status !== 'AUTHORIZED' ||
-        !lastVacationRequest.approvedByHR ||
-        !lastVacationRequest.approvedBySupervisor
-      ) {
-        throw new HttpException('No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada y aprobada.', HttpStatus.BAD_REQUEST);
+      const isAuthorizedOrSuspended =
+        (lastVacationRequest.status === 'AUTHORIZED' || lastVacationRequest.status === 'SUSPENDED') &&
+        lastVacationRequest.approvedByHR &&
+        lastVacationRequest.approvedBySupervisor;
+
+      if (!isAuthorizedOrSuspended) {
+        throw new HttpException(
+          'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada, suspendida y aprobada.',
+          HttpStatus.BAD_REQUEST
+        );
       }
     }
 
@@ -255,7 +259,7 @@ export class VacationRequestService {
     const authorizedVacationDays = await this.vacationRequestRepository.find({
       where: {
         user: { id: user.id },
-        status: 'AUTHORIZED',
+        status: In(['AUTHORIZED', 'SUSPENDED']),
         approvedByHR: true,
         managementPeriodStart: startDateWithoutTime, // Filtro exacto
         managementPeriodEnd: endDateWithoutTime,     // Filtro exacto
@@ -691,11 +695,11 @@ export class VacationRequestService {
       where: { id: requestId },
       relations: ['user'],
     });
-  
+
     if (!request) {
       throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
     }
-  
+
     // Solo se puede suspender una solicitud autorizada y completamente aprobada
     if (
       request.status !== 'AUTHORIZED' ||
@@ -707,15 +711,15 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST
       );
     }
-  
+
     const userId = request.user.id;
     const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
     const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
-  
+
     if (endDateObj <= startDateObj) {
       throw new HttpException('La fecha de fin debe ser posterior a la fecha de inicio.', HttpStatus.BAD_REQUEST);
     }
-  
+
     // Validar solapamiento con otras solicitudes (excluyendo esta)
     await ensureNoOverlappingVacations(
       this.vacationRequestRepository,
@@ -724,12 +728,12 @@ export class VacationRequestService {
       updateData.endDate,
       requestId // este parámetro evita que se detecte a sí misma como conflicto
     );
-    
-  
+
+
     // Calcular días hábiles entre startDate y endDate
     let currentDate = new Date(startDateObj);
     let workingDaysCount = 0;
-  
+
     while (currentDate <= endDateObj) {
       const dayOfWeek = currentDate.getUTCDay();
       if (dayOfWeek !== 0 && dayOfWeek !== 6) {
@@ -737,12 +741,18 @@ export class VacationRequestService {
       }
       currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
-  
+    // 🚫 Validar que no se exceda el total autorizado
+    if (workingDaysCount > request.totalDays) {
+      throw new HttpException(
+        `La suspensión no puede durar más días (${workingDaysCount}) que la solicitud original (${request.totalDays}).`,
+        HttpStatus.BAD_REQUEST
+      );
+    }
     // Recalcular fecha de reincorporación
     const returnDateISO = new Date(
       await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
     ).toISOString();
-  
+
     // Actualizar campos
     request.startDate = startDateObj.toISOString();
     request.endDate = endDateObj.toISOString();
@@ -750,9 +760,9 @@ export class VacationRequestService {
     request.returnDate = returnDateISO;
     request.status = 'SUSPENDED';
     request.reviewDate = new Date().toISOString();
-  
+
     return this.vacationRequestRepository.save(request);
   }
-  
+
 
 }
