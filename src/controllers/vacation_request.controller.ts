@@ -9,6 +9,8 @@ import {
   HttpStatus,
   Patch,
   Put,
+  ParseIntPipe,
+  HttpCode,
 } from '@nestjs/common';
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
@@ -16,6 +18,7 @@ import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { UpdateStatusDto } from 'src/dto/updateStatus.dto';
 import { PostponeVacationRequestDTO } from 'src/dto/postponed-vacation-request.dto';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -187,16 +190,6 @@ async toggleApprovedByHR(
   return this.vacationRequestService.toggleApprovedByHR(id, hrUserId);
 }
 
-
-// // Endpoint para obtener todas las solicitudes de vacaciones con el departamento y ordenadas por las más recientes
-// @Get('department')
-// @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones con departamento' })
-// @ApiResponse({ status: 200, description: 'Listado de solicitudes obtenidas con éxito' })
-// async getAllVacationRequestsWithDepartment() {
-//   return this.vacationRequestService.getAllVacationRequestsWithDepartment();
-// }
-
-
 @Patch(':id/postpone')
 @ApiOperation({ summary: 'Postpone a vacation request', description: 'Allows a supervisor to postpone a vacation request by providing a new date and a reason.' })
 @ApiParam({ name: 'id', description: 'The ID of the vacation request to be postponed', type: Number })
@@ -225,6 +218,53 @@ async postponeVacationRequest(
 ): Promise<VacationRequestDTO> {
   const { postponedDate, postponedReason } = postponeData;
   return this.vacationRequestService.postponeVacationRequest(id, postponedDate, postponedReason, supervisorId);
+}
+@Patch(':id/suspend')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Suspender una solicitud de vacaciones autorizada y aprobada' })
+@ApiParam({ name: 'id', type: Number, description: 'ID de la solicitud de vacaciones' })
+@ApiBody({
+  description: 'Fechas para suspender la solicitud de vacaciones',
+  schema: {
+    type: 'object',
+    properties: {
+      startDate: {
+        type: 'string',
+        format: 'date',
+        example: '2025-01-10',
+      },
+      endDate: {
+        type: 'string',
+        format: 'date',
+        example: '2025-01-14',
+      },
+    },
+    required: ['startDate', 'endDate'],
+  },
+})
+@ApiResponse({
+  status: 200,
+  description: 'Solicitud suspendida correctamente',
+  type: VacationRequest,
+})
+@ApiResponse({
+  status: 400,
+  description:
+    'Error de validación: fechas incorrectas o solicitud no apta para suspensión',
+})
+@ApiResponse({
+  status: 404,
+  description: 'Solicitud de vacaciones no encontrada',
+})
+async suspendVacationRequest(
+  @Param('id', ParseIntPipe) id: number,
+  @Body()
+  updateData: {
+    startDate: string;
+    endDate: string;
+  },
+): Promise<VacationRequest> {
+  return this.vacationRequestService.suspendVacationRequest(id, updateData);
 }
 }
 

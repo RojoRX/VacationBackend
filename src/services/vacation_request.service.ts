@@ -209,22 +209,6 @@ export class VacationRequestService {
     }
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -247,8 +231,6 @@ export class VacationRequestService {
       return { ...requestWithoutSensitiveData, ci: user.ci, username: user.username };
     });
   }
-
-
   async countAuthorizedVacationDaysInRange(
     ci: string,
     startDate: string,
@@ -293,7 +275,6 @@ export class VacationRequestService {
       totalAuthorizedVacationDays: totalAuthorizedDays,
     };
   }
-
   // Método para actualizar el estado de la solicitud de vacaciones 
   // Método para actualizar el estado de la solicitud de vacaciones METODO USADO 
   async updateVacationRequestStatus(
@@ -392,7 +373,6 @@ export class VacationRequestService {
 
     return vacationRequestDTO;
   }
-
   // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
   async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
     // Buscar el supervisor por su ID
@@ -432,7 +412,6 @@ export class VacationRequestService {
       } as VacationRequestDTO;
     });
   }
-
   // Método para obtener una solicitud de vacaciones por su ID
   async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
     // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
@@ -546,8 +525,6 @@ export class VacationRequestService {
       solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
     };
   }
-
-
   // Actualizar el estado de una solicitud por el supervisor
   async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
     const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
@@ -604,7 +581,6 @@ export class VacationRequestService {
 
     return updatedRequest;
   }
-
   async toggleApprovedByHR(
     vacationRequestId: number,
     hrUserId: number
@@ -632,9 +608,6 @@ export class VacationRequestService {
 
     return vacationRequest;
   }
-
-
-
   // Método para posponer una solicitud de vacaciones
   async postponeVacationRequest(
     id: number,
@@ -707,5 +680,79 @@ export class VacationRequestService {
     return vacationRequestDTO;
   }
 
+  async suspendVacationRequest(
+    requestId: number,
+    updateData: {
+      startDate: string;
+      endDate: string;
+    }
+  ): Promise<VacationRequest> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id: requestId },
+      relations: ['user'],
+    });
+  
+    if (!request) {
+      throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
+    }
+  
+    // Solo se puede suspender una solicitud autorizada y completamente aprobada
+    if (
+      request.status !== 'AUTHORIZED' ||
+      !request.approvedByHR ||
+      !request.approvedBySupervisor
+    ) {
+      throw new HttpException(
+        'Solo se pueden suspender solicitudes que estén autorizadas y completamente aprobadas.',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+  
+    const userId = request.user.id;
+    const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
+    const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
+  
+    if (endDateObj <= startDateObj) {
+      throw new HttpException('La fecha de fin debe ser posterior a la fecha de inicio.', HttpStatus.BAD_REQUEST);
+    }
+  
+    // Validar solapamiento con otras solicitudes (excluyendo esta)
+    await ensureNoOverlappingVacations(
+      this.vacationRequestRepository,
+      userId,
+      updateData.startDate,
+      updateData.endDate,
+      requestId // este parámetro evita que se detecte a sí misma como conflicto
+    );
+    
+  
+    // Calcular días hábiles entre startDate y endDate
+    let currentDate = new Date(startDateObj);
+    let workingDaysCount = 0;
+  
+    while (currentDate <= endDateObj) {
+      const dayOfWeek = currentDate.getUTCDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        workingDaysCount++;
+      }
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+  
+    // Recalcular fecha de reincorporación
+    const returnDateISO = new Date(
+      await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
+    ).toISOString();
+  
+    // Actualizar campos
+    request.startDate = startDateObj.toISOString();
+    request.endDate = endDateObj.toISOString();
+    request.totalDays = workingDaysCount;
+    request.returnDate = returnDateISO;
+    request.status = 'SUSPENDED';
+    request.reviewDate = new Date().toISOString();
+  
+    return this.vacationRequestRepository.save(request);
+  }
+  
 
 }

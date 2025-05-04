@@ -2,7 +2,7 @@
 import { DateTime } from 'luxon';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { NonHolidayService } from 'src/services/nonholiday.service';
-import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
 
 // Calcular los días de vacaciones, considerando solo días hábiles y excluyendo feriados
 export async function calculateVacationDays(
@@ -69,24 +69,31 @@ export async function ensureNoOverlappingVacations(
     vacationRequestRepository: any,
     userId: number,
     startDate: string,
-    endDate: string
-): Promise<void> {
-    // Consulta para encontrar solicitudes solapadas con el estado "AUTHORIZED"
-    const overlappingRequests = await vacationRequestRepository.find({
-        where: {
-            user: { id: userId },
-            status: 'AUTHORIZED', // Solo solicitudes autorizadas
-            approvedByHR: true,
-            approvedBySupervisor: true,
-            startDate: LessThanOrEqual(endDate), // Solicitudes que terminan antes o en la fecha final
-            endDate: MoreThanOrEqual(startDate), // Solicitudes que comienzan después o en la fecha inicial
-        },
-    });
-
-    if (overlappingRequests.length > 0) {
-        throw new Error('La solicitud de vacaciones se solapa con una solicitud autorizada existente');
+    endDate: string,
+    excludeRequestId?: number // nuevo parámetro opcional
+  ): Promise<void> {
+    // Armar condiciones base
+    const where: any = {
+      user: { id: userId },
+      status: 'AUTHORIZED',
+      approvedByHR: true,
+      approvedBySupervisor: true,
+      startDate: LessThanOrEqual(endDate),
+      endDate: MoreThanOrEqual(startDate),
+    };
+  
+    // Excluir una solicitud específica si se proporciona
+    if (excludeRequestId) {
+      where.id = Not(excludeRequestId);
     }
-}
+  
+    const overlappingRequests = await vacationRequestRepository.find({ where });
+  
+    if (overlappingRequests.length > 0) {
+      throw new Error('La solicitud de vacaciones se solapa con una solicitud autorizada existente');
+    }
+  }
+  
 
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(
