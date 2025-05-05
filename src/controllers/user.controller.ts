@@ -1,28 +1,113 @@
 // src/controllers/user.controller.ts
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
 import { RoleEnum } from 'src/enums/role.enum';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { UpdateRoleDto } from 'src/dto/update-role.dto';
+import { CreateUserDto } from 'src/dto/create-user.dto';
 
 @ApiTags('Usuarios')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @Post('create')
-  @ApiOperation({ summary: 'Crear un nuevo usuario' })
-  @ApiBody({ type: User, description: 'Datos del usuario a crear' })
-  @ApiResponse({ status: 201, description: 'Usuario creado exitosamente', type: User })
-  @ApiResponse({ status: 400, description: 'Error en los datos de entrada' })
-  async createUser(@Body() body: { ci: string; username: string; password: string }, @Res() res: Response) {
+  @Post()
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({
+    summary: 'Crear un nuevo usuario internamente',
+    description: 'Endpoint para que los administradores creen usuarios directamente en el sistema',
+  })
+  @ApiBody({
+    type: CreateUserDto,
+    description: 'Datos completos del usuario a crear',
+    examples: {
+      admin: {
+        summary: 'Ejemplo de creación de usuario administrador',
+        value: {
+          ci: '1234567',
+          username: 'admin@uatf.edu.bo',
+          password: 'Password123',
+          fullName: 'Administrador del Sistema',
+          celular: '77777777',
+          profesion: 'Ingeniero de Sistemas',
+          fecha_ingreso: '2023-01-01',
+          position: 'Administrador',
+          tipoEmpleado: 'ADMINISTRATIVO',
+          role: 'ADMIN',
+          departmentId: 1,
+        },
+      },
+      docente: {
+        summary: 'Ejemplo de creación de usuario docente',
+        value: {
+          ci: '7654321',
+          username: 'docente@uatf.edu.bo',
+          password: 'Docente123',
+          fullName: 'Docente Ejemplo',
+          fecha_ingreso: '2023-01-15',
+          position: 'Docente Titular',
+          tipoEmpleado: 'DOCENTE',
+          role: 'USER',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Usuario creado exitosamente',
+    schema: {
+      example: {
+        id: 1,
+        ci: '1234567',
+        username: 'admin@uatf.edu.bo',
+        fullName: 'Administrador del Sistema',
+        celular: '77777777',
+        profesion: 'Ingeniero de Sistemas',
+        fecha_ingreso: '2023-01-01',
+        position: 'Administrador',
+        tipoEmpleado: 'ADMINISTRATIVO',
+        role: 'ADMIN',
+        department: {
+          id: 1,
+          name: 'Departamento de Sistemas',
+        },
+        createdAt: '2023-06-15T10:30:00.000Z',
+        updatedAt: '2023-06-15T10:30:00.000Z',
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Error en los datos de entrada o usuario ya existe',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'El CI ya está registrado',
+        error: 'Bad Request',
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'No autorizado (token inválido o ausente)',
+  })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'No tiene permisos para realizar esta acción',
+  })
+  async createUser(
+    @Body() createUserDto: CreateUserDto,
+    @Res() res: Response,
+  ) {
     try {
-      const user = await this.userService.createUserFromApi(body.ci, body.username, body.password);
-      return res.status(HttpStatus.CREATED).json(user);
+      const newUser = await this.userService.createUser(createUserDto);
+      return res.status(HttpStatus.CREATED).json(newUser);
     } catch (error) {
-      return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
+      return res
+        .status(error.status || HttpStatus.INTERNAL_SERVER_ERROR)
+        .json({ message: error.message });
     }
   }
 

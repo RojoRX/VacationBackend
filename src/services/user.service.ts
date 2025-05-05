@@ -2,59 +2,104 @@ import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nes
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
-import { User } from 'src/entities/user.entity'; // Ajusta la ruta según tu estructura
+import { User } from 'src/entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { Department } from 'src/entities/department.entity';
 import { RoleEnum } from 'src/enums/role.enum';
-
+import { lastValueFrom } from 'rxjs';
+import { CreateUserDto } from 'src/dto/create-user.dto';
+import { 
+  generateUsername, 
+  generateMemorablePassword 
+} from '../utils/credential.utils';
 @Injectable()
 export class UserService {
-  private readonly apiUrl = process.env.API_BASE_URL || 'http://localhost:1337/api/personas';
-
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly httpService: HttpService,
     @InjectRepository(Department)
     private readonly departmentRepository: Repository<Department>,
-  ) { }
+  ) {}
 
-  async verifyWithExternalApi(ci: string): Promise<any> {
-    try {
-      const response = await this.httpService.get<{ data: any }>(`${this.apiUrl}?filters[ci][$eq]=${ci}`).toPromise();
-      return response.data.data[0] || null;
-    } catch (error) {
-      throw new HttpException('Error verifying user with external API', HttpStatus.BAD_GATEWAY);
-    }
+// Método para crear usuarios internamente con generación automática de credenciales
+async createUser(createUserDto: CreateUserDto): Promise<Omit<User, 'password'> & { temporaryPassword?: string }> {
+  // 1. Validar CI único
+  const existingUserByCi = await this.userRepository.findOne({ 
+    where: { ci: createUserDto.ci } 
+  });
+  if (existingUserByCi) {
+    throw new BadRequestException('El CI ya está registrado');
   }
 
-  async createUserFromApi(ci: string, username: string, password: string): Promise<User> {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const apiData = await this.verifyWithExternalApi(ci);
-
-    if (!apiData) {
-      throw new HttpException('User not found in external API', HttpStatus.NOT_FOUND);
-    }
-
-    const attributes = apiData.attributes;
-
-    const newUser = this.userRepository.create({
-      ci,
-      username,
-      password: hashedPassword,
-      fullName: `${attributes.nombres || ''} ${attributes.apellido_paterno || ''} ${attributes.apellido_materno || ''}`.trim(),
-      celular: attributes.celular || '',
-      profesion: attributes.profesion || '',
-      fecha_ingreso: attributes.fecha_ingreso,
-      role: RoleEnum.USER,
-      position: '', // Dejar vacío ya que no viene desde la API externa
+  // 2. Validar email único (si se proporciona)
+  if (createUserDto.email) {
+    const existingUserByEmail = await this.userRepository.findOne({ 
+      where: { email: createUserDto.email } 
     });
-
-    return this.userRepository.save(newUser);
+    if (existingUserByEmail) {
+      throw new BadRequestException('El email ya está registrado');
+    }
   }
+
+  // 3. Generar username automático si no se proporcionó
+  const username = createUserDto.username || generateUsername(
+    createUserDto.fullName, 
+    createUserDto.ci
+  );
+
+  // 4. Validar username único
+  const existingUserByUsername = await this.userRepository.findOne({ 
+    where: { username } 
+  });
+  if (existingUserByUsername) {
+    throw new BadRequestException('El nombre de usuario ya está en uso');
+  }
+
+// Validar fecha (además de las otras validaciones existentes)
+const fechaIngreso = new Date(createUserDto.fecha_ingreso);
+if (isNaN(fechaIngreso.getTime())) {
+  throw new BadRequestException('Fecha de ingreso no válida');
+}
+
+// Validar que no sea fecha futura (opcional)
+if (fechaIngreso > new Date()) {
+  throw new BadRequestException('La fecha de ingreso no puede ser futura');
+}
+  // 5. Generar contraseña automática si no se proporcionó
+  const password = createUserDto.password || generateMemorablePassword();
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // 6. Crear el usuario (incluyendo email si existe)
+  const newUser = this.userRepository.create({
+    ci: createUserDto.ci,
+    username,
+    password: hashedPassword,
+    email: createUserDto.email?.toLowerCase(), // Normalizar a minúsculas
+    fullName: createUserDto.fullName,
+    celular: createUserDto.celular,
+    profesion: createUserDto.profesion,
+     fecha_ingreso: createUserDto.fecha_ingreso,
+    position: createUserDto.position,
+    tipoEmpleado: createUserDto.tipoEmpleado,
+    role: createUserDto.role || RoleEnum.USER,
+    department: createUserDto.departmentId ? { id: createUserDto.departmentId } : null
+  });
+
+  const savedUser = await this.userRepository.save(newUser);
+  
+  // 7. Retornar el usuario sin password hasheada + contraseña temporal
+  const { password: _, ...userResponse } = savedUser;
+  return {
+    ...userResponse,
+    temporaryPassword: createUserDto.password ? undefined : password // Solo si se generó automáticamente
+  };
+}
+
+
 
   async findByCarnet(ci: string): Promise<Omit<User, 'password'> | undefined> {
-    const user = await this.userRepository.findOne({ where: { ci } });
+    const user = await this.userRepository.findOne({ where: { ci }, relations: ['department'] });
     return this.transformUser(user);
   }
 
@@ -68,16 +113,11 @@ export class UserService {
     return bcrypt.compare(password, user.password);
   }
 
-  // Permitir la actualización del departamento de un usuario.
   async updateDepartment(userId: number, departmentId: number): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new Error('User not found');
-    }
+    if (!user) throw new Error('User not found');
     const department = await this.departmentRepository.findOne({ where: { id: departmentId } });
-    if (!department) {
-      throw new Error('Department not found');
-    }
+    if (!department) throw new Error('Department not found');
     user.department = department;
     await this.userRepository.save(user);
   }
@@ -90,11 +130,74 @@ export class UserService {
     return this.transformUser(user);
   }
 
-  // user.service.ts
+  async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new BadRequestException('Usuario no encontrado.');
+    if (!Object.values(RoleEnum).includes(newRole)) {
+      throw new BadRequestException('Rol inválido.');
+    }
+    user.role = newRole;
+    await this.userRepository.save(user);
+  }
+
+  private transformUser(user?: User): Omit<User, 'password'> | undefined {
+    if (!user) return undefined;
+    const { password, ...userData } = user;
+    return userData;
+  }
+
+  async searchUsersByCI(ci: string, skip = 0, take = 10): Promise<Omit<User, 'password'>[]> {
+    const users = await this.userRepository.find({
+      where: { ci: Like(`%${ci}%`) },
+      skip,
+      take,
+      relations: ['department'],
+    });
+    return users.map(user => this.transformUser(user));
+  }
+
+  async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new BadRequestException('Usuario no encontrado.');
+    return this.transformUser(user) as Omit<User, 'password'>;
+  }
+  async updateUserFields(
+    userId: number,
+    updateData: Partial<{
+      fullName: string;
+      celular: string;
+      profesion: string;
+      position: string;
+      departmentId: number;
+    }>
+  ): Promise<Omit<User, 'password'>> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['department'],
+    });
+
+    if (!user) throw new BadRequestException('Usuario no encontrado.');
+
+    if (updateData.departmentId !== undefined) {
+      const department = await this.departmentRepository.findOne({ where: { id: updateData.departmentId } });
+      if (!department) throw new BadRequestException('Departamento no encontrado.');
+      user.department = department;
+    }
+
+    user.fullName = updateData.fullName ?? user.fullName;
+    user.celular = updateData.celular ?? user.celular;
+    user.profesion = updateData.profesion ?? user.profesion;
+    user.position = updateData.position ?? user.position;
+
+    await this.userRepository.save(user);
+    return this.transformUser(user) as Omit<User, 'password'>;
+  }
+
+
   async getUserData(carnetIdentidad: string): Promise<any> {
     // Buscar usuario en la base de datos
     const user = await this.findByCarnet(carnetIdentidad);
-
+    
     if (user) {
       // Retornar datos del usuario desde la base de datos
       return {
@@ -107,110 +210,7 @@ export class UserService {
         // Excluir la contraseña del retorno
       };
     }
-
-    // Si el usuario no se encuentra en la base de datos, intentar consultar la API externa
-    try {
-      const apiUserData = await this.verifyWithExternalApi(carnetIdentidad);
-      if (apiUserData) {
-        return apiUserData.attributes;
-      }
-    } catch (error) {
-      console.warn('Error verificando usuario con la API externa:', error.message);
-    }
-
     // Si no se encuentra información, lanzar un error
     throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
-  }
-
-  async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
-    // Verificar si el usuario existe
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado.');
     }
-
-    // Verificar si el nuevo rol es válido
-    if (!Object.values(RoleEnum).includes(newRole)) {
-      throw new BadRequestException('Rol inválido.');
-    }
-
-    // Actualizar el rol del usuario
-    user.role = newRole;
-    await this.userRepository.save(user);
-  }
-
-  // Método helper para transformar el usuario
-  private transformUser(user?: User): Omit<User, 'password'> | undefined {
-    if (!user) return undefined;
-    const { password, ...userData } = user; // Desestructuramos para omitir el password
-    return userData; // Retornamos solo los campos que queremos
-  }
-
-  async searchUsersByCI(ci: string, skip = 0, take = 10): Promise<Omit<User, 'password'>[]> {
-    // Buscar usuarios que coincidan parcial o completamente con el CI, con paginación
-    const users = await this.userRepository.find({
-      where: { ci: Like(`%${ci}%`) },
-      skip,
-      take,
-    });
-
-    // Transformar los usuarios para excluir el campo password antes de devolver
-    return users.map(user => this.transformUser(user));
-  }
-
-  async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado.');
-    }
-    return this.transformUser(user) as Omit<User, 'password'>;
-  }
-  
-  async updateUserFields(
-    userId: number,
-    updateData: Partial<{
-      fullName: string;
-      celular: string;
-      profesion: string;
-      position: string;
-      departmentId: number;
-    }>
-  ): Promise<Omit<User, 'password'>> {
-    // Buscar el usuario existente
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['department'], // Incluye el departamento en las relaciones
-    });
-  
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado.');
-    }
-  
-    // Si se incluye departmentId, buscar el departamento relacionado
-    if (updateData.departmentId !== undefined) {
-      const department = await this.departmentRepository.findOne({
-        where: { id: updateData.departmentId },
-      });
-  
-      if (!department) {
-        throw new BadRequestException('Departamento no encontrado.');
-      }
-  
-      user.department = department; // Asignar el nuevo departamento
-    }
-  
-    // Actualizar solo los campos proporcionados en updateData
-    user.fullName = updateData.fullName ?? user.fullName;
-    user.celular = updateData.celular ?? user.celular;
-    user.profesion = updateData.profesion ?? user.profesion;
-    user.position = updateData.position ?? user.position;
-  
-    // Guardar los cambios en la base de datos
-    await this.userRepository.save(user);
-  
-    // Retornar los datos actualizados sin el campo password
-    return this.transformUser(user) as Omit<User, 'password'>;
-  }
-  
-  
 }

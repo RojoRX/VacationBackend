@@ -5,21 +5,29 @@ import { VacationRequest } from './vacation_request.entity'; // Importa la entid
 import { Department } from './department.entity';
 import { RoleEnum } from 'src/enums/role.enum';
 import { Notification } from './notification.entity';
+import { TipoEmpleadoEnum } from 'src/enums/type.enum';
+import { IsEmail, IsNotEmpty } from 'class-validator';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
   id: number;
 
   @Column({ unique: true })
+  @IsNotEmpty()
   ci: string;
 
   @Column({ type: 'date' })
   fecha_ingreso: string;
 
+  @Column({ unique: true, nullable: true })  // Opcional pero único si se proporciona
+  @IsEmail()  // Validación de formato (requiere class-validator)
+  email?: string;
+
   @Column({ unique: true })
   username: string;
 
   @Column()
+  @IsNotEmpty()
   password: string;
 
   @CreateDateColumn()
@@ -40,6 +48,11 @@ export class User {
   @Column({ nullable: true })
   position: string;
 
+  @Column({ type: 'enum', enum: TipoEmpleadoEnum, nullable: true })
+  tipoEmpleado?: TipoEmpleadoEnum;
+  
+
+
   @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
   holidayPeriods: UserHolidayPeriod[];
 
@@ -57,5 +70,5 @@ export class User {
 
   @OneToMany(() => Notification, notification => notification.recipient)
   notifications: Notification[];
-  
+
 }
