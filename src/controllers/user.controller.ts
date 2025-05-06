@@ -7,6 +7,7 @@ import { RoleEnum } from 'src/enums/role.enum';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { UpdateRoleDto } from 'src/dto/update-role.dto';
 import { CreateUserDto } from 'src/dto/create-user.dto';
+import { UpdateUserDto } from 'src/dto/update-user.dto';
 
 @ApiTags('Usuarios')
 @Controller('users')
@@ -242,5 +243,20 @@ async updateUserFields(
     return res.status(error.status || HttpStatus.BAD_REQUEST).json({ message: error.message });
   }
 }
+
+
+@Put(':id')
+  @ApiOperation({ summary: 'Actualizar datos de un usuario (excepto rol y contraseña)' })
+  @ApiParam({ name: 'id', type: Number, description: 'ID del usuario a actualizar' })
+  @ApiBody({ type: UpdateUserDto, description: 'Datos a actualizar del usuario (sin rol ni contraseña)' })
+  @ApiResponse({ status: 200, description: 'Usuario actualizado correctamente', type: User })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o duplicados' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async updateUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ): Promise<Omit<User, 'password'>> {
+    return this.userService.updateUser(id, updateUserDto);
+  }
 
 }
