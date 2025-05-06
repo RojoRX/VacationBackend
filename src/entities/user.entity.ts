@@ -6,7 +6,7 @@ import { Department } from './department.entity';
 import { RoleEnum } from 'src/enums/role.enum';
 import { Notification } from './notification.entity';
 import { TipoEmpleadoEnum } from 'src/enums/type.enum';
-import { IsEmail, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -24,11 +24,14 @@ export class User {
   email?: string;
 
   @Column({ unique: true })
+  @IsOptional()
+  @IsString()
   username: string;
 
   @Column()
-  @IsNotEmpty()
-  password: string;
+  @IsOptional()
+  @IsString()
+  password?: string;
 
   @CreateDateColumn()
   createdAt: Date;

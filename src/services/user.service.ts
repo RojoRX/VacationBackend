@@ -12,6 +12,7 @@ import {
   generateUsername, 
   generateMemorablePassword 
 } from '../utils/credential.utils';
+import { normalizeUserData } from 'src/utils/normalizeUserData';
 @Injectable()
 export class UserService {
   constructor(
@@ -24,6 +25,7 @@ export class UserService {
 
 // Método para crear usuarios internamente con generación automática de credenciales
 async createUser(createUserDto: CreateUserDto): Promise<Omit<User, 'password'> & { temporaryPassword?: string }> {
+  const normalizedDto = normalizeUserData(createUserDto);
   // 1. Validar CI único
   const existingUserByCi = await this.userRepository.findOne({ 
     where: { ci: createUserDto.ci } 
@@ -72,18 +74,18 @@ if (fechaIngreso > new Date()) {
 
   // 6. Crear el usuario (incluyendo email si existe)
   const newUser = this.userRepository.create({
-    ci: createUserDto.ci,
+    ci: normalizedDto.ci,
     username,
     password: hashedPassword,
-    email: createUserDto.email?.toLowerCase(), // Normalizar a minúsculas
-    fullName: createUserDto.fullName,
-    celular: createUserDto.celular,
-    profesion: createUserDto.profesion,
-     fecha_ingreso: createUserDto.fecha_ingreso,
-    position: createUserDto.position,
+    email: normalizedDto.email,
+    fullName: normalizedDto.fullName,
+    celular: normalizedDto.celular,
+    profesion: normalizedDto.profesion,
+    fecha_ingreso: normalizedDto.fecha_ingreso,
+    position: normalizedDto.position,
     tipoEmpleado: createUserDto.tipoEmpleado,
-    role: createUserDto.role || RoleEnum.USER,
-    department: createUserDto.departmentId ? { id: createUserDto.departmentId } : null
+    role: normalizedDto.role || RoleEnum.USER,
+    department: normalizedDto.departmentId ? { id: normalizedDto.departmentId } : null,
   });
 
   const savedUser = await this.userRepository.save(newUser);
@@ -92,7 +94,9 @@ if (fechaIngreso > new Date()) {
   const { password: _, ...userResponse } = savedUser;
   return {
     ...userResponse,
-    temporaryPassword: createUserDto.password ? undefined : password // Solo si se generó automáticamente
+    temporaryPassword: createUserDto.password ? undefined : password, // Solo si se generó automáticamente
+    id: savedUser.id, // esto es redundante si ya está en userResponse, pero explícito
+    ci: savedUser.ci
   };
 }
 
