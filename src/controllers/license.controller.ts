@@ -181,4 +181,43 @@ export class LicenseController {
       throw new BadRequestException('Solicitud incorrecta');
     }
   }
+
+
+  @Post('user/:userId/multiple')
+  @ApiOperation({ summary: 'Registrar múltiples licencias aprobadas para un usuario' })
+  @ApiParam({ name: 'userId', type: Number, description: 'ID del usuario al que se le registrarán las licencias' })
+  @ApiBody({
+    description: 'Arreglo de licencias a registrar',
+    type: [License],
+    examples: {
+      example1: {
+        summary: 'Licencias de años anteriores',
+        value: [
+          {
+            licenseType: 'VACACION',
+            timeRequested: 'Varios Días',
+            startDate: '2023-07-01',
+            endDate: '2023-07-10',
+          },
+          {
+            licenseType: 'VACACION',
+            timeRequested: 'Día Completo',
+            startDate: '2024-02-03',
+            endDate: '2024-02-03',
+          }
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Licencias registradas correctamente',
+    type: [LicenseResponseDto],
+  })
+  async createMultipleLicenses(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() licensesData: Partial<License>[],
+  ): Promise<LicenseResponseDto[]> {
+    return this.licenseService.createMultipleLicenses(userId, licensesData);
+  }
 }

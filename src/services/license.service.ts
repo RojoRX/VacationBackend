@@ -433,7 +433,41 @@ export class LicenseService {
     return updatedLicense;
   }
 
-
+  async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+  
+    const createdLicenses: LicenseResponseDto[] = [];
+  
+    for (const licenseData of licensesData) {
+      try {
+        // Validaciones por cada licencia
+        this.validateLicenseEnums(licenseData);
+        const { startDate, endDate, totalDays } = this.calculateLicenseDays(licenseData);
+  
+        await this.validateNoExistingLicense(userId, startDate, endDate);
+  
+        const license = this.licenseRepository.create({
+          ...licenseData,
+          user,
+          totalDays,
+          immediateSupervisorApproval: true,
+          personalDepartmentApproval: true,
+        });
+  
+        const savedLicense = await this.licenseRepository.save(license);
+        createdLicenses.push(this.mapLicenseToDto(savedLicense));
+      } catch (error) {
+        // Si hay un error con una licencia, lo registras pero no detienes el proceso completo
+        console.error(`Error al registrar licencia con fechas ${licenseData.startDate} - ${licenseData.endDate}:`, error.message);
+      }
+    }
+  
+    return createdLicenses;
+  }
+  
 
 
 }

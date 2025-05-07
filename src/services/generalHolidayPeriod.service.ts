@@ -5,6 +5,7 @@ import { Repository, Not, Between } from 'typeorm';
 import { HolidayPeriodName } from 'src/entities/generalHolidayPeriod.entity';
 import { async } from 'rxjs';
 import { CreateGeneralHolidayPeriodDto } from 'src/dto/create-general-holiday-period.dto';
+import toLocalDateOnly from 'src/utils/normalizaedDate';
 
 @Injectable()
 export class GeneralHolidayPeriodService {
@@ -22,8 +23,9 @@ export class GeneralHolidayPeriodService {
       throw new BadRequestException(`El nombre del receso debe ser uno de los siguientes: ${Object.values(HolidayPeriodName).join(', ')}`);
     }
   
-    const start = new Date(dto.startDate);
-    const end = new Date(dto.endDate);
+    const start = toLocalDateOnly(dto.startDate);
+    const end = toLocalDateOnly(dto.endDate);
+
   
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       throw new BadRequestException('Las fechas deben ser válidas.');
@@ -151,8 +153,8 @@ return periods;
     const updatedPeriod = this.generalHolidayPeriodRepository.create({
       ...holidayPeriod,
       year,  // Aseguramos que el año esté actualizado correctamente
-      startDate: start,
-      endDate: end,
+      startDate: toLocalDateOnly(start),
+      endDate: toLocalDateOnly(end),
     });
   
     await this.generalHolidayPeriodRepository.update(id, updatedPeriod);
@@ -170,4 +172,6 @@ return periods;
 
     await this.generalHolidayPeriodRepository.delete(id);
 }
+
+
 }
