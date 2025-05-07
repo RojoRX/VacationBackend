@@ -29,39 +29,39 @@ export class LicenseService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-  
+
     const carnetIdentidad = user.ci;
-  
+
     this.validateLicenseEnums(licenseData);
     const { startDate, endDate, totalDays } = this.calculateLicenseDays(licenseData);
-  
+
     // Validar días de vacaciones disponibles
     //const vacationInfo = await this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
-   // const remainingVacationDays = vacationInfo.diasDeVacacionRestantes;
-  
+    // const remainingVacationDays = vacationInfo.diasDeVacacionRestantes;
+
     //if (totalDays > remainingVacationDays) {
     //  throw new BadRequestException(`No tiene suficientes días de vacaciones disponibles. Solicitó ${totalDays} días, pero solo le quedan ${remainingVacationDays} días.`);
     //}
-  
+
     await this.validateNoExistingLicense(userId, startDate, endDate);
-  
+
     const license = this.licenseRepository.create({
       ...licenseData,
       user,
       totalDays,
     });
-  
+
     const savedLicense = await this.licenseRepository.save(license);
-  
+
     // Notificar a los administradores y supervisores
     await this.notificationService.notifyAdminsAndSupervisors(
       `El usuario ${user.fullName} ha solicitado una licencia del ${startDate} al ${endDate} (${totalDays} días).`,
       user.id,
     );
-  
+
     return this.mapLicenseToDto(savedLicense);
   }
-  
+
 
   // Validación de enums
   private validateLicenseEnums(licenseData: Partial<License>) {
@@ -438,17 +438,17 @@ export class LicenseService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-  
+
     const createdLicenses: LicenseResponseDto[] = [];
-  
+
     for (const licenseData of licensesData) {
       try {
         // Validaciones por cada licencia
         this.validateLicenseEnums(licenseData);
         const { startDate, endDate, totalDays } = this.calculateLicenseDays(licenseData);
-  
+
         await this.validateNoExistingLicense(userId, startDate, endDate);
-  
+
         const license = this.licenseRepository.create({
           ...licenseData,
           user,
@@ -456,7 +456,7 @@ export class LicenseService {
           immediateSupervisorApproval: true,
           personalDepartmentApproval: true,
         });
-  
+
         const savedLicense = await this.licenseRepository.save(license);
         createdLicenses.push(this.mapLicenseToDto(savedLicense));
       } catch (error) {
@@ -464,10 +464,10 @@ export class LicenseService {
         console.error(`Error al registrar licencia con fechas ${licenseData.startDate} - ${licenseData.endDate}:`, error.message);
       }
     }
-  
+
     return createdLicenses;
   }
-  
+
 
 
 }
