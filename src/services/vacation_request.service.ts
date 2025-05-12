@@ -34,6 +34,7 @@ export class VacationRequestService {
     position: string,
     managementPeriod: { startPeriod: string; endPeriod: string },
   ): Promise<Omit<VacationRequest, 'user'> & { ci: string, totalWorkingDays: number }> {
+    console.log('Valor de CI al inicio:', ci);
     console.log('--- Inicio de createVacationRequest ---');
     console.log('Valor de managementPeriod al inicio:', managementPeriod);
 
@@ -42,7 +43,7 @@ export class VacationRequestService {
     if (!user) {
       throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
-    console.log('Usuario encontrado:', user.fullName);
+    console.log('Usuario encontrado:', user.fullName, user.ci);
 
     // Verificar TODAS las solicitudes de vacaciones para el usuario
     const allVacationRequests = await this.vacationRequestRepository.find({
@@ -82,10 +83,12 @@ export class VacationRequestService {
       parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
       parseInt(managementPeriod.endPeriod.substring(8, 10))
     ));
+    const startPeriodIso = startPeriodDate.toISOString();
+    const endPeriodIso = endPeriodDate.toISOString();
     console.log('Fechas del período de gestión:', startPeriodDate.toISOString(), endPeriodDate.toISOString());
 
     // Obtener las gestiones acumuladas
-    const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodDate);
+    const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodIso);
     console.log('Respuesta de gestiones acumuladas:', accumulatedDebtResponse);
 
     // Validar que no existan gestiones anteriores con días disponibles (sin cambios)
@@ -192,7 +195,6 @@ export class VacationRequestService {
     console.log('--- Fin de createVacationRequest ---');
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
   }
-
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(
     detalles: VacationDetail[],
@@ -211,6 +213,7 @@ export class VacationRequestService {
         'No se puede crear la solicitud de vacaciones: existen gestiones anteriores con días disponibles.'
       );
     }
+    console.log(detalles)
   }
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
@@ -764,5 +767,60 @@ export class VacationRequestService {
     return this.vacationRequestRepository.save(request);
   }
 
+  async checkLastRequestStatus(ci: string): Promise<{
+  canRequest: boolean;
+  reason?: string;
+}> {
+  try {
+    // 1. Validar usuario
+    const user = await this.userService.findByCarnet(ci);
+    if (!user) {
+      return { canRequest: false, reason: 'Usuario no encontrado' };
+    }
+
+    // 2. Obtener la última solicitud
+    const lastRequest = await this.vacationRequestRepository.findOne({
+      where: { user: { id: user.id } },
+      order: { requestDate: 'DESC' },
+    });
+
+    // Si no hay solicitudes previas, puede crear una nueva
+    if (!lastRequest) {
+      return { canRequest: true };
+    }
+
+    // 3. Validar estado de la última solicitud
+    if (lastRequest.status === 'PENDING') {
+      return {
+        canRequest: false,
+        reason: 'La última solicitud aún no ha sido revisada'
+      };
+    }
+
+    if (lastRequest.status !== 'AUTHORIZED' && lastRequest.status !== 'SUSPENDED') {
+      return {
+        canRequest: false,
+        reason: 'La última solicitud no fue autorizada'
+      };
+    }
+
+    if (!lastRequest.approvedByHR) {
+      return {
+        canRequest: false,
+        reason: 'La última solicitud no fue aprobada por el departamento de personal'
+      };
+    }
+
+    // Todas las validaciones pasaron
+    return { canRequest: true };
+
+  } catch (error) {
+    console.error('Error al verificar estado de solicitud:', error);
+    return {
+      canRequest: false,
+      reason: 'Error al verificar el estado de las solicitudes'
+    };
+  }
+}
 
 }

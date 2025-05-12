@@ -9,6 +9,8 @@ import { LicenseService } from './license.service';
 import { DateTime } from 'luxon';
 import { VacationRequestService } from './vacation_request.service';
 import ResumenGeneral from 'src/interfaces/resumen-general.interface';
+import { formatToSimpleDate, parseToStartOfDay } from 'src/utils/dateUtils';
+import { adjustPeriodEnd, isValidPeriod } from 'src/utils/date.helpers';
 
 @Injectable()
 export class VacationService {
@@ -197,63 +199,56 @@ export class VacationService {
 
   async calculateAccumulatedDebt(
     carnetIdentidad: string,
-    endDate: Date
+    endDate: Date | string
   ): Promise<{
     deudaAcumulativa: number;
     detalles: any[];
     resumenGeneral: ResumenGeneral;
   }> {
-    // Obtener datos del usuario
+    console.log("Fecha Recibida" + endDate)
     const userData = await this.userService.getUserData(carnetIdentidad);
     if (!userData) {
       throw new BadRequestException("Usuario no encontrado.");
     }
 
-    // Convertir la fecha de ingreso a DateTime y asegurarse de que esté en UTC
-    const fechaIngreso = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
-    const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
+    // Normalizar endDate para evitar problemas con hora o zona horaria
+    const parsedEndDate = typeof endDate === 'string'
+      ? DateTime.fromISO(endDate, { zone: 'utc' }).startOf('day')
+      : DateTime.fromJSDate(endDate, { zone: 'utc' }).startOf('day');
 
-    // Validar que la fecha de ingreso sea válida
+    const fechaIngreso = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" }).startOf('day');
     if (!fechaIngreso.isValid) {
       throw new Error(`Fecha de ingreso inválida: ${userData.fecha_ingreso}`);
     }
 
-    // Inicializar valores
     let deudaAcumulativa = 0;
     const detalles = [];
 
-    // Iterar sobre cada gestión (período de un año)
     let currentStartDate = fechaIngreso;
-    while (currentStartDate < endDateTime) {
-      // Definir el endDate de la gestión actual (un año después de currentStartDate)
-      const currentEndDate = currentStartDate.plus({ year: 1 });
-
-      // Ajustar el endDate si excede la fecha límite (endDateTime)
-      const adjustedEndDate = currentEndDate > endDateTime ? endDateTime : currentEndDate;
-
+    while (currentStartDate < parsedEndDate) {
+      const currentEndDate = currentStartDate.plus({ years: 1 });
+      const adjustedEndDate = currentEndDate > parsedEndDate ? parsedEndDate : currentEndDate;
+  
+      const diffInMonths = adjustedEndDate.diff(currentStartDate, 'months').months;
+      if (diffInMonths < 12) break;
+  
       try {
-        // Guardar la deuda acumulativa antes de actualizarla
         const deudaAcumulativaAnterior = deudaAcumulativa;
-
-        // Calcular la deuda para la gestión actual
+  
         const result = await this.calculateVacationDays(
           carnetIdentidad,
           currentStartDate.toJSDate(),
           adjustedEndDate.toJSDate()
         );
-
-        // Acumular la deuda de la gestión actual
+  
         deudaAcumulativa += result.deuda || 0;
-
-        // Si hay días de vacaciones restantes positivos, reducir la deuda acumulada
+  
         if (result.diasDeVacacionRestantes > 0) {
           deudaAcumulativa = Math.max(0, deudaAcumulativa - result.diasDeVacacionRestantes);
         }
-
-        // Calcular los días disponibles de vacaciones para la siguiente gestión
+  
         const diasDisponibles = Math.max(0, result.diasDeVacacionRestantes - deudaAcumulativaAnterior);
-
-        // Guardar los detalles de la gestión actual
+  
         detalles.push({
           startDate: currentStartDate.toJSDate(),
           endDate: adjustedEndDate.toJSDate(),
@@ -265,18 +260,17 @@ export class VacationService {
           diasDisponibles: diasDisponibles,
         });
       } catch (error) {
-        console.error(`Error calculando deuda para el período ${currentStartDate.toISO()} - ${adjustedEndDate.toISO()}:`, error);
+        console.error(`Error calculando deuda para el período ${currentStartDate.toISODate()} - ${adjustedEndDate.toISODate()}:`, error);
       }
-
-      currentStartDate = currentStartDate.plus({ year: 1 });
+  
+      currentStartDate = currentStartDate.plus({ years: 1 });
     }
-
-    // Calcular el resumen general DESPUÉS de tener todos los detalles
+  
     const gestionesConDeuda = detalles.filter(d => d.deuda > 0).length;
     const gestionesSinDeuda = detalles.length - gestionesConDeuda;
     const promedioDeuda = detalles.length > 0 ?
       detalles.reduce((sum, d) => sum + d.deuda, 0) / detalles.length : 0;
-
+  
     const resumenGeneral: ResumenGeneral = {
       deudaTotal: deudaAcumulativa,
       diasDisponiblesActuales: detalles.reduce((sum, d) => sum + (d.diasDisponibles || 0), 0),
@@ -286,13 +280,15 @@ export class VacationService {
       primeraGestion: detalles[0]?.startDate || null,
       ultimaGestion: detalles[detalles.length - 1]?.endDate || null,
     };
-
+  
     return {
       deudaAcumulativa,
       detalles,
       resumenGeneral
     };
   }
+
+
 
   async calculateDebtSinceDate(
     carnetIdentidad: string,
@@ -308,59 +304,59 @@ export class VacationService {
     if (!userData) {
       throw new BadRequestException("Usuario no encontrado.");
     }
-  
+
     // Convertir fechas a DateTime (Luxon)
     const fechaIngreso = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
     const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
     const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
     const now = DateTime.utc(); // Fecha actual en UTC
-  
+
     // Validar fechas
     if (!fechaIngreso.isValid) {
       throw new Error(`Fecha de ingreso inválida: ${userData.fecha_ingreso}`);
     }
-  
+
     // Validar que la fecha de inicio no sea anterior a ingreso
     if (startDateTime < fechaIngreso) {
       throw new BadRequestException("La fecha de inicio no puede ser anterior a la fecha de ingreso.");
     }
-  
+
     // Inicializar variables
     let deudaAcumulativa = 0;
     const detalles = [];
-  
+
     // Calcular períodos anuales
     let currentStartDate = startDateTime;
     while (currentStartDate < endDateTime) {
       const currentEndDate = currentStartDate.plus({ year: 1 });
       const adjustedEndDate = currentEndDate > endDateTime ? endDateTime : currentEndDate;
-  
+
       // No calcular períodos que comienzan en el futuro
       if (currentStartDate > now) {
         break;
       }
-  
+
       try {
         const deudaAcumulativaAnterior = deudaAcumulativa;
-  
+
         const result = await this.calculateVacationDays(
           carnetIdentidad,
           currentStartDate.toJSDate(),
           // Ajustar endDate para no superar la fecha actual
           adjustedEndDate > now ? now.toJSDate() : adjustedEndDate.toJSDate()
         );
-  
+
         // Actualizar deuda acumulativa
         deudaAcumulativa += result.deuda || 0;
-  
+
         // Ajustar deuda con días restantes
         if (result.diasDeVacacionRestantes > 0) {
           deudaAcumulativa = Math.max(0, deudaAcumulativa - result.diasDeVacacionRestantes);
         }
-  
+
         // Calcular días disponibles
         const diasDisponibles = Math.max(0, result.diasDeVacacionRestantes - deudaAcumulativaAnterior);
-  
+
         // Guardar detalles solo si el período no es completamente futuro
         if (adjustedEndDate <= now || currentStartDate <= now) {
           detalles.push({
@@ -377,21 +373,21 @@ export class VacationService {
       } catch (error) {
         console.error(`Error calculando deuda para ${currentStartDate.toISO()} - ${adjustedEndDate.toISO()}:`, error);
       }
-  
+
       currentStartDate = currentStartDate.plus({ year: 1 });
     }
-  
+
     // Calcular resumen general solo con períodos no futuros
-    const periodosNoFuturos = detalles.filter(d => 
+    const periodosNoFuturos = detalles.filter(d =>
       DateTime.fromJSDate(d.endDate) <= now
     );
-  
+
     const gestionesConDeuda = periodosNoFuturos.filter(d => d.deuda > 0).length;
     const gestionesSinDeuda = periodosNoFuturos.length - gestionesConDeuda;
     const promedioDeuda = periodosNoFuturos.length > 0
       ? periodosNoFuturos.reduce((sum, d) => sum + d.deuda, 0) / periodosNoFuturos.length
       : 0;
-  
+
     const resumenGeneral: ResumenGeneral = {
       deudaTotal: deudaAcumulativa,
       diasDisponiblesActuales: periodosNoFuturos.reduce((sum, d) => sum + (d.diasDisponibles || 0), 0),
@@ -401,7 +397,7 @@ export class VacationService {
       primeraGestion: periodosNoFuturos[0]?.startDate || null,
       ultimaGestion: periodosNoFuturos[periodosNoFuturos.length - 1]?.endDate || null,
     };
-  
+
     return {
       deudaAcumulativa,
       detalles: periodosNoFuturos, // Solo devolver períodos no futuros

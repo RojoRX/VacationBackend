@@ -266,5 +266,40 @@ async suspendVacationRequest(
 ): Promise<VacationRequest> {
   return this.vacationRequestService.suspendVacationRequest(id, updateData);
 }
+
+@Get('check-status/:ci')
+@ApiOperation({ summary: 'Verificar estado de solicitud de vacaciones' })
+@ApiResponse({
+  status: 200,
+  description: 'Estado verificado exitosamente',
+
+})
+@ApiResponse({
+  status: 400,
+  description: 'No se puede crear nueva solicitud',
+
+})
+async checkLastRequestStatus(@Param('ci') ci: string) {
+  try {
+    const result = await this.vacationRequestService.checkLastRequestStatus(ci);
+    
+    // Siempre devolver 200 con la estructura { canRequest, reason }
+    return result;
+    
+  } catch (error) {
+    // Capturar errores y devolver formato consistente
+    if (error instanceof HttpException) {
+      return {
+        canRequest: false,
+        reason: error.getResponse()['message'] || 'No se puede crear nueva solicitud'
+      };
+    }
+    
+    return {
+      canRequest: false,
+      reason: 'Error al verificar el estado'
+    };
+  }
+}
 }
 

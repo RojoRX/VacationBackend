@@ -9,7 +9,7 @@ export class VacationRequest {
   @ManyToOne(() => User, (user) => user.vacationRequests)
   user: User;
 
-  @Column()
+  @Column({nullable: true})
   position: string;
 
   @Column({ type: 'date' })
