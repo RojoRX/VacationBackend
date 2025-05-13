@@ -13,6 +13,7 @@ import { VacationRequestModule } from './modules/vacation_request.module';
 import { DepartmentModule } from './modules/department.module';
 import { VacationPolicyModule } from './modules/vacationPolicyModule.module';
 import { NotificationModule } from './modules/notification.module';
+import { ReportsModule } from './modules/reports.module';
 
 @Module({
   imports: [
@@ -38,7 +39,8 @@ import { NotificationModule } from './modules/notification.module';
     VacationRequestModule,
     DepartmentModule, 
     VacationPolicyModule,
-    NotificationModule
+    NotificationModule,
+    ReportsModule
   ],
   controllers: [],
   providers: [AppService],
