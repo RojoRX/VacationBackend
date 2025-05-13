@@ -1,8 +1,9 @@
 // src/modules/reports/reports.controller.ts
-import { Controller, Get, Query, Res, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Query, Res, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ReportsService } from 'src/services/reports.service';
 import { ReportFilterDto } from 'src/dto/report-filter.dto';
 import { Response } from 'express';
+import { UserReportFilterDto } from 'src/dto/user-report-filter.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -31,6 +32,44 @@ async generateMonthlyReport(
     res.status(500).json({
       message: 'Error al generar el reporte',
       error: error.message,
+    });
+  }
+}
+@Get('user-monthly')
+@UsePipes(new ValidationPipe({ transform: true }))
+async generateUserMonthlyReport(
+  @Query() filter: UserReportFilterDto,
+  @Res() res: Response
+  
+) {
+  console.log('Tipo de filter.year:', typeof filter.year);
+  console.log('Valor de filter.year:', filter.year);
+  try {
+    const buffer = await this.reportsService.generateUserMonthlyReport({
+      ci: filter.ci,
+      year: filter.year,
+      month: filter.month
+    });
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=reporte_usuario_${filter.ci}.xlsx`,
+    });
+
+    res.end(buffer);
+  } catch (error) {
+    if (error instanceof NotFoundException) {
+      return res.status(404).json({
+        statusCode: 404,
+        message: error.message,
+        error: 'Not Found'
+      });
+    }
+    
+    res.status(500).json({
+      statusCode: 500,
+      message: 'Error al generar el reporte',
+      error: error.message
     });
   }
 }
