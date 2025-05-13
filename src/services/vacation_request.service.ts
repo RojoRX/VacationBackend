@@ -724,13 +724,20 @@ export class VacationRequestService {
     }
 
     // Validar solapamiento con otras solicitudes (excluyendo esta)
-    await ensureNoOverlappingVacations(
-      this.vacationRequestRepository,
-      userId,
-      updateData.startDate,
-      updateData.endDate,
-      requestId // este parámetro evita que se detecte a sí misma como conflicto
-    );
+    try {
+      // Validar solapamiento con otras solicitudes (excluyendo esta)
+      await ensureNoOverlappingVacations(
+        this.vacationRequestRepository,
+        userId,
+        updateData.startDate,
+        updateData.endDate,
+        requestId
+      );
+    } catch (error) {
+      // Aquí capturamos el error lanzado desde ensureNoOverlappingVacations
+      console.error('Error de solapamiento:', error.message);
+      throw new BadRequestException(error.message);
+    }
 
 
     // Calcular días hábiles entre startDate y endDate
