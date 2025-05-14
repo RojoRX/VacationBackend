@@ -22,10 +22,10 @@ export class GeneralHolidayPeriodService {
     if (!Object.values(HolidayPeriodName).includes(dto.name as HolidayPeriodName)) {
       throw new BadRequestException(`El nombre del receso debe ser uno de los siguientes: ${Object.values(HolidayPeriodName).join(', ')}`);
     }
-  
+    console.log(`Antes de la conversion ${dto.startDate} - ${dto.endDate}`)
     const start = toLocalDateOnly(dto.startDate);
     const end = toLocalDateOnly(dto.endDate);
-
+    console.log(`Despues de la conversion ${start} - ${end}`)
   
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       throw new BadRequestException('Las fechas deben ser válidas.');
