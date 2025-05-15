@@ -9,6 +9,7 @@ import { UserService } from './user.service';
 import { VacationService } from './vacation.service';
 import { NotificationService } from './notification.service';
 import toLocalDateOnly from 'src/utils/normalizaedDate';
+import { NonHolidayService } from './nonholiday.service';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -22,19 +23,19 @@ export class LicenseService {
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
     private readonly notificationService: NotificationService,
-
+    private readonly nonHolidayService: NonHolidayService
   ) { }
 
-async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+  async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
     // 1. Validación de usuario existente
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-        throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException('Usuario no encontrado');
     }
 
     // 2. Validación de campos obligatorios
     if (!licenseData.startDate || !licenseData.endDate || !licenseData.licenseType || !licenseData.timeRequested) {
-        throw new BadRequestException('Fechas, tipo de licencia y tiempo solicitado son requeridos');
+      throw new BadRequestException('Fechas, tipo de licencia y tiempo solicitado son requeridos');
     }
 
     // 3. Validación de enums
@@ -45,18 +46,18 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     const endDate = new Date(licenseData.endDate);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        throw new BadRequestException('Formato de fecha inválido (use YYYY-MM-DD)');
+      throw new BadRequestException('Formato de fecha inválido (use YYYY-MM-DD)');
     }
 
     // 5. Validación de rango de fechas
     if (startDate > endDate) {
-        throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
+      throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
     }
 
     // 6. Validación específica para "Varios días" con mismas fechas
-    if (licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS && 
-        licenseData.startDate === licenseData.endDate) {
-        throw new BadRequestException('Para licencias de "Varios días" debe seleccionar un rango de fechas diferente');
+    if (licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
+      licenseData.startDate === licenseData.endDate) {
+      throw new BadRequestException('Para licencias de "Varios días" debe seleccionar un rango de fechas diferente');
     }
 
     // 7. Validación de fechas con zona horaria local (Bolivia)
@@ -65,38 +66,45 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     const cutoffTime = today.set({ hour: 20 }); // 20:00 hora Bolivia
 
     const startDateLuxon = DateTime.fromISO(licenseData.startDate).setZone('America/La_Paz');
-    
+
     if (startDateLuxon < today || (startDateLuxon.hasSame(today, 'day') && now >= cutoffTime)) {
-        throw new BadRequestException(
-            'Solo puede solicitar licencias para hoy antes de las 20:00 o para fechas futuras'
-        );
+      throw new BadRequestException(
+        'Solo puede solicitar licencias para hoy antes de las 20:00 o para fechas futuras'
+      );
     }
 
     // 8. Validación de máximo días permitidos
     const maxDays = 5;
-    const { totalDays } = this.calculateLicenseDays(licenseData);
+    const totalDays = await this.calculateTotalDaysImproved(
+      licenseData.startDate,
+      licenseData.endDate,
+      licenseData.timeRequested
+    );
+
+
     if (totalDays > maxDays) {
-        throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos`);
+      throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos`);
     }
 
-    // 9. Validación de solapamiento con otras licencias
+    // 9. Validación de solapamiento
     await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
 
     // 10. Creación de la licencia
+    // 10. Creación y almacenamiento
     const license = this.licenseRepository.create({
-        ...licenseData,
-        user,
-        totalDays,
-        issuedDate: new Date(),
-        immediateSupervisorApproval: false,
-        personalDepartmentApproval: false
+      ...licenseData,
+      user,
+      totalDays, // <-- Valor calculado
+      issuedDate: new Date(),
+      immediateSupervisorApproval: false,
+      personalDepartmentApproval: false
     });
 
     // 11. Guardado con transacción
     const savedLicense = await this.licenseRepository.manager.transaction(
-        async transactionalEntityManager => {
-            return await transactionalEntityManager.save(license);
-        }
+      async transactionalEntityManager => {
+        return await transactionalEntityManager.save(license);
+      }
     );
 
     // 12. Notificaciones
@@ -106,7 +114,7 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     );
 
     return this.mapLicenseToDto(savedLicense);
-}
+  }
 
   // Validación de enums
   private validateLicenseEnums(licenseData: Partial<License>) {
@@ -571,7 +579,7 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     });
   }
 
-  
+
 
 
 
@@ -629,6 +637,35 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     }
   }
 
+  private async calculateTotalDaysImproved(
+    startDateStr: string,
+    endDateStr: string,
+    timeRequested: TimeRequest
+  ): Promise<number> {
+    const start = DateTime.fromISO(startDateStr).startOf('day');
+    const end = DateTime.fromISO(endDateStr).startOf('day');
+
+    if (timeRequested === TimeRequest.HALF_DAY) return 0.5;
+
+    if (timeRequested === TimeRequest.FULL_DAY && start.hasSame(end, 'day')) return 1;
+
+    const totalDays: DateTime[] = [];
+    let current = start;
+
+    while (current <= end) {
+      totalDays.push(current);
+      current = current.plus({ days: 1 });
+    }
+
+    // Obtener feriados del servicio
+    const nonWorkingDates = await this.nonHolidayService.getNonWorkingDaysInRange(start.toISODate(), end.toISODate());
+    const feriadosSet = new Set(nonWorkingDates);
+
+    // Excluir los feriados del total de días
+    const workingDays = totalDays.filter(d => !feriadosSet.has(d.toISODate()));
+
+    return workingDays.length;
+  }
 
 
 

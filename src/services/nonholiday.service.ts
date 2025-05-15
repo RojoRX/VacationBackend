@@ -105,4 +105,38 @@ export class NonHolidayService {
     const normalizedDate = DateTime.fromISO(date).toISODate();
     return this.nonHolidayRepository.findOne({ where: { year, date: normalizedDate } });
   }
+
+async getNonWorkingDaysInRange(startDate: string, endDate: string): Promise<string[]> {
+  const start = DateTime.fromISO(startDate).startOf('day');
+  const end = DateTime.fromISO(endDate).startOf('day');
+
+  console.log('📅 Rango recibido:', { start: start.toISODate(), end: end.toISODate() });
+
+  const allNonHolidays = await this.nonHolidayRepository.find();
+
+  console.log('📋 Todos los días no hábiles registrados en la base de datos:');
+  allNonHolidays.forEach(nh => {
+    const isoDate = DateTime.fromISO(nh.date).toISODate();
+    console.log(` - ${isoDate}`);
+  });
+
+  // Filtrar los días no hábiles que están dentro del rango
+  const filteredDates = allNonHolidays
+    .filter(nh => {
+      const nhDate = DateTime.fromISO(nh.date).startOf('day');
+      const isInRange = nhDate >= start && nhDate <= end;
+      if (isInRange) {
+        console.log(`✅ Día no hábil dentro del rango: ${nhDate.toISODate()}`);
+      }
+      return isInRange;
+    })
+    .map(nh => DateTime.fromISO(nh.date).toISODate());
+
+  console.log('✅ Días no hábiles finales devueltos:', filteredDates);
+
+  return filteredDates;
+}
+
+
+
 }
