@@ -17,20 +17,14 @@ export class GeneralHolidayPeriod {
   })
   name: HolidayPeriodName;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamp' }) // Cambiado a timestamp
   startDate: Date;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamp' }) // Cambiado a timestamp
   endDate: Date;
+
 
   @Column({ type: 'int' })
   year: number;
 
-  setStartDate(date: string) {
-    this.startDate = DateTime.fromISO(date).toJSDate();
-  }
-
-  setEndDate(date: string) {
-    this.endDate = DateTime.fromISO(date).toJSDate();
-  }
 }
