@@ -25,44 +25,88 @@ export class LicenseService {
 
   ) { }
 
-  async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+    // 1. Validación de usuario existente
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+        throw new NotFoundException('Usuario no encontrado');
     }
 
-    const carnetIdentidad = user.ci;
+    // 2. Validación de campos obligatorios
+    if (!licenseData.startDate || !licenseData.endDate || !licenseData.licenseType || !licenseData.timeRequested) {
+        throw new BadRequestException('Fechas, tipo de licencia y tiempo solicitado son requeridos');
+    }
 
+    // 3. Validación de enums
     this.validateLicenseEnums(licenseData);
-    const { startDate, endDate, totalDays } = this.calculateLicenseDays(licenseData);
 
-    // Validar días de vacaciones disponibles
-    //const vacationInfo = await this.vacationService.calculateVacationPeriodByCI(carnetIdentidad);
-    // const remainingVacationDays = vacationInfo.diasDeVacacionRestantes;
+    // 4. Normalización y validación de fechas
+    const startDate = new Date(licenseData.startDate);
+    const endDate = new Date(licenseData.endDate);
 
-    //if (totalDays > remainingVacationDays) {
-    //  throw new BadRequestException(`No tiene suficientes días de vacaciones disponibles. Solicitó ${totalDays} días, pero solo le quedan ${remainingVacationDays} días.`);
-    //}
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        throw new BadRequestException('Formato de fecha inválido (use YYYY-MM-DD)');
+    }
 
-    await this.validateNoExistingLicense(userId, startDate, endDate);
+    // 5. Validación de rango de fechas
+    if (startDate > endDate) {
+        throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
+    }
 
+    // 6. Validación específica para "Varios días" con mismas fechas
+    if (licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS && 
+        licenseData.startDate === licenseData.endDate) {
+        throw new BadRequestException('Para licencias de "Varios días" debe seleccionar un rango de fechas diferente');
+    }
+
+    // 7. Validación de fechas con zona horaria local (Bolivia)
+    const now = DateTime.local().setZone('America/La_Paz');
+    const today = now.startOf('day');
+    const cutoffTime = today.set({ hour: 20 }); // 20:00 hora Bolivia
+
+    const startDateLuxon = DateTime.fromISO(licenseData.startDate).setZone('America/La_Paz');
+    
+    if (startDateLuxon < today || (startDateLuxon.hasSame(today, 'day') && now >= cutoffTime)) {
+        throw new BadRequestException(
+            'Solo puede solicitar licencias para hoy antes de las 20:00 o para fechas futuras'
+        );
+    }
+
+    // 8. Validación de máximo días permitidos
+    const maxDays = 5;
+    const { totalDays } = this.calculateLicenseDays(licenseData);
+    if (totalDays > maxDays) {
+        throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos`);
+    }
+
+    // 9. Validación de solapamiento con otras licencias
+    await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
+
+    // 10. Creación de la licencia
     const license = this.licenseRepository.create({
-      ...licenseData,
-      user,
-      totalDays,
+        ...licenseData,
+        user,
+        totalDays,
+        issuedDate: new Date(),
+        immediateSupervisorApproval: false,
+        personalDepartmentApproval: false
     });
 
-    const savedLicense = await this.licenseRepository.save(license);
+    // 11. Guardado con transacción
+    const savedLicense = await this.licenseRepository.manager.transaction(
+        async transactionalEntityManager => {
+            return await transactionalEntityManager.save(license);
+        }
+    );
 
-    // Notificar a los administradores y supervisores
+    // 12. Notificaciones
     await this.notificationService.notifyAdminsAndSupervisors(
-      `El usuario ${user.fullName} ha solicitado una licencia del ${startDate} al ${endDate} (${totalDays} días).`,
+      `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días).`,
       user.id,
     );
 
     return this.mapLicenseToDto(savedLicense);
-  }
-
+}
 
   // Validación de enums
   private validateLicenseEnums(licenseData: Partial<License>) {
@@ -527,6 +571,11 @@ export class LicenseService {
     });
   }
 
+  
+
+
+
+
   // Métodos auxiliares
   private datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
     return (start1 <= end2) && (end1 >= start2);
@@ -546,39 +595,39 @@ export class LicenseService {
   }
 
   // Verificar si ya existe una licencia en el rango de fechas
-private async validateNoExistingLicense(userId: number, startDateInput: string | Date, endDateInput: string | Date) {
-  // Convertir las fechas de entrada a objetos Date sin hora (solo fecha)
-  const startDate = new Date(startDateInput);
-  const endDate = new Date(endDateInput);
-  
-  // Asegurarse de que las fechas sean válidas
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    throw new BadRequestException('Fechas inválidas');
-  }
+  private async validateNoExistingLicense(userId: number, startDateInput: string | Date, endDateInput: string | Date) {
+    // Convertir las fechas de entrada a objetos Date sin hora (solo fecha)
+    const startDate = new Date(startDateInput);
+    const endDate = new Date(endDateInput);
 
-  // Formatear las fechas como strings YYYY-MM-DD para la comparación en la base de datos
-  const startDateStr = startDate.toISOString().split('T')[0];
-  const endDateStr = endDate.toISOString().split('T')[0];
+    // Asegurarse de que las fechas sean válidas
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new BadRequestException('Fechas inválidas');
+    }
 
-  // Consulta para verificar solapamiento
-  const existingLicense = await this.licenseRepository.createQueryBuilder('license')
-    .where('license.userId = :userId', { userId })
-    .andWhere(`
+    // Formatear las fechas como strings YYYY-MM-DD para la comparación en la base de datos
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // Consulta para verificar solapamiento
+    const existingLicense = await this.licenseRepository.createQueryBuilder('license')
+      .where('license.userId = :userId', { userId })
+      .andWhere(`
       (license.startDate <= :endDate AND license.endDate >= :startDate) OR
       (license.startDate BETWEEN :startDate AND :endDate) OR
       (license.endDate BETWEEN :startDate AND :endDate)
-    `, { 
-      startDate: startDateStr, 
-      endDate: endDateStr 
-    })
-    .getOne();
+    `, {
+        startDate: startDateStr,
+        endDate: endDateStr
+      })
+      .getOne();
 
-  if (existingLicense) {
-    throw new BadRequestException(
-      `Ya existe una licencia registrada entre ${existingLicense.startDate} y ${existingLicense.endDate}`
-    );
+    if (existingLicense) {
+      throw new BadRequestException(
+        `Ya existe una licencia registrada entre ${existingLicense.startDate} y ${existingLicense.endDate}`
+      );
+    }
   }
-}
 
 
 
