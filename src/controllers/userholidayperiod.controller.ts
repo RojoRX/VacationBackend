@@ -7,6 +7,7 @@ import { HolidayPeriodName } from 'src/entities/holydayperiod.entity'; // Asegú
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { CreateUserHolidayPeriodDto } from 'src/dto/create-user-holiday-period.dto';
 import { UserHolidayPeriodDto } from 'src/dto/userholidayperiod.dto';
+import { UpdateUserHolidayPeriodDto } from 'src/dto/updateUserHolidayPeriod.dto';
 
 @ApiTags('Recesos Personalizados')
 @Controller('user-holiday-periods')
@@ -20,14 +21,8 @@ export class UserHolidayPeriodController {
   @ApiResponse({ status: 400, description: 'Error al crear el período de vacaciones' })
   async createUserHolidayPeriod(
     @Body() body: CreateUserHolidayPeriodDto,
-    @Res() res: Response
-  ): Promise<void> {
-    try {
-      const newHolidayPeriod = await this.userHolidayPeriodService.createUserHolidayPeriod(body);
-      res.status(HttpStatus.CREATED).json(newHolidayPeriod);
-    } catch (error) {
-      res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error creating holiday period', error });
-    }
+  ): Promise<UserHolidayPeriod> {
+    return this.userHolidayPeriodService.createUserHolidayPeriod(body);
   }
 
   @Get(':userId/:year')
@@ -55,18 +50,20 @@ export class UserHolidayPeriodController {
   @ApiOperation({ summary: 'Actualizar un período de vacaciones' })
   @ApiResponse({ status: 200, description: 'Período de vacaciones actualizado exitosamente' })
   @ApiResponse({ status: 400, description: 'Error al actualizar el período de vacaciones' })
-  async updateUserHolidayPeriod(
-    @Param('id') id: number,
-    @Body() body: Partial<UserHolidayPeriod>,
-    @Res() res: Response,
-  ): Promise<void> {
-    try {
-      const updatedHolidayPeriod = await this.userHolidayPeriodService.updateUserHolidayPeriod(id, body);
-      res.status(HttpStatus.OK).json(updatedHolidayPeriod);
-    } catch (error) {
-      res.status(HttpStatus.BAD_REQUEST).json({ message: 'Error updating holiday period', error });
-    }
+@Put(':id')
+async updateUserHolidayPeriod(
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    updateData: {
+      name?: HolidayPeriodName;
+      startDate?: string;
+      endDate?: string;
+      userId?: number;
+    },
+  ) {
+    return this.userHolidayPeriodService.updateUserHolidayPeriod(id, updateData);
   }
+    
 
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar un período de vacaciones' })
@@ -91,7 +88,7 @@ export class UserHolidayPeriodController {
   async getHolidays(@Param('userId', ParseIntPipe) userId: number): Promise<UserHolidayPeriodDto[]> {
     console.log(`Recibiendo userId: ${userId} de la solicitud.`);
     return this.userHolidayPeriodService.getAllUserHolidayPeriods(userId);
-}
+  }
 
 
 

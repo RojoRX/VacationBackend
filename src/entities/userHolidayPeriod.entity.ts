@@ -18,10 +18,10 @@ export class UserHolidayPeriod {
   })
   name: HolidayPeriodName;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamp' })
   startDate: Date;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamp' })
   endDate: Date;
 
   @Column({ type: 'int' })
