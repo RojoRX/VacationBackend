@@ -8,6 +8,8 @@ import {
   Param,
   Body,
   ParseIntPipe,
+  BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { AcademicUnitService } from 'src/services/academic-unit.service';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
@@ -16,13 +18,21 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 @ApiTags('Unidades Académicas')
 @Controller('academic-units')
 export class AcademicUnitController {
-  constructor(private readonly academicUnitService: AcademicUnitService) {}
+  constructor(private readonly academicUnitService: AcademicUnitService) { }
 
   @Get()
   @ApiOperation({ summary: 'Listar todas las unidades académicas' })
   @ApiResponse({ status: 200, description: 'Lista devuelta correctamente' })
   findAll(): Promise<AcademicUnit[]> {
     return this.academicUnitService.findAll();
+  }
+  @Get('search') // ← Primero las rutas específicas
+  async search(@Query('name') name: string): Promise<AcademicUnit[]> {
+    if (!name || name.trim().length < 2) {
+      throw new BadRequestException('El parámetro "name" es requerido y debe tener al menos 2 caracteres');
+    }
+
+    return this.academicUnitService.searchByName(name);
   }
 
   @Get(':id')
@@ -60,4 +70,5 @@ export class AcademicUnitController {
   remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
     return this.academicUnitService.remove(id);
   }
+
 }

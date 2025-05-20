@@ -13,7 +13,7 @@ export class AcademicUnitService {
   constructor(
     @InjectRepository(AcademicUnit)
     private academicUnitRepository: Repository<AcademicUnit>,
-  ) {}
+  ) { }
 
   async findAll(): Promise<AcademicUnit[]> {
     return this.academicUnitRepository.find({ order: { name: 'ASC' } });
@@ -63,6 +63,14 @@ export class AcademicUnitService {
 
     return this.academicUnitRepository.save(unit);
   }
+  async searchByName(name: string): Promise<AcademicUnit[]> {
+    const normalized = this.normalizeName(name);
+    return this.academicUnitRepository.find({
+      where: { name: ILike(`%${normalized}%`) },
+      order: { name: 'ASC' },
+    });
+  }
+
 
   async remove(id: number): Promise<void> {
     const unit = await this.findOne(id);
