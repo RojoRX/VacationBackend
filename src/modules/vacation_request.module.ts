@@ -22,12 +22,16 @@ import { License } from 'src/entities/license.entity';
 import { VacationPolicyModule } from './vacationPolicyModule.module';
 import { Notification } from 'src/entities/notification.entity';
 import { NotificationService } from 'src/services/notification.service';
+import { ProfessionModule } from './profession.module';
+import { Profession } from 'src/entities/profession.entity';
+import { AcademicUnit } from 'src/entities/academic-unit.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday, Department, GeneralHolidayPeriod, UserHolidayPeriod, License, Notification]),
+    TypeOrmModule.forFeature([VacationRequest, User, NonHoliday, Department, GeneralHolidayPeriod, UserHolidayPeriod, License, Notification, Profession, AcademicUnit]),
     HttpModule,
     VacationPolicyModule,
+    ProfessionModule,
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],

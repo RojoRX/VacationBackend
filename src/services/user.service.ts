@@ -14,14 +14,17 @@ import {
 } from '../utils/credential.utils';
 import { normalizeUserData } from 'src/utils/normalizeUserData';
 import { UpdateUserDto } from 'src/dto/update-user.dto';
+import { Profession } from 'src/entities/profession.entity';
+import { AcademicUnit } from 'src/entities/academic-unit.entity';
 @Injectable()
 export class UserService {
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
     private readonly httpService: HttpService,
     @InjectRepository(Department)
     private readonly departmentRepository: Repository<Department>,
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
+    @InjectRepository(Profession) private readonly profesionRepository: Repository<Profession>,
+    @InjectRepository(AcademicUnit) private readonly academicUnitRepository: Repository<AcademicUnit>,
   ) { }
 
   // Método para crear usuarios internamente con generación automática de credenciales
@@ -72,6 +75,17 @@ export class UserService {
     // 5. Generar contraseña automática si no se proporcionó
     const password = createUserDto.password || generateMemorablePassword();
     const hashedPassword = await bcrypt.hash(password, 10);
+    const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
+
+    if (!profession) {
+      throw new BadRequestException('Profesión no encontrada.');
+    }
+
+    const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
+    if (!academicUnit) {
+      throw new BadRequestException('Unidad académica no encontrada.');
+    }
+
 
     // 6. Crear el usuario (incluyendo email si existe)
     const newUser = this.userRepository.create({
@@ -81,7 +95,8 @@ export class UserService {
       email: normalizedDto.email,
       fullName: normalizedDto.fullName,
       celular: normalizedDto.celular,
-      profesion: normalizedDto.profesion,
+      profession: profession,
+      academicUnit: academicUnit,
       fecha_ingreso: normalizedDto.fecha_ingreso,
       position: normalizedDto.position,
       tipoEmpleado: createUserDto.tipoEmpleado,
@@ -100,16 +115,19 @@ export class UserService {
       ci: savedUser.ci
     };
   }
-
-
-
   async findByCarnet(ci: string): Promise<Omit<User, 'password'> | undefined> {
-    const user = await this.userRepository.findOne({ where: { ci }, relations: ['department'] });
+    const user = await this.userRepository.findOne({
+      where: { ci },
+      relations: ['department', 'academicUnit', 'profession'],
+    });
     return this.transformUser(user);
   }
 
   async findByUsername(username: string): Promise<User | undefined> {
-    return this.userRepository.findOne({ where: { username } });
+    return this.userRepository.findOne({
+      where: { username },
+      relations: ['department', 'academicUnit', 'profession'],
+    });
   }
 
   async validatePassword(username: string, password: string): Promise<boolean> {
@@ -130,7 +148,7 @@ export class UserService {
   async findById(userId: number): Promise<Omit<User, 'password'> | undefined> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['department'],
+      relations: ['department', 'academicUnit', 'profession'],
     });
     return this.transformUser(user);
   }
@@ -162,24 +180,25 @@ export class UserService {
   }
 
   async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['department', 'academicUnit', 'profession'], });
     if (!user) throw new BadRequestException('Usuario no encontrado.');
     return this.transformUser(user) as Omit<User, 'password'>;
   }
-
+  //User Interface
   async updateUserFields(
     userId: number,
     updateData: Partial<{
       fullName: string;
       celular: string;
-      profesion: string;
       position: string;
       departmentId: number;
+      professionId: number;
+      academicUnitId: number;
     }>
   ): Promise<Omit<User, 'password'>> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['department'],
+      relations: ['department', 'profession', 'academicUnit'],
     });
 
     if (!user) throw new BadRequestException('Usuario no encontrado.');
@@ -190,14 +209,26 @@ export class UserService {
       user.department = department;
     }
 
+    if (updateData.professionId !== undefined) {
+      const profession = await this.profesionRepository.findOne({ where: { id: updateData.professionId } });
+      if (!profession) throw new BadRequestException('Profesión no encontrada.');
+      user.profession = profession;
+    }
+
+    if (updateData.academicUnitId !== undefined) {
+      const academicUnit = await this.academicUnitRepository.findOne({ where: { id: updateData.academicUnitId } });
+      if (!academicUnit) throw new BadRequestException('Unidad académica no encontrada.');
+      user.academicUnit = academicUnit;
+    }
+
     user.fullName = updateData.fullName ?? user.fullName;
     user.celular = updateData.celular ?? user.celular;
-    user.profesion = updateData.profesion ?? user.profesion;
     user.position = updateData.position ?? user.position;
 
     await this.userRepository.save(user);
     return this.transformUser(user) as Omit<User, 'password'>;
   }
+
   async getUserData(carnetIdentidad: string): Promise<any> {
     // Buscar usuario en la base de datos
     const user = await this.findByCarnet(carnetIdentidad);
@@ -208,7 +239,7 @@ export class UserService {
         id: user.id,
         nombres: user.fullName,
         correo_electronico: user.username,
-        profesion: user.profesion,
+        profession: user.profession,
         fecha_ingreso: user.fecha_ingreso,
         position: user.position, // Incluir el campo position
         // Excluir la contraseña del retorno
@@ -218,15 +249,18 @@ export class UserService {
     throw new BadRequestException('Usuario no encontrado en la base de datos ni en la API externa.');
   }
 
+  //Admin interface
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<Omit<User, 'password'>> {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    console.log('Datos recibidos para actualizar usuario:', updateUserDto);
+
     const normalizedDto = normalizeUserData(updateUserDto);
 
-    // Validar que el nuevo CI no pertenezca a otro usuario
+    // Validar CI único si se cambió
     if (normalizedDto.ci && normalizedDto.ci !== user.ci) {
       const existingUserByCi = await this.userRepository.findOne({ where: { ci: normalizedDto.ci } });
       if (existingUserByCi && existingUserByCi.id !== user.id) {
@@ -240,42 +274,88 @@ export class UserService {
       if (existingEmail && existingEmail.id !== user.id) {
         throw new BadRequestException('El email ya está registrado por otro usuario');
       }
-    }// Si no se proporcionó un username, generarlo automáticamente
+    }
+
+    // Generar username si no se proporciona
     if (!normalizedDto.username) {
       normalizedDto.username = generateUsername(
-        normalizedDto.fullName || user.fullName,  // Nombre completo (o el actual del usuario)
-        normalizedDto.ci || user.ci               // CI (o el actual del usuario)
+        normalizedDto.fullName || user.fullName,
+        normalizedDto.ci || user.ci
       );
     }
 
-    // Validar username único si se cambió o se generó automáticamente
+    // Validar username único
     if (normalizedDto.username !== user.username) {
       const existingUsername = await this.userRepository.findOne({ where: { username: normalizedDto.username } });
       if (existingUsername && existingUsername.id !== user.id) {
         throw new BadRequestException('El nombre de usuario ya está en uso');
       }
     }
-    // Validar fecha
+
+    // Validar fecha de ingreso
     if (normalizedDto.fecha_ingreso) {
-      const fechaIngreso = new Date(normalizedDto.fecha_ingreso);
+      const fechaIngreso = parseDatePreservingLocal(normalizedDto.fecha_ingreso); // ✅ mantiene el día
+
       if (isNaN(fechaIngreso.getTime())) {
         throw new BadRequestException('Fecha de ingreso no válida');
       }
       if (fechaIngreso > new Date()) {
         throw new BadRequestException('La fecha de ingreso no puede ser futura');
       }
+      user.fecha_ingreso = normalizedDto.fecha_ingreso;
+
     }
 
-    // Actualizar campos permitidos
-    Object.assign(user, {
-      ...normalizedDto,
-      department: normalizedDto.departmentId ? { id: normalizedDto.departmentId } : user.department
-    });
+    // Relación: Departamento
+    if (normalizedDto.departmentId) {
+      const department = await this.departmentRepository.findOne({ where: { id: normalizedDto.departmentId } });
+      if (!department) {
+        throw new BadRequestException('Departamento no encontrado');
+      }
+      user.department = department;
+    }
 
+    // Relación: Unidad Académica
+    if (normalizedDto.academicUnitId) {
+      const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
+      if (!academicUnit) {
+        throw new BadRequestException('Unidad académica no encontrada');
+      }
+      user.academicUnit = academicUnit;
+    }
+
+    // Relación: Profesión
+    if (normalizedDto.professionId) {
+      const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
+      if (!profession) {
+        throw new BadRequestException('Profesión no encontrada');
+      }
+      user.profession = profession;
+    }
+
+    // Asignar campos simples
+    user.fullName = normalizedDto.fullName ?? user.fullName;
+    user.ci = normalizedDto.ci ?? user.ci;
+    user.email = normalizedDto.email ?? user.email;
+    user.celular = normalizedDto.celular ?? user.celular;
+    user.position = normalizedDto.position ?? user.position;
+    user.tipoEmpleado = normalizedDto.tipoEmpleado ?? user.tipoEmpleado;
+    user.role = normalizedDto.role ?? user.role;
+    user.username = normalizedDto.username ?? user.username;
+
+    // Guardar usuario actualizado
     const updatedUser = await this.userRepository.save(user);
     const { password: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
 
 
+
 }
+
+function parseDatePreservingLocal(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  // OJO: month en Date constructor es 0-indexado
+  return new Date(year, month - 1, day);
+}
+

@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { License } from './license.entity'; // Importa la entidad License
 import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad UserHolidayPeriod
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
@@ -8,6 +8,7 @@ import { Notification } from './notification.entity';
 import { TipoEmpleadoEnum } from 'src/enums/type.enum';
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { AcademicUnit } from './academic-unit.entity';
+import { Profession } from './profession.entity';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -46,8 +47,9 @@ export class User {
   @Column({ nullable: true })
   celular: string;
 
-  @Column({ nullable: true })
-  profesion: string;
+  @ManyToOne(() => Profession, { nullable: true })
+  @JoinColumn({ name: 'professionId' })
+  profession: Profession;
 
   @Column({ nullable: true })
   position: string;
@@ -69,6 +71,7 @@ export class User {
 
   // En user.entity.ts
   @ManyToOne(() => AcademicUnit, { nullable: true })
+  @JoinColumn({ name: 'academicUnitId' })
   academicUnit: AcademicUnit;
 
 

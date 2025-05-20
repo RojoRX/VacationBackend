@@ -1,9 +1,9 @@
 // update-user.dto.ts
-import { IsDateString, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 import { TipoEmpleadoEnum } from 'src/enums/type.enum';
 
 export class UpdateUserDto {
-@IsNotEmpty()
+  @IsNotEmpty()
   ci: string;
 
   @IsOptional()
@@ -21,7 +21,13 @@ export class UpdateUserDto {
   email?: string;
 
   @IsOptional()
-  profesion?: string;
+  @IsNumber()
+  professionId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  academicUnitId?: number;
+
 
   @IsNotEmpty()
   @IsDateString() // Valida formato YYYY-MM-DD

@@ -11,12 +11,14 @@ import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity'; // Im
 import { HolidayPeriod } from 'src/entities/holydayperiod.entity'; // Importa la entidad HolidayPeriod si es usada en la relación
 import { MockUserService } from 'src/mocks/user.service.mock';
 import { Department } from 'src/entities/department.entity';
+import { Profession } from 'src/entities/profession.entity';
+import { AcademicUnit } from 'src/entities/academic-unit.entity';
 
 @Module({
   imports: [
     HttpModule,
     ConfigModule,
-    TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod, Department]), // Asegúrate de incluir todas las entidades relacionadas
+    TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod, Department, Profession, AcademicUnit]), // Asegúrate de incluir todas las entidades relacionadas
   ],
   controllers: [UserController],
   providers: [

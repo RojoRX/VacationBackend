@@ -25,7 +25,11 @@ export class CreateUserDto {
   email?: string;
 
   @IsOptional()
-  profesion?: string;
+  professionId: number;
+  
+  @IsOptional()
+  academicUnitId: number;
+
 
   @IsNotEmpty()
   @IsDateString() // Valida formato YYYY-MM-DD
