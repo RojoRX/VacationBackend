@@ -14,6 +14,7 @@ import { DepartmentModule } from './modules/department.module';
 import { VacationPolicyModule } from './modules/vacationPolicyModule.module';
 import { NotificationModule } from './modules/notification.module';
 import { ReportsModule } from './modules/reports.module';
+import { AcademicUnitModule } from './modules/academic-unit.module';
 
 @Module({
   imports: [
@@ -40,7 +41,8 @@ import { ReportsModule } from './modules/reports.module';
     DepartmentModule, 
     VacationPolicyModule,
     NotificationModule,
-    ReportsModule
+    ReportsModule,
+    AcademicUnitModule
   ],
   controllers: [],
   providers: [AppService],

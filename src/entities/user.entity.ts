@@ -7,6 +7,7 @@ import { RoleEnum } from 'src/enums/role.enum';
 import { Notification } from './notification.entity';
 import { TipoEmpleadoEnum } from 'src/enums/type.enum';
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { AcademicUnit } from './academic-unit.entity';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -53,8 +54,6 @@ export class User {
 
   @Column({ type: 'enum', enum: TipoEmpleadoEnum, nullable: true })
   tipoEmpleado?: TipoEmpleadoEnum;
-  
-
 
   @OneToMany(() => UserHolidayPeriod, userHolidayPeriod => userHolidayPeriod.user)
   holidayPeriods: UserHolidayPeriod[];
@@ -67,6 +66,11 @@ export class User {
 
   @ManyToOne(() => Department, { nullable: true })
   department: Department;
+
+  // En user.entity.ts
+  @ManyToOne(() => AcademicUnit, { nullable: true })
+  academicUnit: AcademicUnit;
+
 
   @Column({ type: 'enum', enum: RoleEnum, default: RoleEnum.USER })
   role: RoleEnum; // Usa el enum para el rol del usuario
