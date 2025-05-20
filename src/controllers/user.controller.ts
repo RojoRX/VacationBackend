@@ -14,103 +14,109 @@ import { UpdateUserDto } from 'src/dto/update-user.dto';
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @Post()
-  @UsePipes(new ValidationPipe({ transform: true }))
-  @ApiOperation({
-    summary: 'Crear un nuevo usuario internamente',
-    description: 'Endpoint para que los administradores creen usuarios directamente en el sistema',
-  })
-  @ApiBody({
-    type: CreateUserDto,
-    description: 'Datos completos del usuario a crear',
-    examples: {
-      admin: {
-        summary: 'Ejemplo de creación de usuario administrador',
-        value: {
-          ci: '1234567',
-          username: 'admin@uatf.edu.bo',
-          password: 'Password123',
-          fullName: 'Administrador del Sistema',
-          celular: '77777777',
-          profesion: 'Ingeniero de Sistemas',
-          fecha_ingreso: '2023-01-01',
-          position: 'Administrador',
-          tipoEmpleado: 'ADMINISTRATIVO',
-          role: 'ADMIN',
-          departmentId: 1,
-        },
-      },
-      docente: {
-        summary: 'Ejemplo de creación de usuario docente',
-        value: {
-          ci: '7654321',
-          username: 'docente@uatf.edu.bo',
-          password: 'Docente123',
-          fullName: 'Docente Ejemplo',
-          fecha_ingreso: '2023-01-15',
-          position: 'Docente Titular',
-          tipoEmpleado: 'DOCENTE',
-          role: 'USER',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Usuario creado exitosamente',
-    schema: {
-      example: {
-        id: 1,
+@Post()
+@UsePipes(new ValidationPipe({ transform: true }))
+@ApiOperation({
+  summary: 'Registrar los datos personales de un usuario',
+  description: 'Este endpoint permite registrar información personal de un usuario, sin incluir credenciales de acceso.',
+})
+@ApiBody({
+  type: CreateUserDto,
+  description: 'Datos personales del usuario a registrar (sin username ni password)',
+  examples: {
+    administrativo: {
+      summary: 'Ejemplo de usuario administrativo',
+      value: {
         ci: '1234567',
-        username: 'admin@uatf.edu.bo',
-        fullName: 'Administrador del Sistema',
+        fullName: 'Juan Pérez',
         celular: '77777777',
-        profesion: 'Ingeniero de Sistemas',
+        email: 'juan.perez@uatf.edu.bo',
+        profesion: 'Ingeniería de Sistemas',
         fecha_ingreso: '2023-01-01',
-        position: 'Administrador',
+        position: 'Auxiliar Administrativo',
         tipoEmpleado: 'ADMINISTRATIVO',
         role: 'ADMIN',
-        department: {
-          id: 1,
-          name: 'Departamento de Sistemas',
-        },
-        createdAt: '2023-06-15T10:30:00.000Z',
-        updatedAt: '2023-06-15T10:30:00.000Z',
+        academicUnitId: 1,
+        professionId: 2,
+        departmentId: 3
       },
     },
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Error en los datos de entrada o usuario ya existe',
-    schema: {
-      example: {
-        statusCode: 400,
-        message: 'El CI ya está registrado',
-        error: 'Bad Request',
+    docente: {
+      summary: 'Ejemplo de usuario docente',
+      value: {
+        ci: '7654321',
+        fullName: 'Ana López',
+        fecha_ingreso: '2023-01-15',
+        position: 'Docente Titular',
+        tipoEmpleado: 'DOCENTE',
+        role: 'USER',
+        academicUnitId: 2,
+        professionId: 5
       },
     },
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'No autorizado (token inválido o ausente)',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'No tiene permisos para realizar esta acción',
-  })
-  async createUser(
-    @Body() createUserDto: CreateUserDto,
-    @Res() res: Response,
-  ) {
-    try {
-      const newUser = await this.userService.createUser(createUserDto);
-      return res.status(HttpStatus.CREATED).json(newUser);
-    } catch (error) {
-      return res
-        .status(error.status || HttpStatus.INTERNAL_SERVER_ERROR)
-        .json({ message: error.message });
-    }
+  },
+})
+@ApiResponse({
+  status: HttpStatus.CREATED,
+  description: 'Datos del usuario registrados exitosamente',
+  schema: {
+    example: {
+      id: 1,
+      ci: '1234567',
+      fullName: 'Juan Pérez',
+      celular: '77777777',
+      email: 'juan.perez@uatf.edu.bo',
+      profesion: 'Ingeniería de Sistemas',
+      academicUnit: {
+        id: 1,
+        name: 'Facultad de Tecnología',
+      },
+      department: {
+        id: 3,
+        name: 'Departamento de Sistemas',
+      },
+      fecha_ingreso: '2023-01-01',
+      position: 'Auxiliar Administrativo',
+      tipoEmpleado: 'ADMINISTRATIVO',
+      role: 'ADMIN',
+      createdAt: '2023-06-15T10:30:00.000Z',
+      updatedAt: '2023-06-15T10:30:00.000Z',
+    },
+  },
+})
+@ApiResponse({
+  status: HttpStatus.BAD_REQUEST,
+  description: 'Error en los datos de entrada o duplicado',
+  schema: {
+    example: {
+      statusCode: 400,
+      message: 'El CI ya está registrado',
+      error: 'Bad Request',
+    },
+  },
+})
+@ApiResponse({
+  status: HttpStatus.UNAUTHORIZED,
+  description: 'No autorizado (token inválido o ausente)',
+})
+@ApiResponse({
+  status: HttpStatus.FORBIDDEN,
+  description: 'No tiene permisos para realizar esta acción',
+})
+async createUserData(
+  @Body() createUserDto: CreateUserDto,
+  @Res() res: Response,
+) {
+  try {
+    const newUser = await this.userService.registerUserData(createUserDto);
+    return res.status(HttpStatus.CREATED).json(newUser);
+  } catch (error) {
+    return res
+      .status(error.status || HttpStatus.INTERNAL_SERVER_ERROR)
+      .json({ message: error.message });
   }
+}
+
 
   @Get('find/:ci')
   @ApiOperation({ summary: 'Buscar un usuario por su carnet' })

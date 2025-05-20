@@ -16,6 +16,7 @@ import { normalizeUserData } from 'src/utils/normalizeUserData';
 import { UpdateUserDto } from 'src/dto/update-user.dto';
 import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
+import { CredentialDto } from 'src/dto/credentials.dto';
 @Injectable()
 export class UserService {
   constructor(
@@ -28,93 +29,101 @@ export class UserService {
   ) { }
 
   // Método para crear usuarios internamente con generación automática de credenciales
-  async createUser(createUserDto: CreateUserDto): Promise<Omit<User, 'password'> & { temporaryPassword?: string }> {
-    const normalizedDto = normalizeUserData(createUserDto);
-    // 1. Validar CI único
-    const existingUserByCi = await this.userRepository.findOne({
-      where: { ci: createUserDto.ci }
-    });
-    if (existingUserByCi) {
-      throw new BadRequestException('El CI ya está registrado');
-    }
+async registerUserData(createUserDto: CreateUserDto): Promise<User> {
+  const normalizedDto = normalizeUserData(createUserDto);
 
-    // 2. Validar email único (si se proporciona)
-    if (createUserDto.email) {
-      const existingUserByEmail = await this.userRepository.findOne({
-        where: { email: createUserDto.email }
-      });
-      if (existingUserByEmail) {
-        throw new BadRequestException('El email ya está registrado');
-      }
-    }
-
-    // 3. Generar username automático si no se proporcionó
-    const username = createUserDto.username || generateUsername(
-      createUserDto.fullName,
-      createUserDto.ci
-    );
-
-    // 4. Validar username único
-    const existingUserByUsername = await this.userRepository.findOne({
-      where: { username }
-    });
-    if (existingUserByUsername) {
-      throw new BadRequestException('El nombre de usuario ya está en uso');
-    }
-
-    // Validar fecha (además de las otras validaciones existentes)
-    const fechaIngreso = new Date(createUserDto.fecha_ingreso);
-    if (isNaN(fechaIngreso.getTime())) {
-      throw new BadRequestException('Fecha de ingreso no válida');
-    }
-
-    // Validar que no sea fecha futura (opcional)
-    if (fechaIngreso > new Date()) {
-      throw new BadRequestException('La fecha de ingreso no puede ser futura');
-    }
-    // 5. Generar contraseña automática si no se proporcionó
-    const password = createUserDto.password || generateMemorablePassword();
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
-
-    if (!profession) {
-      throw new BadRequestException('Profesión no encontrada.');
-    }
-
-    const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
-    if (!academicUnit) {
-      throw new BadRequestException('Unidad académica no encontrada.');
-    }
-
-
-    // 6. Crear el usuario (incluyendo email si existe)
-    const newUser = this.userRepository.create({
-      ci: normalizedDto.ci,
-      username,
-      password: hashedPassword,
-      email: normalizedDto.email,
-      fullName: normalizedDto.fullName,
-      celular: normalizedDto.celular,
-      profession: profession,
-      academicUnit: academicUnit,
-      fecha_ingreso: normalizedDto.fecha_ingreso,
-      position: normalizedDto.position,
-      tipoEmpleado: createUserDto.tipoEmpleado,
-      role: normalizedDto.role || RoleEnum.USER,
-      department: normalizedDto.departmentId ? { id: normalizedDto.departmentId } : null,
-    });
-
-    const savedUser = await this.userRepository.save(newUser);
-
-    // 7. Retornar el usuario sin password hasheada + contraseña temporal
-    const { password: _, ...userResponse } = savedUser;
-    return {
-      ...userResponse,
-      temporaryPassword: createUserDto.password ? undefined : password, // Solo si se generó automáticamente
-      id: savedUser.id, // esto es redundante si ya está en userResponse, pero explícito
-      ci: savedUser.ci
-    };
+  // 1. Validar CI único
+  const existingUserByCi = await this.userRepository.findOne({
+    where: { ci: createUserDto.ci }
+  });
+  if (existingUserByCi) {
+    throw new BadRequestException('El CI ya está registrado');
   }
+
+  // 2. Validar email único (si se proporciona)
+  if (createUserDto.email) {
+    const existingUserByEmail = await this.userRepository.findOne({
+      where: { email: createUserDto.email }
+    });
+    if (existingUserByEmail) {
+      throw new BadRequestException('El email ya está registrado');
+    }
+  }
+
+  // 3. Validar fecha de ingreso
+  const fechaIngreso = new Date(createUserDto.fecha_ingreso);
+  if (isNaN(fechaIngreso.getTime())) {
+    throw new BadRequestException('Fecha de ingreso no válida');
+  }
+  if (fechaIngreso > new Date()) {
+    throw new BadRequestException('La fecha de ingreso no puede ser futura');
+  }
+
+  // 4. Validar profesión y unidad académica
+  const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
+  if (!profession) {
+    throw new BadRequestException('Profesión no encontrada.');
+  }
+
+  const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
+  if (!academicUnit) {
+    throw new BadRequestException('Unidad académica no encontrada.');
+  }
+
+  // 5. Crear usuario sin credenciales
+  const user = this.userRepository.create({
+    ci: normalizedDto.ci,
+    email: normalizedDto.email,
+    fullName: normalizedDto.fullName,
+    celular: normalizedDto.celular,
+    profession,
+    academicUnit,
+    fecha_ingreso: normalizedDto.fecha_ingreso,
+    position: normalizedDto.position,
+    tipoEmpleado: createUserDto.tipoEmpleado,
+    role: normalizedDto.role || RoleEnum.USER,
+    department: normalizedDto.departmentId ? { id: normalizedDto.departmentId } : null,
+  });
+
+  // 6. Guardar y retornar
+  const savedUser = await this.userRepository.save(user);
+  return savedUser;
+}
+
+  // Servicio 2
+async createUserCredentials(ci: string, credentialsDto: CredentialDto): Promise<{ username: string, temporaryPassword?: string }> {
+  const user = await this.userRepository.findOne({ where: { ci } });
+
+  if (!user) throw new NotFoundException('Usuario no encontrado');
+
+  if (user.username || user.password) {
+    throw new BadRequestException('Este usuario ya tiene credenciales asignadas');
+  }
+
+  const username = credentialsDto.username;
+
+  // Validar username único
+  const existingUserByUsername = await this.userRepository.findOne({ where: { username } });
+  if (existingUserByUsername) {
+    throw new BadRequestException('El nombre de usuario ya está en uso');
+  }
+
+  const password = credentialsDto.password || generateMemorablePassword();
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  user.username = username;
+  user.password = hashedPassword;
+
+  await this.userRepository.save(user);
+
+  return {
+    username,
+    temporaryPassword: credentialsDto.password ? undefined : password
+  };
+}
+
+
+
   async findByCarnet(ci: string): Promise<Omit<User, 'password'> | undefined> {
     const user = await this.userRepository.findOne({
       where: { ci },

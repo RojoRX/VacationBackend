@@ -25,12 +25,12 @@ export class User {
   @IsEmail()  // Validación de formato (requiere class-validator)
   email?: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, nullable: true })
   @IsOptional()
   @IsString()
   username: string;
 
-  @Column()
+  @Column({nullable: true})
   @IsOptional()
   @IsString()
   password?: string;
