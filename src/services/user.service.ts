@@ -89,8 +89,6 @@ async registerUserData(createUserDto: CreateUserDto): Promise<User> {
   const savedUser = await this.userRepository.save(user);
   return savedUser;
 }
-
-  // Servicio 2
 async createUserCredentials(ci: string, credentialsDto: CredentialDto): Promise<{ username: string, temporaryPassword?: string }> {
   const user = await this.userRepository.findOne({ where: { ci } });
 
@@ -100,14 +98,32 @@ async createUserCredentials(ci: string, credentialsDto: CredentialDto): Promise<
     throw new BadRequestException('Este usuario ya tiene credenciales asignadas');
   }
 
-  const username = credentialsDto.username;
+  let username = credentialsDto.username;
 
-  // Validar username único
-  const existingUserByUsername = await this.userRepository.findOne({ where: { username } });
-  if (existingUserByUsername) {
-    throw new BadRequestException('El nombre de usuario ya está en uso');
+  // Si no se proporciona username, generar uno automáticamente
+  if (!username) {
+    if (!user.fullName || !user.ci) {
+      throw new BadRequestException('No se puede generar un username automáticamente por falta de información');
+    }
+
+    const nombre = user.fullName.trim().toLowerCase().split(' ');
+    const baseUsername = `${nombre[0]}.${nombre[1] || 'user'}${user.ci.slice(-3)}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    username = baseUsername;
+    
+    let counter = 1;
+    while (await this.userRepository.findOne({ where: { username } })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+    }
+  } else {
+    // Validar que el username proporcionado sea único
+    const existingUserByUsername = await this.userRepository.findOne({ where: { username } });
+    if (existingUserByUsername) {
+      throw new BadRequestException('El nombre de usuario ya está en uso');
+    }
   }
 
+  // Generar o usar contraseña
   const password = credentialsDto.password || generateMemorablePassword();
   const hashedPassword = await bcrypt.hash(password, 10);
 

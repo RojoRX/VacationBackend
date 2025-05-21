@@ -1,5 +1,5 @@
 // src/controllers/user.controller.ts
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
@@ -8,6 +8,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery, ApiBea
 import { UpdateRoleDto } from 'src/dto/update-role.dto';
 import { CreateUserDto } from 'src/dto/create-user.dto';
 import { UpdateUserDto } from 'src/dto/update-user.dto';
+import { CredentialDto } from 'src/dto/credentials.dto';
 
 @ApiTags('Usuarios')
 @Controller('users')
@@ -263,6 +264,20 @@ async updateUserFields(
     @Body() updateUserDto: UpdateUserDto,
   ): Promise<Omit<User, 'password'>> {
     return this.userService.updateUser(id, updateUserDto);
+  }
+
+  @Post(':ci/credentials')
+  @ApiOperation({ summary: 'Crear credenciales para un usuario' })
+  @ApiParam({ name: 'ci', description: 'Carnet de identidad del usuario' })
+  @ApiBody({ type: CredentialDto })
+  @ApiResponse({ status: 201, description: 'Credenciales creadas exitosamente' })
+  @ApiResponse({ status: 400, description: 'Usuario ya tiene credenciales o username en uso', type: BadRequestException })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado', type: NotFoundException })
+  async createCredentials(
+    @Param('ci') ci: string,
+    @Body() credentialsDto: CredentialDto,
+  ): Promise<{ username: string, temporaryPassword?: string }> {
+    return this.userService.createUserCredentials(ci, credentialsDto);
   }
 
 }
