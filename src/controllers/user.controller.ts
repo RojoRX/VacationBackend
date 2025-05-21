@@ -13,110 +13,110 @@ import { CredentialDto } from 'src/dto/credentials.dto';
 @ApiTags('Usuarios')
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private readonly userService: UserService) { }
 
-@Post()
-@UsePipes(new ValidationPipe({ transform: true }))
-@ApiOperation({
-  summary: 'Registrar los datos personales de un usuario',
-  description: 'Este endpoint permite registrar información personal de un usuario, sin incluir credenciales de acceso.',
-})
-@ApiBody({
-  type: CreateUserDto,
-  description: 'Datos personales del usuario a registrar (sin username ni password)',
-  examples: {
-    administrativo: {
-      summary: 'Ejemplo de usuario administrativo',
-      value: {
+  @Post()
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({
+    summary: 'Registrar los datos personales de un usuario',
+    description: 'Este endpoint permite registrar información personal de un usuario, sin incluir credenciales de acceso.',
+  })
+  @ApiBody({
+    type: CreateUserDto,
+    description: 'Datos personales del usuario a registrar (sin username ni password)',
+    examples: {
+      administrativo: {
+        summary: 'Ejemplo de usuario administrativo',
+        value: {
+          ci: '1234567',
+          fullName: 'Juan Pérez',
+          celular: '77777777',
+          email: 'juan.perez@uatf.edu.bo',
+          profesion: 'Ingeniería de Sistemas',
+          fecha_ingreso: '2023-01-01',
+          position: 'Auxiliar Administrativo',
+          tipoEmpleado: 'ADMINISTRATIVO',
+          role: 'ADMIN',
+          academicUnitId: 1,
+          professionId: 2,
+          departmentId: 3
+        },
+      },
+      docente: {
+        summary: 'Ejemplo de usuario docente',
+        value: {
+          ci: '7654321',
+          fullName: 'Ana López',
+          fecha_ingreso: '2023-01-15',
+          position: 'Docente Titular',
+          tipoEmpleado: 'DOCENTE',
+          role: 'USER',
+          academicUnitId: 2,
+          professionId: 5
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Datos del usuario registrados exitosamente',
+    schema: {
+      example: {
+        id: 1,
         ci: '1234567',
         fullName: 'Juan Pérez',
         celular: '77777777',
         email: 'juan.perez@uatf.edu.bo',
         profesion: 'Ingeniería de Sistemas',
+        academicUnit: {
+          id: 1,
+          name: 'Facultad de Tecnología',
+        },
+        department: {
+          id: 3,
+          name: 'Departamento de Sistemas',
+        },
         fecha_ingreso: '2023-01-01',
         position: 'Auxiliar Administrativo',
         tipoEmpleado: 'ADMINISTRATIVO',
         role: 'ADMIN',
-        academicUnitId: 1,
-        professionId: 2,
-        departmentId: 3
+        createdAt: '2023-06-15T10:30:00.000Z',
+        updatedAt: '2023-06-15T10:30:00.000Z',
       },
     },
-    docente: {
-      summary: 'Ejemplo de usuario docente',
-      value: {
-        ci: '7654321',
-        fullName: 'Ana López',
-        fecha_ingreso: '2023-01-15',
-        position: 'Docente Titular',
-        tipoEmpleado: 'DOCENTE',
-        role: 'USER',
-        academicUnitId: 2,
-        professionId: 5
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Error en los datos de entrada o duplicado',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'El CI ya está registrado',
+        error: 'Bad Request',
       },
     },
-  },
-})
-@ApiResponse({
-  status: HttpStatus.CREATED,
-  description: 'Datos del usuario registrados exitosamente',
-  schema: {
-    example: {
-      id: 1,
-      ci: '1234567',
-      fullName: 'Juan Pérez',
-      celular: '77777777',
-      email: 'juan.perez@uatf.edu.bo',
-      profesion: 'Ingeniería de Sistemas',
-      academicUnit: {
-        id: 1,
-        name: 'Facultad de Tecnología',
-      },
-      department: {
-        id: 3,
-        name: 'Departamento de Sistemas',
-      },
-      fecha_ingreso: '2023-01-01',
-      position: 'Auxiliar Administrativo',
-      tipoEmpleado: 'ADMINISTRATIVO',
-      role: 'ADMIN',
-      createdAt: '2023-06-15T10:30:00.000Z',
-      updatedAt: '2023-06-15T10:30:00.000Z',
-    },
-  },
-})
-@ApiResponse({
-  status: HttpStatus.BAD_REQUEST,
-  description: 'Error en los datos de entrada o duplicado',
-  schema: {
-    example: {
-      statusCode: 400,
-      message: 'El CI ya está registrado',
-      error: 'Bad Request',
-    },
-  },
-})
-@ApiResponse({
-  status: HttpStatus.UNAUTHORIZED,
-  description: 'No autorizado (token inválido o ausente)',
-})
-@ApiResponse({
-  status: HttpStatus.FORBIDDEN,
-  description: 'No tiene permisos para realizar esta acción',
-})
-async createUserData(
-  @Body() createUserDto: CreateUserDto,
-  @Res() res: Response,
-) {
-  try {
-    const newUser = await this.userService.registerUserData(createUserDto);
-    return res.status(HttpStatus.CREATED).json(newUser);
-  } catch (error) {
-    return res
-      .status(error.status || HttpStatus.INTERNAL_SERVER_ERROR)
-      .json({ message: error.message });
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'No autorizado (token inválido o ausente)',
+  })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'No tiene permisos para realizar esta acción',
+  })
+  async createUserData(
+    @Body() createUserDto: CreateUserDto,
+    @Res() res: Response,
+  ) {
+    try {
+      const newUser = await this.userService.registerUserData(createUserDto);
+      return res.status(HttpStatus.CREATED).json(newUser);
+    } catch (error) {
+      return res
+        .status(error.status || HttpStatus.INTERNAL_SERVER_ERROR)
+        .json({ message: error.message });
+    }
   }
-}
 
 
   @Get('find/:ci')
@@ -213,46 +213,46 @@ async createUserData(
   }
 
   @Patch(':userId')
-@ApiOperation({ summary: 'Actualizar campos específicos de un usuario' })
-@ApiParam({ name: 'userId', required: true, description: 'ID del usuario a actualizar' })
-@ApiBody({
-  description: 'Datos a actualizar del usuario',
-  schema: {
-    type: 'object',
-    properties: {
-      fullName: { type: 'string', description: 'Nombre completo del usuario' },
-      celular: { type: 'string', description: 'Número de celular del usuario' },
-      profesion: { type: 'string', description: 'Profesión del usuario' },
-      position: { type: 'string', description: 'Puesto del usuario' },
-      departmentId: { type: 'number', description: 'ID del departamento al que pertenece el usuario' },
+  @ApiOperation({ summary: 'Actualizar campos específicos de un usuario' })
+  @ApiParam({ name: 'userId', required: true, description: 'ID del usuario a actualizar' })
+  @ApiBody({
+    description: 'Datos a actualizar del usuario',
+    schema: {
+      type: 'object',
+      properties: {
+        fullName: { type: 'string', description: 'Nombre completo del usuario' },
+        celular: { type: 'string', description: 'Número de celular del usuario' },
+        profesion: { type: 'string', description: 'Profesión del usuario' },
+        position: { type: 'string', description: 'Puesto del usuario' },
+        departmentId: { type: 'number', description: 'ID del departamento al que pertenece el usuario' },
+      },
     },
-  },
-})
+  })
 
 
-@ApiResponse({ status: 200, description: 'Usuario actualizado exitosamente', type: User })
-@ApiResponse({ status: 400, description: 'Datos inválidos o usuario/departamento no encontrado' })
-async updateUserFields(
-  @Param('userId', ParseIntPipe) userId: number,
-  @Body() updateData: Partial<{
-    fullName: string;
-    celular: string;
-    profesion: string;
-    position: string;
-    departmentId: number;
-  }>,
-  @Res() res: Response
-) {
-  try {
-    const updatedUser = await this.userService.updateUserFields(userId, updateData);
-    return res.status(HttpStatus.OK).json(updatedUser);
-  } catch (error) {
-    return res.status(error.status || HttpStatus.BAD_REQUEST).json({ message: error.message });
+  @ApiResponse({ status: 200, description: 'Usuario actualizado exitosamente', type: User })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o usuario/departamento no encontrado' })
+  async updateUserFields(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() updateData: Partial<{
+      fullName: string;
+      celular: string;
+      profesion: string;
+      position: string;
+      departmentId: number;
+    }>,
+    @Res() res: Response
+  ) {
+    try {
+      const updatedUser = await this.userService.updateUserFields(userId, updateData);
+      return res.status(HttpStatus.OK).json(updatedUser);
+    } catch (error) {
+      return res.status(error.status || HttpStatus.BAD_REQUEST).json({ message: error.message });
+    }
   }
-}
 
 
-@Put(':id')
+  @Put(':id')
   @ApiOperation({ summary: 'Actualizar datos de un usuario (excepto rol y contraseña)' })
   @ApiParam({ name: 'id', type: Number, description: 'ID del usuario a actualizar' })
   @ApiBody({ type: UpdateUserDto, description: 'Datos a actualizar del usuario (sin rol ni contraseña)' })
@@ -278,6 +278,19 @@ async updateUserFields(
     @Body() credentialsDto: CredentialDto,
   ): Promise<{ username: string, temporaryPassword?: string }> {
     return this.userService.createUserCredentials(ci, credentialsDto);
+  }
+
+  @Patch(':ci/password')
+  @ApiOperation({ summary: 'Cambiar contraseña de un usuario (solo administrador)' })
+  @ApiParam({ name: 'ci', description: 'Carnet de identidad del usuario' })
+  @ApiResponse({ status: 200, description: 'Contraseña actualizada correctamente' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'El usuario no tiene credenciales asignadas' })
+  async updateUserPassword(
+    @Param('ci') ci: string,
+    @Body() dto: Pick<CredentialDto, 'password'>,
+  ) {
+    return this.userService.updateUserPasswordByAdmin(ci, dto);
   }
 
 }
