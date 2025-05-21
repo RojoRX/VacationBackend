@@ -379,10 +379,6 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<Omit<User, '
   const { password: _, ...userWithoutPassword } = updatedUser;
   return userWithoutPassword;
 }
-
-
-
-
 }
 
 function parseDatePreservingLocal(dateString: string): Date {

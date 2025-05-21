@@ -5,6 +5,7 @@ import { Repository, Not, Between, Brackets } from 'typeorm';
 import { HolidayPeriodName } from 'src/entities/generalHolidayPeriod.entity';
 import { CreateGeneralHolidayPeriodDto } from 'src/dto/create-general-holiday-period.dto';
 import { format } from 'date-fns';
+import { normalizeToMidnight } from 'src/utils/dateMidnight.utils';
 
 @Injectable()
 export class GeneralHolidayPeriodService {
@@ -25,17 +26,24 @@ export class GeneralHolidayPeriodService {
 
     console.log(`Antes de almacenar (como timestamp): ${dto.startDate} - ${dto.endDate}`);
 
-    const startDateUTC = new Date(dto.startDate);
-    const endDateUTC = new Date(dto.endDate);
+    // Función para normalizar a medianoche (00:00:00)
+    const normalizeToMidnight = (dateStr: string): string => {
+      const date = new Date(dateStr);
+      const normalized = new Date(Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate()
+      ));
+      return normalized.toISOString().slice(0, 19).replace('T', ' ');
+    };
 
-    // Obtener la representación ISO 8601 sin la 'Z' para almacenar
-    const startDateToStore = startDateUTC.toISOString().slice(0, 19).replace('T', ' ');
-    const endDateToStore = endDateUTC.toISOString().slice(0, 19).replace('T', ' ');
+    const startDateToStore = normalizeToMidnight(dto.startDate);
+    const endDateToStore = normalizeToMidnight(dto.endDate);
 
     console.log(`Después de formatear para almacenar: ${startDateToStore} - ${endDateToStore}`);
 
-    const startForValidation = new Date(dto.startDate);
-    const endForValidation = new Date(dto.endDate);
+    const startForValidation = new Date(startDateToStore);
+    const endForValidation = new Date(endDateToStore);
 
     if (isNaN(startForValidation.getTime()) || isNaN(endForValidation.getTime())) {
       throw new BadRequestException('Las fechas deben ser válidas.');
@@ -50,11 +58,12 @@ export class GeneralHolidayPeriodService {
       throw new BadRequestException('El receso no puede exceder los 30 días.');
     }
 
-    const year = startDateUTC.getUTCFullYear();
+    const year = startForValidation.getUTCFullYear();
 
     if (year < 2000 || year > 2100) {
       throw new BadRequestException('El año del receso debe estar entre 2000 y 2100.');
     }
+
     // Validación simplificada de duplicados (solo por nombre y año)
     const existingByName = await this.generalHolidayPeriodRepository.findOne({
       where: {
@@ -81,8 +90,8 @@ export class GeneralHolidayPeriodService {
           .orWhere(':end BETWEEN period.startDate AND period.endDate');
       }))
       .setParameters({
-        start: startDateUTC.toISOString(),
-        end: endDateUTC.toISOString()
+        start: startDateToStore,
+        end: endDateToStore
       })
       .getOne();
 
@@ -120,67 +129,138 @@ export class GeneralHolidayPeriodService {
     return this.generalHolidayPeriodRepository.find();
   }
 
+
   // Actualizar un receso general existente
-  // Actualizar un receso general existente
-async updateGeneralHolidayPeriod(id: number, holidayPeriod: GeneralHolidayPeriod): Promise<GeneralHolidayPeriod> {
-  const existingPeriod = await this.generalHolidayPeriodRepository.findOne({ where: { id } });
+async updateGeneralHolidayPeriod(
+  id: number,
+  holidayPeriod: GeneralHolidayPeriod
+): Promise<GeneralHolidayPeriod> {
+  console.log('[DEBUG] Inicio de updateGeneralHolidayPeriod', { id, holidayPeriod });
 
-  if (!existingPeriod) {
-    throw new NotFoundException(`Receso con id ${id} no encontrado.`);
-  }
+  try {
+    const existingPeriod = await this.generalHolidayPeriodRepository.findOne({ where: { id } });
+    console.log('[DEBUG] Período existente:', existingPeriod);
 
-  const start = new Date(holidayPeriod.startDate);
-  const end = new Date(holidayPeriod.endDate);
+    if (!existingPeriod) {
+      console.error('[ERROR] Período no encontrado con id:', id);
+      throw new NotFoundException(`Receso con id ${id} no encontrado.`);
+    }
 
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    throw new BadRequestException('Las fechas deben ser válidas.');
-  }
+    // Depuración de fechas recibidas
+    console.log('[DEBUG] Fechas recibidas - raw:', {
+      startDate: holidayPeriod.startDate,
+      endDate: holidayPeriod.endDate,
+      startDateType: typeof holidayPeriod.startDate,
+      endDateType: typeof holidayPeriod.endDate
+    });
 
-  const year = start.getFullYear();
+    // Convertir a objetos Date si vienen como strings
+    const startRaw = typeof holidayPeriod.startDate === 'string'
+      ? new Date(holidayPeriod.startDate)
+      : holidayPeriod.startDate;
 
-  if (start >= end) {
-    throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
-  }
+    const endRaw = typeof holidayPeriod.endDate === 'string'
+      ? new Date(holidayPeriod.endDate)
+      : holidayPeriod.endDate;
 
-  const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (duration > 30) {
-    throw new BadRequestException('El receso no puede exceder los 30 días.');
-  }
+    console.log('[DEBUG] Fechas convertidas a Date:', { startRaw, endRaw });
 
-  const conflictingPeriod = await this.generalHolidayPeriodRepository.findOne({
-    where: { year, name: holidayPeriod.name, id: Not(id) },
-  });
+    // Normalizar a medianoche
+    const startDateNormalized = normalizeToMidnight(startRaw.toISOString());
+    const endDateNormalized = normalizeToMidnight(endRaw.toISOString());
+    console.log('[DEBUG] Fechas normalizadas:', { startDateNormalized, endDateNormalized });
 
-  if (conflictingPeriod) {
-    throw new BadRequestException(`Ya existe un receso general de "${holidayPeriod.name}" para el año ${year}.`);
-  }
+    const start = new Date(startDateNormalized);
+    const end = new Date(endDateNormalized);
+    console.log('[DEBUG] Objetos Date creados:', { start, end });
 
-  const overlapping = await this.generalHolidayPeriodRepository.findOne({
-    where: {
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      console.error('[ERROR] Fechas inválidas:', { start, end });
+      throw new BadRequestException('Las fechas deben ser válidas.');
+    }
+
+    const year = start.getFullYear();
+    console.log('[DEBUG] Año calculado:', year);
+
+    if (start >= end) {
+      console.error('[ERROR] Fecha inicio >= fin:', { start, end });
+      throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
+    }
+
+    const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+    console.log('[DEBUG] Duración calculada (días):', duration);
+
+    if (duration > 30) {
+      console.error('[ERROR] Duración excede 30 días:', duration);
+      throw new BadRequestException('El receso no puede exceder los 30 días.');
+    }
+
+    // Validación de nombre duplicado
+    const conflictingPeriod = await this.generalHolidayPeriodRepository.findOne({
+      where: { year, name: holidayPeriod.name, id: Not(id) },
+    });
+    console.log('[DEBUG] Conflicto por nombre:', conflictingPeriod);
+
+    if (conflictingPeriod) {
+      console.error('[ERROR] Conflicto encontrado con período:', conflictingPeriod.id);
+      throw new BadRequestException(`Ya existe un receso general de "${holidayPeriod.name}" para el año ${year}.`);
+    }
+
+    // Validación de solapamiento
+    console.log('[DEBUG] Buscando solapamientos...');
+    const overlapping = await this.generalHolidayPeriodRepository
+      .createQueryBuilder('period')
+      .where('period.year = :year', { year })
+      .andWhere('period.id != :id', { id })
+      .andWhere(new Brackets(qb => {
+        qb.where('period.startDate BETWEEN :start AND :end')
+          .orWhere('period.endDate BETWEEN :start AND :end')
+          .orWhere(':start BETWEEN period.startDate AND period.endDate')
+          .orWhere(':end BETWEEN period.startDate AND period.endDate');
+      }))
+      .setParameters({
+        start: startDateNormalized,
+        end: endDateNormalized
+      })
+      .getOne();
+
+    console.log('[DEBUG] Resultado de solapamiento:', overlapping);
+    if (overlapping) {
+      console.error('[ERROR] Solapamiento encontrado con período:', overlapping.id);
+      throw new BadRequestException(
+        `Las fechas se superponen con otro receso existente (ID: ${overlapping.id}). ` +
+        `Rango existente: ${overlapping.startDate} a ${overlapping.endDate}`
+      );
+    }
+
+    // Preparar datos actualizados
+    const updatedPeriod = {
+      ...holidayPeriod,
       year,
-      startDate: Between(start, end),
-      id: Not(id),
-    },
-  });
+      startDate: startDateNormalized,
+      endDate: endDateNormalized,
+    };
 
-  if (overlapping) {
-    throw new BadRequestException('Las fechas se superponen con otro receso general en el mismo año.');
+    console.log('[DEBUG] Datos para actualizar:', updatedPeriod);
+
+    await this.generalHolidayPeriodRepository.update(id, updatedPeriod);
+    console.log('[DEBUG] Actualización completada, buscando período actualizado...');
+
+    const updated = await this.generalHolidayPeriodRepository.findOne({ where: { id } });
+    console.log('[DEBUG] Período actualizado:', updated);
+
+    return updated;
+
+  } catch (error) {
+    console.error('[ERROR] En updateGeneralHolidayPeriod:', {
+      error: error.message,
+      stack: error.stack,
+      input: { id, holidayPeriod }
+    });
+    throw error;
   }
-
-  // Función para formatear la fecha correctamente
-  const formatDateToSQL = (date: Date): string =>
-    date.toISOString().slice(0, 19).replace('T', ' ');
-
-  const updatedPeriod = {
-    ...holidayPeriod,
-    year,
-    startDate: formatDateToSQL(start),
-    endDate: formatDateToSQL(end),
-  };
-
-  await this.generalHolidayPeriodRepository.update(id, updatedPeriod);
-  return this.generalHolidayPeriodRepository.findOne({ where: { id } });
 }
+
   // Eliminar un receso general
   async deleteGeneralHolidayPeriod(id: number): Promise<void> {
     const existingPeriod = await this.generalHolidayPeriodRepository.findOne({ where: { id } });

@@ -99,132 +99,129 @@ async createUserHolidayPeriod(createHolidayPeriodDto: {
   return this.userHolidayPeriodRepository.save(newHolidayPeriod);
 }
 
-  async updateUserHolidayPeriod(
-    id: number,
-    updateData: {
-      name?: HolidayPeriodName;
-      startDate?: string;
-      endDate?: string;
-      userId?: number;
-    }
-  ): Promise<UserHolidayPeriod> {
-    // 1. Buscar el período existente
-    const existingPeriod = await this.userHolidayPeriodRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
+async updateUserHolidayPeriod(
+  id: number,
+  updateData: {
+    name?: HolidayPeriodName;
+    startDate?: string;
+    endDate?: string;
+    userId?: number;
+  }
+): Promise<UserHolidayPeriod> {
+  // 1. Buscar el período existente
+  const existingPeriod = await this.userHolidayPeriodRepository.findOne({
+    where: { id },
+    relations: ['user'],
+  });
 
-    console.log("Datos recibidos:", updateData.startDate, updateData.endDate);
+  console.log("Datos recibidos:", updateData.startDate, updateData.endDate);
 
-    if (!existingPeriod) {
-      throw new NotFoundException(`Período de receso con id ${id} no encontrado.`);
-    }
-
-    const user = updateData.userId
-      ? await this.userRepository.findOne({ where: { id: updateData.userId } })
-      : existingPeriod.user;
-
-    if (!user) {
-      throw new BadRequestException('El usuario especificado no existe.');
-    }
-
-    // 2. Función mejorada de normalización que maneja múltiples formatos
-    const normalizeDate = (dateString: string | undefined, existingDate: Date): Date => {
-      if (!dateString) {
-        // Si no se proporciona nueva fecha, normalizar la existente
-        const d = new Date(existingDate);
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      }
-
-      // Intentar parsear la fecha en diferentes formatos
-      let date: Date;
-
-      // Intento 1: Formato ISO (con tiempo)
-      date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      }
-
-      // Intento 2: Formato YYYY-MM-DD
-      const parts = dateString.split('T')[0].split('-');
-      if (parts.length === 3) {
-        const year = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1; // Meses son 0-indexados
-        const day = parseInt(parts[2], 10);
-
-        date = new Date(year, month, day);
-        if (!isNaN(date.getTime())) {
-          return date;
-        }
-      }
-
-      throw new Error('Formato de fecha no reconocido');
-    };
-
-    try {
-      const startDate = normalizeDate(updateData.startDate, existingPeriod.startDate);
-      const endDate = normalizeDate(updateData.endDate, existingPeriod.endDate);
-
-      console.log("Fechas normalizadas:", startDate, endDate);
-
-      // Validaciones de fechas
-      if (startDate >= endDate) {
-        throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
-      }
-
-      const year = startDate.getFullYear();
-
-      // Actualizar el período
-      existingPeriod.name = updateData.name ?? existingPeriod.name;
-      existingPeriod.startDate = startDate;
-      existingPeriod.endDate = endDate;
-      existingPeriod.year = year;
-      existingPeriod.user = user;
-
-      // 4. Validación de nombre duplicado
-      const duplicateName = await this.userHolidayPeriodRepository.findOne({
-        where: {
-          user: { id: user.id },
-          year,
-          name: existingPeriod.name,
-        },
-      });
-
-      if (duplicateName && duplicateName.id !== id) {
-        throw new BadRequestException(
-          `Ya existe un receso específico de ${existingPeriod.name} para este usuario en el año ${year}.`
-        );
-      }
-
-      // 5. Validación de solapamiento
-      const overlapping = await this.userHolidayPeriodRepository
-        .createQueryBuilder('period')
-        .where('period.user_id = :userId', { userId: user.id })
-        .andWhere('period.year = :year', { year })
-        .andWhere('period.id != :id', { id })
-        .andWhere(
-          '(:startDate <= period.endDate AND :endDate >= period.startDate)',
-          {
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-          }
-        )
-        .getOne();
-
-      if (overlapping) {
-        throw new BadRequestException('Las fechas ingresadas se superponen con otro receso existente.');
-      }
-
-      return this.userHolidayPeriodRepository.save(existingPeriod);
-    } catch (error) {
-      if (error.message === 'Formato de fecha no reconocido') {
-        throw new BadRequestException('Formato de fecha inválido. Use YYYY-MM-DD o formato ISO válido.');
-      }
-      throw error;
-    }
+  if (!existingPeriod) {
+    throw new NotFoundException(`Período de receso con id ${id} no encontrado.`);
   }
 
+  const user = updateData.userId
+    ? await this.userRepository.findOne({ where: { id: updateData.userId } })
+    : existingPeriod.user;
 
+  if (!user) {
+    throw new BadRequestException('El usuario especificado no existe.');
+  }
+
+  // 2. Función de normalización mejorada
+  const normalizeDateInput = (dateString: string): Date => {
+    if (!dateString) throw new Error('Fecha no proporcionada');
+    
+    // Extraer componentes de fecha ignorando zona horaria
+    const datePart = dateString.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    // Crear fecha en UTC explícita
+    return new Date(Date.UTC(year, month - 1, day));
+  };
+
+  try {
+    const startDate = updateData.startDate ? normalizeDateInput(updateData.startDate) : new Date(existingPeriod.startDate);
+    const endDate = updateData.endDate ? normalizeDateInput(updateData.endDate) : new Date(existingPeriod.endDate);
+
+    console.log("Fechas normalizadas (UTC):", {
+      start: startDate.toISOString(),
+      end: endDate.toISOString()
+    });
+
+    // Ajustar para almacenamiento en BD (formato YYYY-MM-DD HH:MM:SS)
+    const formatForDB = (date: Date): string => {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} 00:00:00`;
+    };
+
+    const startDateForDB = formatForDB(startDate);
+    const endDateForDB = formatForDB(endDate);
+
+    console.log("Fechas para BD:", { startDateForDB, endDateForDB });
+
+    // Validaciones de fechas
+    if (startDate >= endDate) {
+      throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
+    }
+
+    const year = startDate.getUTCFullYear();
+
+    // Actualizar el período con fechas normalizadas
+    existingPeriod.name = updateData.name ?? existingPeriod.name;
+    existingPeriod.startDate = startDateForDB as unknown as Date; // Conversión necesaria para TypeORM
+    existingPeriod.endDate = endDateForDB as unknown as Date;
+    existingPeriod.year = year;
+    existingPeriod.user = user;
+
+    // Validación de nombre duplicado
+    const duplicateName = await this.userHolidayPeriodRepository.findOne({
+      where: {
+        user: { id: user.id },
+        year,
+        name: existingPeriod.name,
+      },
+    });
+
+    if (duplicateName && duplicateName.id !== id) {
+      throw new BadRequestException(
+        `Ya existe un receso específico de ${existingPeriod.name} para este usuario en el año ${year}.`
+      );
+    }
+
+    // Validación de solapamiento (usando fechas UTC)
+    const overlapping = await this.userHolidayPeriodRepository
+      .createQueryBuilder('period')
+      .where('period.user_id = :userId', { userId: user.id })
+      .andWhere('period.year = :year', { year })
+      .andWhere('period.id != :id', { id })
+      .andWhere(
+        '(:startDate <= period.endDate AND :endDate >= period.startDate)',
+        {
+          startDate: startDateForDB,
+          endDate: endDateForDB
+        }
+      )
+      .getOne();
+
+    if (overlapping) {
+      console.log('Conflicto con período existente:', {
+        id: overlapping.id,
+        start: overlapping.startDate,
+        end: overlapping.endDate
+      });
+      throw new BadRequestException('Las fechas ingresadas se superponen con otro receso existente.');
+    }
+
+    return this.userHolidayPeriodRepository.save(existingPeriod);
+  } catch (error) {
+    console.error('Error en updateUserHolidayPeriod:', error);
+    if (error.message === 'Fecha no proporcionada') {
+      throw new BadRequestException('Formato de fecha inválido. Use YYYY-MM-DD');
+    }
+    throw error;
+  }
+}
 
   async getUserHolidayPeriods(userId: number, year: number): Promise<UserHolidayPeriodDto[]> {
     console.log(`Buscando recesos para userId: ${userId}, year: ${year}`);
