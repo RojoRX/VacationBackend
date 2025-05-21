@@ -81,12 +81,13 @@ export class VacationService {
     for (const receso of finalRecesses) {
       // Ajustar las fechas de inicio y fin para ignorar horas y zonas horarias
       const startDateHol = DateTime.fromJSDate(receso.startDate, { zone: "utc" }).startOf('day');
-      const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).endOf('day');
-
+      const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).startOf('day');
 
       // Calcular días hábiles en el rango (inclusive)
-      const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
-
+      const totalDays = this.vacationCalculatorService.countWeekdays(
+        startDateHol,
+        endDateHol
+      );
       // Calcular días no hábiles dentro del receso
       const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
       totalNonHolidayDays += nonHolidayDaysCount;
@@ -228,27 +229,27 @@ export class VacationService {
     while (currentStartDate < parsedEndDate) {
       const currentEndDate = currentStartDate.plus({ years: 1 });
       const adjustedEndDate = currentEndDate > parsedEndDate ? parsedEndDate : currentEndDate;
-  
+
       const diffInMonths = adjustedEndDate.diff(currentStartDate, 'months').months;
       if (diffInMonths < 12) break;
-  
+
       try {
         const deudaAcumulativaAnterior = deudaAcumulativa;
-  
+
         const result = await this.calculateVacationDays(
           carnetIdentidad,
           currentStartDate.toJSDate(),
           adjustedEndDate.toJSDate()
         );
-  
+
         deudaAcumulativa += result.deuda || 0;
-  
+
         if (result.diasDeVacacionRestantes > 0) {
           deudaAcumulativa = Math.max(0, deudaAcumulativa - result.diasDeVacacionRestantes);
         }
-  
+
         const diasDisponibles = Math.max(0, result.diasDeVacacionRestantes - deudaAcumulativaAnterior);
-  
+
         detalles.push({
           startDate: currentStartDate.toJSDate(),
           endDate: adjustedEndDate.toJSDate(),
@@ -262,15 +263,15 @@ export class VacationService {
       } catch (error) {
         console.error(`Error calculando deuda para el período ${currentStartDate.toISODate()} - ${adjustedEndDate.toISODate()}:`, error);
       }
-  
+
       currentStartDate = currentStartDate.plus({ years: 1 });
     }
-  
+
     const gestionesConDeuda = detalles.filter(d => d.deuda > 0).length;
     const gestionesSinDeuda = detalles.length - gestionesConDeuda;
     const promedioDeuda = detalles.length > 0 ?
       detalles.reduce((sum, d) => sum + d.deuda, 0) / detalles.length : 0;
-  
+
     const resumenGeneral: ResumenGeneral = {
       deudaTotal: deudaAcumulativa,
       diasDisponiblesActuales: detalles.reduce((sum, d) => sum + (d.diasDisponibles || 0), 0),
@@ -280,7 +281,7 @@ export class VacationService {
       primeraGestion: detalles[0]?.startDate || null,
       ultimaGestion: detalles[detalles.length - 1]?.endDate || null,
     };
-  
+
     return {
       deudaAcumulativa,
       detalles,
