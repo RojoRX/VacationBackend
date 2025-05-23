@@ -588,33 +588,37 @@ export class VacationRequestService {
 
     return updatedRequest;
   }
-  async toggleApprovedByHR(
-    vacationRequestId: number,
-    hrUserId: number
-  ): Promise<VacationRequest> {
-    const vacationRequest = await this.vacationRequestRepository.findOne({
-      where: { id: vacationRequestId },
-      relations: ['user'], // Asegura que el usuario esté cargado para la notificación
-    });
+async toggleApprovedByHR(
+  vacationRequestId: number,
+  hrUserId: number
+): Promise<VacationRequest> {
+  const vacationRequest = await this.vacationRequestRepository.findOne({
+    where: { id: vacationRequestId },
+    relations: ['user'],
+  });
 
-    if (!vacationRequest) {
-      throw new Error('Solicitud de vacaciones no encontrada');
-    }
-
-    // Alternar la aprobación
-    vacationRequest.approvedByHR = !vacationRequest.approvedByHR;
-
-    // Guarda los cambios
-    await this.vacationRequestRepository.save(vacationRequest);
-
-    // Notifica al usuario solicitante
-    await this.notificationService.notifyUser(
-      vacationRequest.user.id,
-      `Tu solicitud de vacaciones fue ${vacationRequest.approvedByHR ? 'aprobada' : 'rechazada'} por Recursos Humanos.`
-    );
-
-    return vacationRequest;
+  if (!vacationRequest) {
+    throw new Error('Solicitud de vacaciones no encontrada');
   }
+
+  // Si ya fue aprobada por RRHH, no se puede volver a aprobar
+  if (vacationRequest.approvedByHR === true) {
+    throw new Error('La solicitud de vacaciones ya fue departamento de Personal.');
+  }
+
+  // Aprobar por primera vez
+  vacationRequest.approvedByHR = true;
+
+  await this.vacationRequestRepository.save(vacationRequest);
+
+  await this.notificationService.notifyUser(
+    vacationRequest.user.id,
+    `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`
+  );
+
+  return vacationRequest;
+}
+
   // Método para posponer una solicitud de vacaciones
   async postponeVacationRequest(
     id: number,
