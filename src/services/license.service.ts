@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
@@ -10,11 +10,14 @@ import { VacationService } from './vacation.service';
 import { NotificationService } from './notification.service';
 import toLocalDateOnly from 'src/utils/normalizaedDate';
 import { NonHolidayService } from './nonholiday.service';
+import { NonHoliday } from 'src/entities/nonholiday.entity';
 @Injectable()
 export class LicenseService {
   constructor(
     @InjectRepository(License)
     private readonly licenseRepository: Repository<License>,
+    @InjectRepository(NonHoliday)
+    private readonly nonHolidayRepository: Repository<NonHoliday>,
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -55,8 +58,10 @@ export class LicenseService {
     }
 
     // 6. Validación específica para "Varios días" con mismas fechas
-    if (licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
-      licenseData.startDate === licenseData.endDate) {
+    if (
+      licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
+      licenseData.startDate === licenseData.endDate
+    ) {
       throw new BadRequestException('Para licencias de "Varios días" debe seleccionar un rango de fechas diferente');
     }
 
@@ -73,28 +78,51 @@ export class LicenseService {
       );
     }
 
-    // 8. Validación de máximo días permitidos
+    // 8. Obtener feriados dentro del rango y calcular total de días
+    const startStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const endStr = endDate.toISOString().split('T')[0];
+
+    const holidays = await this.nonHolidayRepository.find({
+      where: {
+        date: Between(startStr, endStr)
+      }
+    });
+
+
+    const holidayDatesSet = new Set(holidays.map(h => new Date(h.date).toDateString()));
+
+
+    let totalDays = 0;
+    const dateCursor = new Date(startDate);
+
+    while (dateCursor <= endDate) {
+      const dateStr = dateCursor.toDateString();
+      const dayOfWeek = dateCursor.getDay(); // 0 = domingo, 6 = sábado
+      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayDatesSet.has(dateStr)) {
+        totalDays++;
+      } else {
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          console.log(`Omitiendo fin de semana: ${dateStr}`);
+        } else {
+          console.log(`Omitiendo feriado: ${dateStr}`);
+        }
+      }
+      dateCursor.setDate(dateCursor.getDate() + 1);
+    }
+
     const maxDays = 5;
-    const totalDays = await this.calculateTotalDaysImproved(
-      licenseData.startDate,
-      licenseData.endDate,
-      licenseData.timeRequested
-    );
-
-
     if (totalDays > maxDays) {
-      throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos`);
+      throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos (excluyendo feriados)`);
     }
 
     // 9. Validación de solapamiento
     await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
 
     // 10. Creación de la licencia
-    // 10. Creación y almacenamiento
     const license = this.licenseRepository.create({
       ...licenseData,
       user,
-      totalDays, // <-- Valor calculado
+      totalDays,
       issuedDate: new Date(),
       immediateSupervisorApproval: false,
       personalDepartmentApproval: false
@@ -109,12 +137,23 @@ export class LicenseService {
 
     // 12. Notificaciones
     await this.notificationService.notifyAdminsAndSupervisors(
-      `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días).`,
-      user.id,
+      `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
+      user.id
     );
 
-    return this.mapLicenseToDto(savedLicense);
+    // 13. Retorno enriquecido
+    const holidayInfo = holidays.map(h => ({
+      date: new Date(h.date).toISOString().split('T')[0],
+      year: new Date(h.date).getFullYear(),
+      description: h.description
+    }));
+    return {
+      ...this.mapLicenseToDto(savedLicense),
+      message: `Licencia registrada del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
+      holidaysApplied: holidayInfo.length > 0 ? holidayInfo : undefined
+    };
   }
+
 
   // Validación de enums
   private validateLicenseEnums(licenseData: Partial<License>) {
@@ -205,8 +244,6 @@ export class LicenseService {
     return licenses.map(this.mapLicenseToDto);
   }
 
-
-
   private mapLicenseToDto(license: License): LicenseResponseDto {
     // Depuración del objeto License
 
@@ -263,8 +300,6 @@ export class LicenseService {
       totalDays,
     };
   }
-
-
   async getTotalAuthorizedLicensesForUser(
     userId: number,
     startDate: Date,
@@ -324,8 +359,6 @@ export class LicenseService {
       throw new Error('Error al obtener licencias autorizadas');
     }
   }
-
-
   // Método para obtener las licencias del departamento del supervisor
   async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
     const supervisor = await this.userService.findById(supervisorId);

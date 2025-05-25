@@ -8,10 +8,11 @@ import { UserModule } from './user.module';
 import { VacationModule } from './vacation.module'; // forwardRef para evitar la referencia circular
 import { NotificationModule } from './notification.module';
 import { NonHolidayModule } from './nonholiday.module';
+import { NonHoliday } from 'src/entities/nonholiday.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([License, User]),
+    TypeOrmModule.forFeature([License, User, NonHoliday]),
     UserModule,
     forwardRef(() => VacationModule), // Aquí se usa forwardRef
     NotificationModule,

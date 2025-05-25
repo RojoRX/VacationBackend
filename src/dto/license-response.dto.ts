@@ -1,5 +1,12 @@
 import { LicenseType, TimeRequest } from 'src/entities/license.entity';
 
+export class HolidayInfoDto {
+  date: string;        // Formato YYYY-MM-DD
+  year: number;        // Año del feriado
+  description: string; // Descripción del feriado
+}
+
+
 export class LicenseResponseDto {
   id: number;
   licenseType: LicenseType;
@@ -17,4 +24,7 @@ export class LicenseResponseDto {
   userDepartmentName?: string; // Nombre del departamento del usuario
   supervisorDepartmentId?: number; // ID del departamento del supervisor
   supervisorDepartmentName?: string; // Nombre del departamento del supervisor
+  // Nuevos campos agregados:
+  message?: string;
+  holidaysApplied?: HolidayInfoDto[];
 }
