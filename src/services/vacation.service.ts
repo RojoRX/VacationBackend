@@ -211,16 +211,59 @@ export class VacationService {
     if (!userData) {
       throw new BadRequestException("Usuario no encontrado.");
     }
+    // Función de normalización robusta
+    const normalizeDate = (dateInput: Date | string): DateTime => {
+      try {
+        // Si es string, intentar parsear en varios formatos
+        if (typeof dateInput === 'string') {
+          // Intento 1: Formato ISO (YYYY-MM-DD)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+            return DateTime.fromFormat(dateInput, 'yyyy-MM-dd', { zone: 'utc' }).startOf('day');
+          }
 
-    // Normalizar endDate para evitar problemas con hora o zona horaria
-    const parsedEndDate = typeof endDate === 'string'
-      ? DateTime.fromISO(endDate, { zone: 'utc' }).startOf('day')
-      : DateTime.fromJSDate(endDate, { zone: 'utc' }).startOf('day');
+          // Intento 2: Formato ISO con tiempo
+          const isoDate = DateTime.fromISO(dateInput, { zone: 'utc' });
+          if (isoDate.isValid) {
+            return isoDate.startOf('day');
+          }
 
-    const fechaIngreso = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" }).startOf('day');
-    if (!fechaIngreso.isValid) {
-      throw new Error(`Fecha de ingreso inválida: ${userData.fecha_ingreso}`);
-    }
+          // Intento 3: Otros formatos comunes
+          const formats = [
+            'yyyy/MM/dd',
+            'MM/dd/yyyy',
+            'dd-MM-yyyy',
+            'yyyy.MM.dd'
+          ];
+
+          for (const format of formats) {
+            const parsed = DateTime.fromFormat(dateInput, format, { zone: 'utc' });
+            if (parsed.isValid) {
+              return parsed.startOf('day');
+            }
+          }
+        }
+
+        // Si es objeto Date o los intentos anteriores fallaron
+        const dateObj = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+        const dateTime = DateTime.fromJSDate(dateObj, { zone: 'utc' }).startOf('day');
+
+        if (!dateTime.isValid) {
+          throw new Error('Fecha inválida');
+        }
+
+        return dateTime;
+      } catch (error) {
+        throw new BadRequestException(`Formato de fecha inválido: ${dateInput}`);
+      }
+    };
+
+    // Normalizar fechas
+    const parsedEndDate = normalizeDate(endDate);
+    const fechaIngreso = normalizeDate(userData.fecha_ingreso);
+
+    console.log("Fecha Final Normalizada:", parsedEndDate.toISODate());
+    console.log("Fecha de Ingreso Normalizada:", fechaIngreso.toISODate());
+
 
     let deudaAcumulativa = 0;
     const detalles = [];

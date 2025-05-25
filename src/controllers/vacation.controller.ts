@@ -7,6 +7,7 @@ import {
 import { VacationService } from 'src/services/vacation.service';
 import { VacationResponse } from 'src/interfaces/vacation-response.interface';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { DateTime } from 'luxon';
 
 @ApiTags('Informacion Vacaciones')
 @Controller('vacations')
@@ -93,21 +94,22 @@ export class VacationController {
     }
   })
   @ApiResponse({ status: 400, description: 'El usuario no existe o la fecha es inválida' })
-  async getAccumulatedDebt(
+async getAccumulatedDebt(
     @Query('carnetIdentidad') carnetIdentidad: string,
     @Query('endDate') endDate: string
   ): Promise<{ deudaAcumulativa: number, detalles: any[] }> {
+    // Validación de parámetros obligatorios
     if (!carnetIdentidad || !endDate) {
       throw new BadRequestException('Faltan parámetros obligatorios.');
     }
-
-    const endDateTime = new Date(endDate);
-
-    if (isNaN(endDateTime.getTime())) {
-      throw new BadRequestException('Fecha inválida.');
+{/** 
+    // Validación estricta del formato YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      throw new BadRequestException('El formato de fecha debe ser exactamente YYYY-MM-DD');
     }
-
-    return this.vacationService.calculateAccumulatedDebt(carnetIdentidad, endDateTime);
+*/}
+    // Pasar el string directamente sin conversión
+    return this.vacationService.calculateAccumulatedDebt(carnetIdentidad, endDate);
   }
 
   @Get('debt-since-date')
