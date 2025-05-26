@@ -5,6 +5,7 @@ import { License } from '../entities/license.entity';
 import { type } from 'os';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { User } from 'src/entities/user.entity';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
 
 @Injectable()
 export class ReportsService {
@@ -13,6 +14,8 @@ export class ReportsService {
     private licenseRepository: Repository<License>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(VacationRequest)
+    private vacationRepository: Repository<VacationRequest>,
 
   ) { }
 
@@ -141,7 +144,7 @@ export class ReportsService {
 
     return await workbook.xlsx.writeBuffer();
   }
-async generateUserMonthlyReport(params: {
+  async generateUserMonthlyReport(params: {
     year?: number;
     month?: number;
     ci: string;
@@ -268,4 +271,104 @@ async generateUserMonthlyReport(params: {
     return months[monthNumber - 1];
   }
 
+
+  async generateUserVacationReport(params: {
+    year?: number;
+    month?: number;
+    ci: string;
+  }) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Vacaciones Usuario');
+
+    const user = await this.userRepository.findOne({ where: { ci: params.ci } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    worksheet.addRow(['Reporte de vacaciones por usuario']).font = { bold: true, size: 14 };
+    worksheet.addRow([]);
+    worksheet.addRow(['Nombre completo', user.fullName]);
+    worksheet.addRow(['CI', user.ci]);
+    worksheet.addRow(['Correo', user.email || '—']);
+    worksheet.addRow(['Tipo de empleado', user.tipoEmpleado]);
+    worksheet.addRow(['Fecha de ingreso', user.fecha_ingreso]);
+    worksheet.addRow(['Cargo', user.position || '—']);
+    worksheet.addRow([]);
+
+    // Encabezado
+    worksheet.addRow([
+      'ID', 'Fecha Solicitud', 'Inicio', 'Fin', 'Días', 'Estado',
+      'Reintegro', 'Aprob. RRHH', 'Aprob. Supervisor',
+      'Periodo Gestión Inicio', 'Periodo Gestión Fin'
+    ]).eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCE5FF' } };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+
+    // Construcción del query con filtros
+    const query = this.vacationRepository
+      .createQueryBuilder('vacation')
+      .leftJoin('vacation.user', 'user')
+      .where('user.ci = :ci', { ci: params.ci });
+
+    if (params.year) {
+      query.andWhere('EXTRACT(YEAR FROM vacation.startDate) = :year', { year: params.year });
+    }
+
+    if (params.month) {
+      query.andWhere('EXTRACT(MONTH FROM vacation.startDate) = :month', { month: params.month });
+    }
+
+    const vacaciones = await query.getMany();
+
+    let totalDias = 0;
+    const statusCounter: Record<string, number> = {};
+
+    for (const vac of vacaciones) {
+      worksheet.addRow([
+        vac.id,
+        vac.requestDate,
+        vac.startDate,
+        vac.endDate,
+        vac.totalDays,
+        vac.status,
+        vac.returnDate || '—',
+        vac.approvedByHR ? 'Sí' : 'No',
+        vac.approvedBySupervisor ? 'Sí' : 'No',
+        vac.managementPeriodStart,
+        vac.managementPeriodEnd,
+      ]);
+
+      totalDias += vac.totalDays;
+      statusCounter[vac.status] = (statusCounter[vac.status] || 0) + vac.totalDays;
+    }
+
+    worksheet.addRow([]);
+    worksheet.addRow(['Resumen de días por estado']).font = { bold: true };
+
+    for (const status of Object.keys(statusCounter)) {
+      worksheet.addRow([status, statusCounter[status]]);
+    }
+
+    const totalRow = worksheet.addRow(['Total días tomados', totalDias]);
+    totalRow.font = { bold: true };
+
+    // Ajuste automático de columnas
+    worksheet.columns.forEach(col => {
+      let max = 12;
+      col.eachCell?.({ includeEmpty: true }, cell => {
+        const len = cell.value?.toString().length || 0;
+        max = Math.max(max, len);
+      });
+      col.width = max + 2;
+    });
+
+    return await workbook.xlsx.writeBuffer();
+  }
 }
