@@ -6,6 +6,10 @@ export class HolidayInfoDto {
   description: string; // Descripción del feriado
 }
 
+export class IgnoredWeekendHolidayDto {
+  date: string;        // Formato YYYY-MM-DD
+  description: string; // Descripción del feriado
+}
 
 export class LicenseResponseDto {
   id: number;
@@ -24,7 +28,9 @@ export class LicenseResponseDto {
   userDepartmentName?: string; // Nombre del departamento del usuario
   supervisorDepartmentId?: number; // ID del departamento del supervisor
   supervisorDepartmentName?: string; // Nombre del departamento del supervisor
+
   // Nuevos campos agregados:
   message?: string;
   holidaysApplied?: HolidayInfoDto[];
+  ignoredWeekendHolidays?: IgnoredWeekendHolidayDto[];
 }
