@@ -438,49 +438,62 @@ export class LicenseService {
     };
   }
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-  async updatePersonalDepartmentApproval(
-    licenseId: number,
-    userId: number, // quien realiza la aprobación
-    approval: boolean
-  ): Promise<License> {
-    // Buscar la licencia por ID
-    const license = await this.licenseRepository.findOne({
-      where: { id: licenseId },
-      relations: ['user'],
-    });
+// Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
+async updatePersonalDepartmentApproval(
+  licenseId: number,
+  userId: number, // quien realiza la aprobación
+  approval: boolean
+): Promise<License> {
+  // Buscar la licencia por ID
+  const license = await this.licenseRepository.findOne({
+    where: { id: licenseId },
+    relations: ['user'],
+  });
 
-    if (!license || !license.user) {
-      throw new BadRequestException('Licencia o usuario asociado no encontrado');
-    }
-
-    // Buscar al usuario que intenta aprobar/rechazar
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado');
-    }
-
-    // Verificar si el usuario tiene el rol ADMIN
-    if (user.role !== 'ADMIN') {
-      throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-    }
-
-    // Actualizar el estado de aprobación
-    license.personalDepartmentApproval = approval;
-
-    // Guardar y devolver la licencia actualizada
-    const updatedLicense = await this.licenseRepository.save(license);
-
-    // Notificar al usuario sobre la aprobación o rechazo de la licencia
-    const message = approval
-      ? `Tu licencia fue aprobada por el departamento de personal.`
-      : `Tu licencia fue rechazada por el departamento de personal.`;
-
-    // Llamar al servicio de notificaciones para enviar la notificación
-    await this.notificationService.notifyUser(license.user.id, message, user.id);
-
-    return updatedLicense;
+  if (!license || !license.user) {
+    throw new BadRequestException('Licencia o usuario asociado no encontrado');
   }
+
+  // Buscar al usuario que intenta aprobar/rechazar
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado');
+  }
+
+  // Verificar si el usuario tiene el rol ADMIN
+  if (user.role !== 'ADMIN') {
+    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+  }
+
+  // Verificar si ya fue aprobada o rechazada por el departamento de personal
+if (license.personalDepartmentApproval === true) {
+  throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+}
+
+  // Verificar si ya fue aprobada o rechazada por el supervisor inmediato
+if (license.immediateSupervisorApproval === true) {
+  throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+}
+
+
+  // Actualizar ambos campos de aprobación
+  license.personalDepartmentApproval = approval;
+  license.immediateSupervisorApproval = approval;
+
+  // Guardar y devolver la licencia actualizada
+  const updatedLicense = await this.licenseRepository.save(license);
+
+  // Notificar al usuario sobre la decisión
+  const message = approval
+    ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
+    : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
+
+  await this.notificationService.notifyUser(license.user.id, message, user.id);
+
+  return updatedLicense;
+}
+
 
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
     // 1. Validación inicial - Usuario existe
@@ -612,11 +625,6 @@ export class LicenseService {
       return savedLicenses.map(license => this.mapLicenseToDto(license));
     });
   }
-
-
-
-
-
 
   // Métodos auxiliares
   private datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
