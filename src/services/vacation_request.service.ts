@@ -231,13 +231,16 @@ export class VacationRequestService {
 
   // Método para obtener todas las solicitudes de vacaciones
   async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
-    const requests = await this.vacationRequestRepository.find({ relations: ['user'] });
+    const requests = await this.vacationRequestRepository.find({
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
 
     return requests.map((request) => {
       const { user, ...requestWithoutSensitiveData } = request;
-      return { ...requestWithoutSensitiveData, ci: user.ci, username: user.username };
+      return { ...requestWithoutSensitiveData, ci: user.ci, username: user.username, fullname: user.fullName, department: user.department.name, academicUnit: user.academicUnit.name };
     });
   }
+
   async countAuthorizedVacationDaysInRange(
     ci: string,
     startDate: string,
@@ -588,36 +591,36 @@ export class VacationRequestService {
 
     return updatedRequest;
   }
-async toggleApprovedByHR(
-  vacationRequestId: number,
-  hrUserId: number
-): Promise<VacationRequest> {
-  const vacationRequest = await this.vacationRequestRepository.findOne({
-    where: { id: vacationRequestId },
-    relations: ['user'],
-  });
+  async toggleApprovedByHR(
+    vacationRequestId: number,
+    hrUserId: number
+  ): Promise<VacationRequest> {
+    const vacationRequest = await this.vacationRequestRepository.findOne({
+      where: { id: vacationRequestId },
+      relations: ['user'],
+    });
 
-  if (!vacationRequest) {
-    throw new Error('Solicitud de vacaciones no encontrada');
+    if (!vacationRequest) {
+      throw new Error('Solicitud de vacaciones no encontrada');
+    }
+
+    // Si ya fue aprobada por RRHH, no se puede volver a aprobar
+    if (vacationRequest.approvedByHR === true) {
+      throw new Error('La solicitud de vacaciones ya fue departamento de Personal.');
+    }
+
+    // Aprobar por primera vez
+    vacationRequest.approvedByHR = true;
+
+    await this.vacationRequestRepository.save(vacationRequest);
+
+    await this.notificationService.notifyUser(
+      vacationRequest.user.id,
+      `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`
+    );
+
+    return vacationRequest;
   }
-
-  // Si ya fue aprobada por RRHH, no se puede volver a aprobar
-  if (vacationRequest.approvedByHR === true) {
-    throw new Error('La solicitud de vacaciones ya fue departamento de Personal.');
-  }
-
-  // Aprobar por primera vez
-  vacationRequest.approvedByHR = true;
-
-  await this.vacationRequestRepository.save(vacationRequest);
-
-  await this.notificationService.notifyUser(
-    vacationRequest.user.id,
-    `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`
-  );
-
-  return vacationRequest;
-}
 
   // Método para posponer una solicitud de vacaciones
   async postponeVacationRequest(
@@ -779,59 +782,59 @@ async toggleApprovedByHR(
   }
 
   async checkLastRequestStatus(ci: string): Promise<{
-  canRequest: boolean;
-  reason?: string;
-}> {
-  try {
-    // 1. Validar usuario
-    const user = await this.userService.findByCarnet(ci);
-    if (!user) {
-      return { canRequest: false, reason: 'Usuario no encontrado' };
-    }
+    canRequest: boolean;
+    reason?: string;
+  }> {
+    try {
+      // 1. Validar usuario
+      const user = await this.userService.findByCarnet(ci);
+      if (!user) {
+        return { canRequest: false, reason: 'Usuario no encontrado' };
+      }
 
-    // 2. Obtener la última solicitud
-    const lastRequest = await this.vacationRequestRepository.findOne({
-      where: { user: { id: user.id } },
-      order: { requestDate: 'DESC' },
-    });
+      // 2. Obtener la última solicitud
+      const lastRequest = await this.vacationRequestRepository.findOne({
+        where: { user: { id: user.id } },
+        order: { requestDate: 'DESC' },
+      });
 
-    // Si no hay solicitudes previas, puede crear una nueva
-    if (!lastRequest) {
+      // Si no hay solicitudes previas, puede crear una nueva
+      if (!lastRequest) {
+        return { canRequest: true };
+      }
+
+      // 3. Validar estado de la última solicitud
+      if (lastRequest.status === 'PENDING') {
+        return {
+          canRequest: false,
+          reason: 'La última solicitud aún no ha sido revisada'
+        };
+      }
+
+      if (lastRequest.status !== 'AUTHORIZED' && lastRequest.status !== 'SUSPENDED') {
+        return {
+          canRequest: false,
+          reason: 'La última solicitud no fue autorizada'
+        };
+      }
+
+      if (!lastRequest.approvedByHR) {
+        return {
+          canRequest: false,
+          reason: 'La última solicitud no fue aprobada por el departamento de personal'
+        };
+      }
+
+      // Todas las validaciones pasaron
       return { canRequest: true };
-    }
 
-    // 3. Validar estado de la última solicitud
-    if (lastRequest.status === 'PENDING') {
+    } catch (error) {
+      console.error('Error al verificar estado de solicitud:', error);
       return {
         canRequest: false,
-        reason: 'La última solicitud aún no ha sido revisada'
+        reason: 'Error al verificar el estado de las solicitudes'
       };
     }
-
-    if (lastRequest.status !== 'AUTHORIZED' && lastRequest.status !== 'SUSPENDED') {
-      return {
-        canRequest: false,
-        reason: 'La última solicitud no fue autorizada'
-      };
-    }
-
-    if (!lastRequest.approvedByHR) {
-      return {
-        canRequest: false,
-        reason: 'La última solicitud no fue aprobada por el departamento de personal'
-      };
-    }
-
-    // Todas las validaciones pasaron
-    return { canRequest: true };
-
-  } catch (error) {
-    console.error('Error al verificar estado de solicitud:', error);
-    return {
-      canRequest: false,
-      reason: 'Error al verificar el estado de las solicitudes'
-    };
   }
-}
 
 }
