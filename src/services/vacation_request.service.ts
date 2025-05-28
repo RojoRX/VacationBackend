@@ -290,51 +290,96 @@ export class VacationRequestService {
   async updateVacationRequestStatus(
     id: number,
     status: string,
-    supervisorId: number, // Recibe el ID del supervisor
+    supervisorId: number,
   ): Promise<VacationRequestDTO> {
-    console.log('Usando este metodo')
-    console.log("updateVacationRequestStatus - Received supervisorId:", supervisorId);
+    console.log('Usando este metodo');
+    console.log('updateVacationRequestStatus - Received supervisorId:', supervisorId);
 
-    const request: VacationRequest = await this.vacationRequestRepository.findOne({
+    const request = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: ['user', 'approvedBy', 'user.department'],
+      relations: ['user', 'approvedBy', 'user.department', 'user.academicUnit'],
     });
 
     if (!request) {
       throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
     }
 
-    console.log("updateVacationRequestStatus - Request user's department ID:", request.user.department.id);
+    // Validar si ya fue revisada
+    if (request.status !== 'PENDING') {
+      throw new HttpException('No se puede modificar una solicitud que ya ha sido revisada.', HttpStatus.BAD_REQUEST);
+    }
 
-    const supervisor = await this.userService.findById(supervisorId);
-
-    console.log("updateVacationRequestStatus - Retrieved supervisor:", supervisor);
+    // Después:
+    const supervisor = await this.userService.findById(supervisorId, {
+      relations: ['department', 'academicUnit'],
+    });
 
     if (!supervisor) {
       throw new HttpException('Supervisor not found', HttpStatus.NOT_FOUND);
     }
 
-    console.log("updateVacationRequestStatus - Supervisor's department ID:", supervisor.department.id);
+    const tipoSupervisor = supervisor.tipoEmpleado;
 
-    if (supervisor.department.id !== request.user.department.id) {
-      throw new HttpException('Unauthorized to approve requests outside your department', HttpStatus.UNAUTHORIZED);
+    console.log('Supervisor tipoEmpleado:', tipoSupervisor);
+    console.log('Supervisor departamento:', supervisor.department);
+    console.log('Supervisor unidad académica:', supervisor.academicUnit);
+    console.log('Usuario departamento:', request.user.department);
+    console.log('Usuario unidad académica:', request.user.academicUnit);
+
+    if (tipoSupervisor === 'ADMINISTRATIVO') {
+      console.log('Validando por DEPARTAMENTO');
+      if (!supervisor.department || !request.user.department) {
+        console.log('Fallo: uno de los departamentos es null');
+        throw new HttpException(
+          'No autorizado para aprobar solicitudes fuera de su departamento',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      if (supervisor.department.id !== request.user.department.id) {
+        console.log(
+          `Fallo: ID del departamento del supervisor (${supervisor.department.id}) no coincide con el del usuario (${request.user.department.id})`
+        );
+        throw new HttpException(
+          'No autorizado para aprobar solicitudes fuera de su departamento',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+    } else if (tipoSupervisor === 'DOCENTE') {
+      console.log('Validando por UNIDAD ACADÉMICA');
+      if (!supervisor.academicUnit || !request.user.academicUnit) {
+        console.log('Fallo: una de las unidades académicas es null');
+        throw new HttpException(
+          'No autorizado para aprobar solicitudes fuera de su unidad académica',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      if (supervisor.academicUnit.id !== request.user.academicUnit.id) {
+        console.log(
+          `Fallo: ID de la unidad académica del supervisor (${supervisor.academicUnit.id}) no coincide con la del usuario (${request.user.academicUnit.id})`
+        );
+        throw new HttpException(
+          'No autorizado para aprobar solicitudes fuera de su unidad académica',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+    } else {
+      console.log('Tipo de supervisor no reconocido:', tipoSupervisor);
+      throw new HttpException('Tipo de supervisor no reconocido', HttpStatus.BAD_REQUEST);
     }
+
 
     const validStatuses = ['PENDING', 'AUTHORIZED', 'DENIED', 'SUSPENDED'];
     if (!validStatuses.includes(status)) {
-      throw new HttpException('Invalid status provided', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Estado inválido proporcionado', HttpStatus.BAD_REQUEST);
     }
 
     request.status = status;
     request.approvedBySupervisor = true;
+    request.reviewDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-    const today = new Date();
-    request.reviewDate = today.toLocaleDateString('en-CA'); // Formato YYYY-MM-DD
-
-    // Guardar la solicitud
     await this.vacationRequestRepository.save(request);
 
-    // NUEVO: Crear notificación
+    // Notificación
     try {
       const statusLabels: Record<string, string> = {
         PENDING: 'Pendiente',
@@ -345,18 +390,15 @@ export class VacationRequestService {
 
       const statusLabel = statusLabels[status] || status;
 
-      console.log('Notificando al usuario:', request.user.id);
-
-      const notification = await this.notificationService.notifyUser(
+      await this.notificationService.notifyUser(
         request.user.id,
-        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`
+        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`,
       );
-
-      console.log('Notificación creada:', notification);
     } catch (error) {
       console.error('Error al crear la notificación:', error);
     }
-    const vacationRequestDTO: VacationRequestDTO = {
+
+    return {
       id: request.id,
       position: request.position,
       requestDate: request.requestDate,
@@ -380,35 +422,46 @@ export class VacationRequestService {
       managementPeriodEnd: request.managementPeriodEnd,
       approvedBy: request.approvedBy ?? undefined,
     };
-
-    return vacationRequestDTO;
   }
+
   // Método para obtener todas las solicitudes de vacaciones de un departamento según el supervisor
   async getVacationRequestsBySupervisor(supervisorId: number): Promise<VacationRequestDTO[]> {
-    // Buscar el supervisor por su ID
-    const supervisor = await this.userService.findById(supervisorId);
+    // Buscar al supervisor
+    const supervisor = await this.userService.findById(supervisorId, {
+      relations: ['department', 'academicUnit'],
+    });
+
     if (!supervisor) {
       throw new HttpException('Supervisor not found', HttpStatus.NOT_FOUND);
     }
 
-    // Obtener el departmentId del supervisor
-    const departmentId = supervisor.department.id;
-    if (!departmentId) {
-      throw new HttpException('Supervisor does not belong to any department', HttpStatus.BAD_REQUEST);
+    const { tipoEmpleado, department, academicUnit } = supervisor;
+
+    let requests;
+
+    if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
+      // Buscar solicitudes de usuarios del mismo departamento
+      requests = await this.vacationRequestRepository.find({
+        where: { user: { department: { id: department.id } } },
+        relations: ['user'],
+      });
+    } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
+      // Buscar solicitudes de usuarios de la misma unidad académica
+      requests = await this.vacationRequestRepository.find({
+        where: { user: { academicUnit: { id: academicUnit.id } } },
+        relations: ['user'],
+      });
+    } else {
+      throw new HttpException(
+        'Supervisor must belong to a department or academic unit',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    // Buscar todas las solicitudes de vacaciones de los usuarios en el mismo departamento que el supervisor
-    const requests = await this.vacationRequestRepository.find({
-      where: { user: { department: { id: departmentId } } },
-      relations: ['user'],
-    });
-
-    // Si no hay solicitudes en el departamento, lanzar excepción
-    if (requests.length === 0) {
-      throw new HttpException('No vacation requests found for this department', HttpStatus.NOT_FOUND);
+    if (!requests || requests.length === 0) {
+      throw new HttpException('No vacation requests found for this area', HttpStatus.NOT_FOUND);
     }
 
-    // Mapeo de las solicitudes a DTO
     return requests.map(request => {
       const { user, ...rest } = request;
       return {
@@ -422,6 +475,7 @@ export class VacationRequestService {
       } as VacationRequestDTO;
     });
   }
+
   // Método para obtener una solicitud de vacaciones por su ID
   async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
     // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario

@@ -192,13 +192,15 @@ export class UserService {
     await this.userRepository.save(user);
   }
 
-  async findById(userId: number): Promise<Omit<User, 'password'> | undefined> {
+  // Ajusta findById para aceptar relaciones opcionales
+  async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['department', 'academicUnit', 'profession'],
+      relations: options?.relations ?? [],
     });
     return this.transformUser(user);
   }
+
 
   async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
