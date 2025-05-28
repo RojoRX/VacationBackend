@@ -338,19 +338,42 @@ export class LicenseService {
 
   // Método para obtener las licencias del departamento del supervisor
   async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
-    const supervisor = await this.userService.findById(supervisorId);
+    const supervisor = await this.userService.findById(supervisorId, {
+      relations: ['department', 'academicUnit'],
+    });
 
-    if (!supervisor || !supervisor.department) {
-      throw new Error('Supervisor or department not found');
+    if (!supervisor) {
+      throw new Error('Supervisor not found');
     }
 
-    // Obtener todas las licencias de los usuarios que pertenecen al departamento del supervisor
-    const licenses = await this.licenseRepository.createQueryBuilder('license')
-      .leftJoinAndSelect('license.user', 'user')
-      .where('user.departmentId = :departmentId', { departmentId: supervisor.department.id })
-      .getMany();
+    const tipoEmpleado = supervisor.tipoEmpleado;
 
-    // Mapear cada licencia al DTO con userId en lugar del objeto user
+    let licenses;
+
+    if (tipoEmpleado === 'ADMINISTRATIVO') {
+      if (!supervisor.department) {
+        throw new Error('Supervisor does not belong to any department');
+      }
+
+      licenses = await this.licenseRepository.createQueryBuilder('license')
+        .leftJoinAndSelect('license.user', 'user')
+        .where('user.departmentId = :departmentId', { departmentId: supervisor.department.id })
+        .getMany();
+
+    } else if (tipoEmpleado === 'DOCENTE') {
+      if (!supervisor.academicUnit) {
+        throw new Error('Supervisor does not belong to any academic unit');
+      }
+
+      licenses = await this.licenseRepository.createQueryBuilder('license')
+        .leftJoinAndSelect('license.user', 'user')
+        .where('user.academicUnitId = :academicUnitId', { academicUnitId: supervisor.academicUnit.id })
+        .getMany();
+
+    } else {
+      throw new Error('Tipo de empleado del supervisor no reconocido');
+    }
+
     return licenses.map(license => ({
       id: license.id,
       licenseType: license.licenseType,
@@ -361,9 +384,10 @@ export class LicenseService {
       issuedDate: license.issuedDate,
       immediateSupervisorApproval: license.immediateSupervisorApproval,
       personalDepartmentApproval: license.personalDepartmentApproval,
-      userId: license.user.id,  // Extraer el userId del objeto user
+      userId: license.user.id,
     }));
   }
+
 
 
   // Método para que un supervisor apruebe o rechace una licencia
@@ -374,50 +398,54 @@ export class LicenseService {
   ): Promise<LicenseResponseDto> {
     const license = await this.licenseRepository.findOne({
       where: { id: licenseId },
-      relations: ['user', 'user.department'],
+      relations: ['user', 'user.department', 'user.academicUnit'],
     });
 
     if (!license) {
       throw new BadRequestException('License not found');
     }
 
-    if (!license.user.department) {
-      throw new BadRequestException('The user does not belong to any department.');
+    if (license.immediateSupervisorApproval || license.personalDepartmentApproval) {
+      throw new BadRequestException('La licencia ya fue revisada y no puede modificarse nuevamente.');
     }
+
 
     const supervisor = await this.userRepository.findOne({
       where: { id: supervisorId },
-      relations: ['department'],
+      relations: ['department', 'academicUnit'],
     });
 
     if (!supervisor) {
       throw new BadRequestException('Supervisor not found');
     }
 
-    if (!supervisor.department) {
-      throw new BadRequestException('The supervisor does not belong to any department.');
+    const tipoSupervisor = supervisor.tipoEmpleado;
+
+    // Validar pertenencia a departamento o unidad académica
+    if (tipoSupervisor === 'ADMINISTRATIVO') {
+      if (!supervisor.department || !license.user.department || supervisor.department.id !== license.user.department.id) {
+        throw new BadRequestException('No autorizado: el supervisor no pertenece al mismo departamento que el usuario.');
+      }
+    } else if (tipoSupervisor === 'DOCENTE') {
+      if (!supervisor.academicUnit || !license.user.academicUnit || supervisor.academicUnit.id !== license.user.academicUnit.id) {
+        throw new BadRequestException('No autorizado: el supervisor no pertenece a la misma unidad académica que el usuario.');
+      }
+    } else {
+      throw new BadRequestException('Tipo de empleado del supervisor no reconocido.');
     }
 
-    if (license.user.department.id !== supervisor.department.id) {
-      throw new BadRequestException('Unauthorized: Supervisor does not belong to the same department as the user.');
-    }
-
-    // Actualizar el estado de aprobación de la licencia
+    // Actualizar estado de aprobación
     license.immediateSupervisorApproval = approval;
     license.approvedBySupervisor = approval ? supervisor : null;
 
-    // Guardar los cambios en la licencia
     await this.licenseRepository.save(license);
 
-    // Notificar al usuario sobre la aprobación o rechazo de la licencia
     const message = approval
       ? `Tu licencia fue aprobada por el supervisor ${supervisor.fullName}.`
       : `Tu licencia fue rechazada por el supervisor ${supervisor.fullName}.`;
 
-    // Llamar al servicio de notificaciones para enviar la notificación
     await this.notificationService.notifyUser(license.user.id, message, supervisor.id);
 
-    // Devolver la licencia con la estructura del DTO actualizado
     return {
       id: license.id,
       licenseType: license.licenseType,
@@ -429,70 +457,71 @@ export class LicenseService {
       personalDepartmentApproval: license.personalDepartmentApproval,
       userId: license.user.id,
       totalDays: license.totalDays,
-      userDepartmentId: license.user.department.id,
-      userDepartmentName: license.user.department.name,
+      userDepartmentId: license.user.department?.id,
+      userDepartmentName: license.user.department?.name,
       approvedBySupervisorId: approval ? supervisor.id : undefined,
       approvedBySupervisorName: approval ? supervisor.fullName : undefined,
-      supervisorDepartmentId: approval ? supervisor.department.id : undefined,
-      supervisorDepartmentName: approval ? supervisor.department.name : undefined,
+      supervisorDepartmentId: approval ? supervisor.department?.id : undefined,
+      supervisorDepartmentName: approval ? supervisor.department?.name : undefined,
     };
   }
+
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-// Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-async updatePersonalDepartmentApproval(
-  licenseId: number,
-  userId: number, // quien realiza la aprobación
-  approval: boolean
-): Promise<License> {
-  // Buscar la licencia por ID
-  const license = await this.licenseRepository.findOne({
-    where: { id: licenseId },
-    relations: ['user'],
-  });
+  // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
+  async updatePersonalDepartmentApproval(
+    licenseId: number,
+    userId: number, // quien realiza la aprobación
+    approval: boolean
+  ): Promise<License> {
+    // Buscar la licencia por ID
+    const license = await this.licenseRepository.findOne({
+      where: { id: licenseId },
+      relations: ['user'],
+    });
 
-  if (!license || !license.user) {
-    throw new BadRequestException('Licencia o usuario asociado no encontrado');
+    if (!license || !license.user) {
+      throw new BadRequestException('Licencia o usuario asociado no encontrado');
+    }
+
+    // Buscar al usuario que intenta aprobar/rechazar
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    // Verificar si el usuario tiene el rol ADMIN
+    if (user.role !== 'ADMIN') {
+      throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+    }
+
+    // Verificar si ya fue aprobada o rechazada por el departamento de personal
+    if (license.personalDepartmentApproval === true) {
+      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+    }
+
+    // Verificar si ya fue aprobada o rechazada por el supervisor inmediato
+    if (license.immediateSupervisorApproval === true) {
+      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+    }
+
+
+    // Actualizar ambos campos de aprobación
+    license.personalDepartmentApproval = approval;
+    license.immediateSupervisorApproval = approval;
+
+    // Guardar y devolver la licencia actualizada
+    const updatedLicense = await this.licenseRepository.save(license);
+
+    // Notificar al usuario sobre la decisión
+    const message = approval
+      ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
+      : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
+
+    await this.notificationService.notifyUser(license.user.id, message, user.id);
+
+    return updatedLicense;
   }
-
-  // Buscar al usuario que intenta aprobar/rechazar
-  const user = await this.userRepository.findOne({ where: { id: userId } });
-
-  if (!user) {
-    throw new BadRequestException('Usuario no encontrado');
-  }
-
-  // Verificar si el usuario tiene el rol ADMIN
-  if (user.role !== 'ADMIN') {
-    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-  }
-
-  // Verificar si ya fue aprobada o rechazada por el departamento de personal
-if (license.personalDepartmentApproval === true) {
-  throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-}
-
-  // Verificar si ya fue aprobada o rechazada por el supervisor inmediato
-if (license.immediateSupervisorApproval === true) {
-  throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-}
-
-
-  // Actualizar ambos campos de aprobación
-  license.personalDepartmentApproval = approval;
-  license.immediateSupervisorApproval = approval;
-
-  // Guardar y devolver la licencia actualizada
-  const updatedLicense = await this.licenseRepository.save(license);
-
-  // Notificar al usuario sobre la decisión
-  const message = approval
-    ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
-    : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
-
-  await this.notificationService.notifyUser(license.user.id, message, user.id);
-
-  return updatedLicense;
-}
 
 
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
