@@ -56,6 +56,11 @@ export class LicenseService {
       throw new BadRequestException('Para licencias de "Varios días" debe seleccionar un rango de fechas diferente');
     }
 
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY && licenseData.startDate !== licenseData.endDate) {
+      throw new BadRequestException('La licencia de medio día debe tener la misma fecha de inicio y fin');
+    }
+
+
     const now = DateTime.local().setZone('America/La_Paz');
     const today = now.startOf('day');
     const cutoffTime = today.set({ hour: 20 });
@@ -85,36 +90,42 @@ export class LicenseService {
     }
 
     let totalDays = 0;
-    const dateCursor = new Date(startDate);
 
-    while (dateCursor <= endDate) {
-      const dateStr = dateCursor.toDateString();
-      const isoDateStr = dateCursor.toISOString().split('T')[0];
-      const dayOfWeek = dateCursor.getDay(); // 0 = domingo, 6 = sábado
-      const isHoliday = holidayDatesMap.has(dateStr);
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      totalDays = 0.5;
+    } else {
+      const dateCursor = new Date(startDate);
 
-      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday) {
-        totalDays++;
-      }
+      while (dateCursor <= endDate) {
+        const dateStr = dateCursor.toDateString();
+        const isoDateStr = dateCursor.toISOString().split('T')[0];
+        const dayOfWeek = dateCursor.getDay(); // 0 = domingo, 6 = sábado
+        const isHoliday = holidayDatesMap.has(dateStr);
 
-      if (isHoliday) {
-        const holiday = holidayDatesMap.get(dateStr);
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
-          ignoredWeekendHolidays.push({
-            date: isoDateStr,
-            description: holiday.description
-          });
-        } else {
-          holidaysApplied.push({
-            date: isoDateStr,
-            year: new Date(holiday.date).getFullYear(),
-            description: holiday.description
-          });
+        if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday) {
+          totalDays++;
         }
-      }
 
-      dateCursor.setDate(dateCursor.getDate() + 1);
+        if (isHoliday) {
+          const holiday = holidayDatesMap.get(dateStr);
+          if (dayOfWeek === 0 || dayOfWeek === 6) {
+            ignoredWeekendHolidays.push({
+              date: isoDateStr,
+              description: holiday.description
+            });
+          } else {
+            holidaysApplied.push({
+              date: isoDateStr,
+              year: new Date(holiday.date).getFullYear(),
+              description: holiday.description
+            });
+          }
+        }
+
+        dateCursor.setDate(dateCursor.getDate() + 1);
+      }
     }
+
 
     const maxDays = 5;
     if (totalDays > maxDays) {
@@ -142,7 +153,7 @@ export class LicenseService {
       `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
       user.id,
       'LICENSE',
-      licenseData.id  // si tienes el ID de la licencia para referenciar
+      savedLicense.id  // ✅ Este es el ID correcto // si tienes el ID de la licencia para referenciar
     );
 
 
