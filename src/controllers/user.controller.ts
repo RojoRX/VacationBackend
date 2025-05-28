@@ -231,23 +231,25 @@ export class UserController {
 
 
   @ApiResponse({ status: 200, description: 'Usuario actualizado exitosamente', type: User })
-  @ApiResponse({ status: 400, description: 'Datos inválidos o usuario/departamento no encontrado' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o usuario no encontrado' })
   async updateUserFields(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() updateData: Partial<{
-      fullName: string;
+      email: string;
       celular: string;
-      profesion: string;
-      position: string;
-      departmentId: number;
-    }>,
+    }>, // <--- Modificado aquí para solo permitir email y celular
     @Res() res: Response
   ) {
     try {
       const updatedUser = await this.userService.updateUserFields(userId, updateData);
       return res.status(HttpStatus.OK).json(updatedUser);
     } catch (error) {
-      return res.status(error.status || HttpStatus.BAD_REQUEST).json({ message: error.message });
+      // Manejo específico para BadRequestException del servicio
+      if (error instanceof BadRequestException) {
+        return res.status(HttpStatus.BAD_REQUEST).json({ message: error.message });
+      }
+      // Manejo genérico para otros errores del servidor
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error interno del servidor.' });
     }
   }
 

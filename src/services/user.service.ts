@@ -241,49 +241,36 @@ async findById(userId: number, options?: { relations?: string[] }): Promise<Omit
     return this.transformUser(user) as Omit<User, 'password'>;
   }
   //User Interface
-  async updateUserFields(
-    userId: number,
-    updateData: Partial<{
-      fullName: string;
-      celular: string;
-      position: string;
-      departmentId: number;
-      professionId: number;
-      academicUnitId: number;
-    }>
-  ): Promise<Omit<User, 'password'>> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['department', 'profession', 'academicUnit'],
-    });
+async updateUserFields(
+  userId: number,
+  updateData: Partial<{
+    email: string; // Nuevo campo permitido para actualización
+    celular: string;
+  }>
+): Promise<Omit<User, 'password'>> {
+  // 1. Buscar al usuario por su ID
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
+    // Ya no necesitamos cargar relaciones si solo actualizamos email y celular directamente en el usuario
+    // Si 'email' o 'celular' son campos de la entidad 'User' directamente, las relaciones son irrelevantes aquí.
+  });
 
-    if (!user) throw new BadRequestException('Usuario no encontrado.');
-
-    if (updateData.departmentId !== undefined) {
-      const department = await this.departmentRepository.findOne({ where: { id: updateData.departmentId } });
-      if (!department) throw new BadRequestException('Departamento no encontrado.');
-      user.department = department;
-    }
-
-    if (updateData.professionId !== undefined) {
-      const profession = await this.profesionRepository.findOne({ where: { id: updateData.professionId } });
-      if (!profession) throw new BadRequestException('Profesión no encontrada.');
-      user.profession = profession;
-    }
-
-    if (updateData.academicUnitId !== undefined) {
-      const academicUnit = await this.academicUnitRepository.findOne({ where: { id: updateData.academicUnitId } });
-      if (!academicUnit) throw new BadRequestException('Unidad académica no encontrada.');
-      user.academicUnit = academicUnit;
-    }
-
-    user.fullName = updateData.fullName ?? user.fullName;
-    user.celular = updateData.celular ?? user.celular;
-    user.position = updateData.position ?? user.position;
-
-    await this.userRepository.save(user);
-    return this.transformUser(user) as Omit<User, 'password'>;
+  // 2. Verificar si el usuario existe
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado.');
   }
+
+  // 3. Aplicar las actualizaciones solo para email y celular
+  // Usamos el operador '??' (nullish coalescing) para asegurar que solo se actualicen si el valor está presente en updateData
+  user.email = updateData.email ?? user.email;
+  user.celular = updateData.celular ?? user.celular;
+
+  // 4. Guardar los cambios en la base de datos
+  await this.userRepository.save(user);
+
+  // 5. Transformar y retornar el usuario actualizado (sin la contraseña)
+  return this.transformUser(user) as Omit<User, 'password'>;
+}
 
   async getUserData(carnetIdentidad: string): Promise<any> {
     // Buscar usuario en la base de datos
