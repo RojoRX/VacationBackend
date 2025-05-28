@@ -670,6 +670,32 @@ export class LicenseService {
     });
   }
 
+  //Licencias pendientes para Personal
+  async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
+    ci: string;
+    fullname: string;
+    department?: string;
+    academicUnit?: string;
+  })[]> {
+    const licenses = await this.licenseRepository.find({
+      where: { personalDepartmentApproval: false },
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
+
+    return licenses.map((license) => {
+      const { user, ...rest } = license;
+      return {
+        ...rest,
+        ci: user.ci,
+        fullname: user.fullName,
+        department: user.department?.name ?? null,
+        academicUnit: user.academicUnit?.name ?? null,
+      };
+    });
+  }
+
+
+
   // Métodos auxiliares
   private datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
     return (start1 <= end2) && (end1 >= start2);
@@ -780,6 +806,8 @@ export class LicenseService {
     console.log(`✅ Total días hábiles: ${count}`);
     return count;
   }
+
+
 
 
 }

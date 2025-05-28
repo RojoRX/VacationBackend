@@ -233,16 +233,34 @@ export class VacationRequestService {
   }
 
   // Método para obtener todas las solicitudes de vacaciones
-  async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
-    const requests = await this.vacationRequestRepository.find({
-      relations: ['user', 'user.department', 'user.academicUnit'],
-    });
+async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
 
-    return requests.map((request) => {
-      const { user, ...requestWithoutSensitiveData } = request;
-      return { ...requestWithoutSensitiveData, ci: user.ci, username: user.username, fullname: user.fullName, department: user.department.name, academicUnit: user.academicUnit.name };
-    });
-  }
+  const requests = await this.vacationRequestRepository.find({
+    relations: ['user', 'user.department', 'user.academicUnit'],
+  });
+
+
+  return requests.map((request, index) => {
+    const { user, ...requestWithoutSensitiveData } = request;
+
+    const ci = user?.ci ?? 'N/A';
+    const username = user?.username ?? 'N/A';
+    const fullname = user?.fullName ?? 'N/A';
+    const department = user?.department?.name ?? null;
+    const academicUnit = user?.academicUnit?.name ?? null;
+
+  
+    return {
+      ...requestWithoutSensitiveData,
+      ci,
+      username,
+      fullname,
+      department,
+      academicUnit,
+    };
+  });
+}
+
 
   async countAuthorizedVacationDaysInRange(
     ci: string,
@@ -899,4 +917,64 @@ export class VacationRequestService {
       };
     }
   }
+ // Nuevo método para obtener el conteo de solicitudes PENDIENTES para un supervisor
+  async getPendingVacationRequestsCountForSupervisor(supervisorId: number): Promise<number> {
+    const supervisor = await this.userService.findById(supervisorId, {
+      relations: ['department', 'academicUnit'],
+    });
+
+    if (!supervisor) {
+      throw new HttpException('Supervisor no encontrado.', HttpStatus.NOT_FOUND);
+    }
+
+    const { tipoEmpleado, department, academicUnit } = supervisor;
+
+    const queryBuilder = this.vacationRequestRepository.createQueryBuilder('vr');
+    queryBuilder
+      .leftJoinAndSelect('vr.user', 'user')
+      .where('vr.status = :status', { status: 'PENDING' });
+
+    if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
+      queryBuilder.andWhere('user.departmentId = :departmentId', { departmentId: department.id });
+    } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
+      queryBuilder.andWhere('user.academicUnitId = :academicUnitId', { academicUnitId: academicUnit.id });
+    } else {
+      throw new HttpException(
+        'El supervisor debe pertenecer a un departamento o unidad académica para revisar solicitudes.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const pendingCount = await queryBuilder.getCount();
+
+    return pendingCount;
+  }
+
+  // En vacation-request.service.ts
+async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
+  ci: string;
+  fullname: string;
+  department?: string;
+  academicUnit?: string;
+})[]> {
+  const requests = await this.vacationRequestRepository.find({
+    where: [
+      { approvedByHR: false },              // Aún no revisadas por RRHH
+      { status: 'PENDING' }                 // Estado pendiente en general
+    ],
+    relations: ['user', 'user.department', 'user.academicUnit']
+  });
+
+  return requests.map((request) => {
+    const { user, ...rest } = request;
+    return {
+      ...rest,
+      ci: user.ci,
+      fullname: user.fullName,
+      department: user.department?.name ?? null,
+      academicUnit: user.academicUnit?.name ?? null,
+    };
+  });
+}
+
 }

@@ -8,7 +8,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from 
 @ApiTags('Licencias')
 @Controller('licenses')
 export class LicenseController {
-  constructor(private readonly licenseService: LicenseService) {}
+  constructor(private readonly licenseService: LicenseService) { }
 
   @Get('total-for-user')
   @ApiOperation({ summary: 'Obtener el total de licencias para un usuario' })
@@ -46,6 +46,13 @@ export class LicenseController {
     return this.licenseService.findAllLicenses();
   }
 
+  @Get('hr-pending')
+  @ApiOperation({ summary: 'Licencias pendientes de aprobación por RRHH' })
+  @ApiResponse({ status: 200, description: 'Lista de licencias pendientes' })
+  async getPendingLicensesForHR() {
+    return this.licenseService.getPendingLicensesForHR();
+  }
+  
   @Get(':id')
   @ApiOperation({ summary: 'Obtener una licencia por ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID de la licencia' })
@@ -93,7 +100,7 @@ export class LicenseController {
     return this.licenseService.getTotalAuthorizedLicensesForUser(userId, start, end);
   }
 
-  
+
   @Patch(':licenseId/personal-approval')
   @ApiOperation({ summary: 'Actualizar la aprobación del departamento personal' })
   @ApiParam({ name: 'licenseId', required: true, description: 'ID de la licencia' })
@@ -115,7 +122,7 @@ export class LicenseController {
   ): Promise<License> {
     return this.licenseService.updatePersonalDepartmentApproval(licenseId, userId, approval);
   }
-  
+
 
   @Patch(':licenseId/approve')
   @ApiOperation({ summary: 'Aprobar o rechazar una licencia por el supervisor' })
@@ -138,7 +145,7 @@ export class LicenseController {
   ): Promise<LicenseResponseDto> {
     return this.licenseService.approveLicense(licenseId, supervisorId, approval);
   }
-  
+
 
   @Get('department/:supervisorId')
   @ApiOperation({ summary: 'Obtener las licencias del departamento del supervisor' })
@@ -149,9 +156,9 @@ export class LicenseController {
   ): Promise<LicenseResponseDto[]> { // Cambia el tipo de retorno a LicenseResponseDto[]
     return this.licenseService.findLicensesByDepartment(supervisorId);
   }
-  
 
-  
+
+
   @Get('user/:userId')
   @ApiOperation({ summary: 'Obtener todas las licencias de un usuario' }) // Descripción del endpoint
   @ApiParam({ name: 'userId', type: Number, description: 'ID del usuario' }) // Parámetro documentado
