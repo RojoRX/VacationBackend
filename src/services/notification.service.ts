@@ -16,23 +16,58 @@ export class NotificationService {
     private userRepository: Repository<User>,
   ) {}
 
-  // Notificar a un usuario específico
-  async notifyUser(recipientId: number, message: string, senderId?: number) {
-    const recipient = await this.userRepository.findOne({ where: { id: recipientId } });
-    if (!recipient) throw new Error('Recipient not found');
-  
-    const sender = senderId
-      ? await this.userRepository.findOne({ where: { id: senderId } })
-      : null;
-  
-    const notification = this.notificationRepo.create({
-      message,
-      recipient,
-      sender,
-    });
-  
-    return this.notificationRepo.save(notification);
+  // Notificar a un usuario específico con recurso opcional
+async notifyUser({
+  recipientId,
+  message,
+  senderId,
+  resourceType,
+  resourceId,
+}: {
+  recipientId: number;
+  message: string;
+  senderId?: number;
+  resourceType?: 'VACATION' | 'LICENSE';
+  resourceId?: number;
+}) {
+  const recipient = await this.userRepository.findOne({
+    where: { id: recipientId },
+    relations: ['department', 'academicUnit'], // ⚠️ Necesario para comparar áreas
+  });
+  if (!recipient) throw new Error('Recipient not found');
+
+  const sender = senderId
+    ? await this.userRepository.findOne({
+        where: { id: senderId },
+        relations: ['department', 'academicUnit'], // ⚠️ También necesitamos esta info del emisor
+      })
+    : null;
+
+  // ✅ Validación para evitar que supervisores ajenos reciban notificaciones
+  if (recipient.role === RoleEnum.SUPERVISOR && sender) {
+    const isSameDepartment =
+      sender.department && recipient.department?.id === sender.department.id;
+
+    const isSameAcademicUnit =
+      sender.academicUnit && recipient.academicUnit?.id === sender.academicUnit.id;
+
+    if (!isSameDepartment && !isSameAcademicUnit) {
+      throw new Error(
+        'No se puede notificar a un supervisor que no pertenece al área del remitente',
+      );
+    }
   }
+
+  const notification = this.notificationRepo.create({
+    message,
+    recipient,
+    sender,
+    resourceType,
+    resourceId,
+  });
+
+  return this.notificationRepo.save(notification);
+}
 
   // Obtener notificaciones no leídas de un usuario
   async getUnreadNotifications(userId: number) {
@@ -56,7 +91,7 @@ export class NotificationService {
     return this.notificationRepo.save(notification);
   }
 
-  // Obtener todas las notificaciones de un usuario (incluidas las leídas)
+  // Obtener todas las notificaciones de un usuario
   async getNotificationsByUser(userId: number): Promise<NotificationResponseDto[]> {
     const notifications = await this.notificationRepo.find({
       where: { recipient: { id: userId } },
@@ -68,38 +103,41 @@ export class NotificationService {
       message: notification.message,
       createdAt: notification.createdAt.toISOString(),
       read: notification.read,
+      resourceType: notification.resourceType,
+      resourceId: notification.resourceId,
     }));
   }
 
   // Notificar a todos los administradores
-  async notifyAdmins(message: string, senderId?: number) {
+  async notifyAdmins(message: string, senderId?: number, resourceType?: 'VACATION' | 'LICENSE', resourceId?: number) {
     const admins = await this.userRepository.find({
-      where: { role: RoleEnum.ADMIN },  // Usar RoleEnum.ADMIN para obtener solo administradores
+      where: { role: RoleEnum.ADMIN },
     });
-  
+
     if (!admins.length) return;
-  
+
     const sender = senderId
       ? await this.userRepository.findOne({ where: { id: senderId } })
       : null;
-  
+
     const notifications = admins.map((admin) =>
       this.notificationRepo.create({
         message,
         recipient: admin,
         sender,
+        resourceType,
+        resourceId,
       }),
     );
-  
+
     await this.notificationRepo.save(notifications);
   }
 
   // Obtener notificaciones de todos los administradores
   async getNotificationsForAdmins(): Promise<NotificationResponseDto[]> {
     const admins = await this.userRepository.find({
-      where: { role: RoleEnum.ADMIN }, // Asegúrate de que 'role' es una cadena, no un número
+      where: { role: RoleEnum.ADMIN },
     });
-    
 
     const allNotifications: Notification[] = [];
     for (const admin of admins) {
@@ -115,32 +153,50 @@ export class NotificationService {
       message: notification.message,
       createdAt: notification.createdAt.toISOString(),
       read: notification.read,
+      resourceType: notification.resourceType,
+      resourceId: notification.resourceId,
     }));
   }
-  // Notificar a administradores y supervisores
-async notifyAdminsAndSupervisors(message: string, senderId?: number) {
-  const users = await this.userRepository.find({
-    where: [
-      { role: RoleEnum.ADMIN },
-      { role: RoleEnum.SUPERVISOR }
-    ],  // Obtener usuarios con rol ADMIN o SUPERVISOR
-  });
 
-  if (!users.length) return;
+  // Notificar a administradores y supervisores del mismo departamento o unidad académica
+  async notifyRelevantSupervisorsAndAdmins(
+    message: string,
+    senderId: number,
+    resourceType?: 'VACATION' | 'LICENSE',
+    resourceId?: number,
+  ) {
+    const sender = await this.userRepository.findOne({
+      where: { id: senderId },
+      relations: ['department', 'academicUnit'],
+    });
 
-  const sender = senderId
-    ? await this.userRepository.findOne({ where: { id: senderId } })
-    : null;
+    if (!sender) return;
 
-  const notifications = users.map((user) =>
-    this.notificationRepo.create({
-      message,
-      recipient: user,
-      sender,
-    }),
-  );
+    const users = await this.userRepository.find({
+      where: [
+        { role: RoleEnum.ADMIN },
+        { role: RoleEnum.SUPERVISOR },
+      ],
+      relations: ['department', 'academicUnit'],
+    });
 
-  await this.notificationRepo.save(notifications);
-}
+    const relevantUsers = users.filter(user => {
+      if (user.role === RoleEnum.ADMIN) return true;
+      if (sender.department && user.department?.id === sender.department.id) return true;
+      if (sender.academicUnit && user.academicUnit?.id === sender.academicUnit.id) return true;
+      return false;
+    });
 
+    const notifications = relevantUsers.map((user) =>
+      this.notificationRepo.create({
+        message,
+        recipient: user,
+        sender,
+        resourceType,
+        resourceId,
+      }),
+    );
+
+    await this.notificationRepo.save(notifications);
+  }
 }

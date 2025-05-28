@@ -138,10 +138,13 @@ export class LicenseService {
       }
     );
 
-    await this.notificationService.notifyAdminsAndSupervisors(
+    await this.notificationService.notifyRelevantSupervisorsAndAdmins(
       `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
-      user.id
+      user.id,
+      'LICENSE',
+      licenseData.id  // si tienes el ID de la licencia para referenciar
     );
+
 
     return {
       ...this.mapLicenseToDto(savedLicense),
@@ -444,7 +447,13 @@ export class LicenseService {
       ? `Tu licencia fue aprobada por el supervisor ${supervisor.fullName}.`
       : `Tu licencia fue rechazada por el supervisor ${supervisor.fullName}.`;
 
-    await this.notificationService.notifyUser(license.user.id, message, supervisor.id);
+    await this.notificationService.notifyUser({
+      recipientId: license.user.id,
+      message,
+      senderId: supervisor.id,
+      resourceType: 'LICENSE',        // opcional, si quieres indicar que es sobre una licencia
+      resourceId: license.id,         // opcional, para referencia
+    });
 
     return {
       id: license.id,
@@ -518,7 +527,13 @@ export class LicenseService {
       ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
       : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
 
-    await this.notificationService.notifyUser(license.user.id, message, user.id);
+    await this.notificationService.notifyUser({
+      recipientId: license.user.id,
+      message,
+      senderId: user.id,
+      resourceType: 'LICENSE',   // opcional
+      resourceId: license.id,    // opcional
+    });
 
     return updatedLicense;
   }

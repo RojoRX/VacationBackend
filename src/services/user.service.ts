@@ -193,14 +193,19 @@ export class UserService {
   }
 
   // Ajusta findById para aceptar relaciones opcionales
-  async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: options?.relations ?? [],
-    });
-    return this.transformUser(user);
-  }
+// Ajusta findById para retornar siempre las relaciones específicas y aceptar otras opcionales
+async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
+  const defaultRelations = ['department', 'academicUnit', 'profession'];
+  const allRelations = options?.relations
+    ? [...new Set([...defaultRelations, ...options.relations])] // Combina y elimina duplicados
+    : defaultRelations; // Si no hay opciones, usa solo las por defecto
 
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
+    relations: allRelations, // Siempre incluye las relaciones por defecto
+  });
+  return this.transformUser(user);
+}
 
   async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -232,6 +237,7 @@ export class UserService {
   async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
     const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['department', 'academicUnit', 'profession'], });
     if (!user) throw new BadRequestException('Usuario no encontrado.');
+    console.log("Info Basica")
     return this.transformUser(user) as Omit<User, 'password'>;
   }
   //User Interface

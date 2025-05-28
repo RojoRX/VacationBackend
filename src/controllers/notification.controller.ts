@@ -6,22 +6,41 @@ import { NotificationResponseDto } from "src/dto/notification-response.dto";
 @ApiTags('Notificaciones')
 @Controller('notifications')
 export class NotificationController {
-  constructor(private readonly notificationService: NotificationService) {}
+  constructor(private readonly notificationService: NotificationService) { }
 
   // Notificar a un usuario específico
   @Post(':recipientId')
   @ApiOperation({ summary: 'Notificar a un usuario' })
   @ApiParam({ name: 'recipientId', description: 'ID del usuario que recibirá la notificación' })
-  @ApiBody({ schema: { properties: { message: { type: 'string' }, senderId: { type: 'number', required: null } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        senderId: { type: 'number', nullable: true },
+        resourceType: { type: 'string', enum: ['VACATION', 'LICENSE'], nullable: true },
+        resourceId: { type: 'number', nullable: true },
+      },
+      required: ['message'],
+    },
+  })
   @ApiResponse({ status: 201, description: 'Notificación creada exitosamente.' })
   @ApiResponse({ status: 404, description: 'Usuario destinatario no encontrado.' })
   async notifyUser(
     @Param('recipientId') recipientId: number,
-    @Body('message') message: string,
-    @Body('senderId') senderId?: number,
+    @Body() body: {
+      message: string;
+      senderId?: number;
+      resourceType?: 'VACATION' | 'LICENSE';
+      resourceId?: number;
+    },
   ) {
-    return await this.notificationService.notifyUser(recipientId, message, senderId);
+    return await this.notificationService.notifyUser({
+      recipientId,
+      ...body,
+    });
   }
+
 
   // Notificar a todos los administradores
   @Post('admins')

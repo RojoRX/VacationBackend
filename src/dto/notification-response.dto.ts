@@ -1,15 +1,23 @@
-import { IsBoolean, IsDateString, IsInt, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class NotificationResponseDto {
   @IsInt()
-  id: number;  // Identificador único de la notificación
+  id: number;
 
   @IsString()
-  message: string;  // El contenido del mensaje de la notificación
+  message: string;
 
   @IsDateString()
-  createdAt: string;  // Fecha de creación de la notificación (usualmente como string de tipo ISO 8601)
+  createdAt: string;
 
   @IsBoolean()
-  read: boolean;  // Si la notificación ha sido leída o no
+  read: boolean;
+
+  @IsOptional()
+  @IsString()
+  resourceType?: 'VACATION' | 'LICENSE';  // Tipo de recurso (opcional)
+
+  @IsOptional()
+  @IsInt()
+  resourceId?: number;  // ID del recurso (opcional)
 }

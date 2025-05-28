@@ -21,6 +21,13 @@ export class Notification {
 
   @ManyToOne(() => User, { nullable: true, eager: false })
   sender?: User;
+
+  @Column({ nullable: true })
+  resourceType?: 'VACATION' | 'LICENSE'; // o 'PERMISO' según tu terminología
+
+  @Column({ nullable: true })
+  resourceId?: number;
+
 }
 
 

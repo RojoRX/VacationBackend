@@ -184,10 +184,13 @@ export class VacationRequestService {
     console.log('Solicitud guardada:', savedRequest);
 
     // Notificar
-    await this.notificationService.notifyAdminsAndSupervisors(
+    await this.notificationService.notifyRelevantSupervisorsAndAdmins(
       `El usuario ${user.fullName} ha creado una nueva solicitud de vacaciones del ${startDate} al ${endDateCalculated} (${daysRequested} días).`,
-      user.id
+      user.id,
+      'VACATION',
+      savedRequest.id
     );
+
 
     // Retornar sin datos sensibles
     // Retornar sin datos sensibles, incluyendo los días solicitados
@@ -286,7 +289,7 @@ export class VacationRequestService {
     };
   }
   // Método para actualizar el estado de la solicitud de vacaciones 
-  // Método para actualizar el estado de la solicitud de vacaciones METODO USADO 
+  // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   async updateVacationRequestStatus(
     id: number,
     status: string,
@@ -390,10 +393,14 @@ export class VacationRequestService {
 
       const statusLabel = statusLabels[status] || status;
 
-      await this.notificationService.notifyUser(
-        request.user.id,
-        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`,
-      );
+      await this.notificationService.notifyUser({
+        recipientId: request.user.id,
+        message: `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`,
+        resourceType: 'VACATION',
+        resourceId: request.id,
+      });
+
+
     } catch (error) {
       console.error('Error al crear la notificación:', error);
     }
@@ -634,10 +641,11 @@ export class VacationRequestService {
     console.log('Intentando notificar al usuario con ID:', updatedRequest.user.id);
 
     try {
-      const notification = await this.notificationService.notifyUser(
-        updatedRequest.user.id,
-        `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`
-      );
+      const notification = await this.notificationService.notifyUser({
+        recipientId: updatedRequest.user.id,
+        message: `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`,
+      });
+
       console.log('Notificación guardada correctamente:', notification);
     } catch (error) {
       console.error('Error al guardar la notificación:', error);
@@ -668,10 +676,11 @@ export class VacationRequestService {
 
     await this.vacationRequestRepository.save(vacationRequest);
 
-    await this.notificationService.notifyUser(
-      vacationRequest.user.id,
-      `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`
-    );
+    await this.notificationService.notifyUser({
+      recipientId: vacationRequest.user.id,
+      message: `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`,
+    });
+
 
     return vacationRequest;
   }
@@ -890,5 +899,4 @@ export class VacationRequestService {
       };
     }
   }
-
 }
