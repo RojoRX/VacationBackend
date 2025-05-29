@@ -204,6 +204,7 @@ async findById(userId: number, options?: { relations?: string[] }): Promise<Omit
     where: { id: userId },
     relations: allRelations, // Siempre incluye las relaciones por defecto
   });
+  console.log(this.transformUser(user));
   return this.transformUser(user);
 }
 

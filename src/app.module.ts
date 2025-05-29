@@ -16,6 +16,9 @@ import { NotificationModule } from './modules/notification.module';
 import { ReportsModule } from './modules/reports.module';
 import { AcademicUnitModule } from './modules/academic-unit.module';
 import { AuthModule } from './auth/auth.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthGuard } from './auth/auth.guard';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
@@ -35,18 +38,28 @@ import { AuthModule } from './auth/auth.module';
     GeneralHolidayPeriodModule,
     VacationModule,
     NonHolidayModule,
-    GestionPeriodModule, 
-    LicenseModule, 
+    GestionPeriodModule,
+    LicenseModule,
     UserHolidayPeriodModule,
     VacationRequestModule,
-    DepartmentModule, 
+    DepartmentModule,
     VacationPolicyModule,
     NotificationModule,
     ReportsModule,
     AcademicUnitModule,
+    JwtModule.register({
+      global: true,
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: process.env.JWT_EXPIRES_IN },
+    }),
     AuthModule
   ],
   controllers: [],
-  providers: [AppService],
+  providers: [AppService,
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
 export class AppModule { }
