@@ -13,7 +13,6 @@ import { MockUserService } from 'src/mocks/user.service.mock';
 import { Department } from 'src/entities/department.entity';
 import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
-
 @Module({
   imports: [
     HttpModule,
@@ -21,21 +20,7 @@ import { AcademicUnit } from 'src/entities/academic-unit.entity';
     TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod, Department, Profession, AcademicUnit]), // Asegúrate de incluir todas las entidades relacionadas
   ],
   controllers: [UserController],
-  providers: [
-    {
-      provide: UserService,
-      useClass: UserService,
-    },
-    {
-      provide: 'USE_MOCK',
-      useFactory: async (configService: ConfigService) => configService.get<string>('USE_MOCK'),
-      inject: [ConfigService],
-    },
-    {
-      provide: MockUserService,
-      useClass: MockUserService,
-    },
-  ],
+  providers: [UserService],
   exports: [UserService],
 })
 export class UserModule { }

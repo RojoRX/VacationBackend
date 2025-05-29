@@ -372,11 +372,21 @@ async updateUserFields(
     const { password: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
+//Autenticacion 
+  async findOne(username: string): Promise<User | undefined> {
+    return this.userRepository.findOne({
+      where: { username },
+      relations: ['department', 'academicUnit', 'profession'], // agrega las relaciones que necesites
+    });
+  }
 }
+
+
 
 function parseDatePreservingLocal(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
   // OJO: month en Date constructor es 0-indexado
   return new Date(year, month - 1, day);
 }
+
 
