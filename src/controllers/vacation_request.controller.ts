@@ -329,17 +329,20 @@ export class VacationRequestController {
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
   @ApiResponse({ status: 400, description: 'La solicitud ya está eliminada o no se puede eliminar por su estado' })
   async softDeleteVacationRequest(
-    @Param('id', ParseIntPipe) id: number
+    @Param('id', ParseIntPipe) id: number,
+    @Body('userId') userId: number,
   ): Promise<{ message: string }> {
-    return this.vacationRequestService.softDeleteVacationRequest(id);
+    return this.vacationRequestService.softDeleteVacationRequest(id, userId);
   }
+
+
   @Get('deleted')
   @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones eliminadas (soft delete)' })
   @ApiResponse({ status: 200, description: 'Lista de solicitudes eliminadas correctamente recuperada' })
   async getDeletedVacationRequests() {
     return this.vacationRequestService.getDeletedVacationRequests();
   }
-    // Endpoint para obtener una solicitud de vacaciones por ID
+  // Endpoint para obtener una solicitud de vacaciones por ID
   @Get(':id')
   @ApiOperation({ summary: 'Obtener solicitud de vacaciones por ID' })
   @ApiResponse({ status: 200, description: 'Solicitud de vacaciones encontrada' })

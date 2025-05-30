@@ -15,14 +15,18 @@ import { VacationRequestDTO } from 'src/dto/vacation-request.dto';
 import { VacationService } from './vacation.service';
 import { NotificationService } from './notification.service';
 import { VacationDetail } from 'src/interfaces/vacation-detail';
+import { User } from 'src/entities/user.entity';
 
 @Injectable()
 export class VacationRequestService {
   constructor(
     @InjectRepository(VacationRequest)
+
     private readonly vacationRequestRepository: Repository<VacationRequest>,
     private readonly userService: UserService,
     private readonly nonHolidayService: NonHolidayService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
     private readonly notificationService: NotificationService,
@@ -34,9 +38,6 @@ export class VacationRequestService {
     position: string,
     managementPeriod: { startPeriod: string; endPeriod: string },
   ): Promise<Omit<VacationRequest, 'user'> & { ci: string, totalWorkingDays: number }> {
-    console.log('Valor de CI al inicio:', ci);
-    console.log('--- Inicio de createVacationRequest ---');
-    console.log('Valor de managementPeriod al inicio:', managementPeriod);
 
     // Buscar el usuario por CI
     const user = await this.userService.findByCarnet(ci);
@@ -47,10 +48,14 @@ export class VacationRequestService {
 
     // Verificar TODAS las solicitudes de vacaciones para el usuario
     const allVacationRequests = await this.vacationRequestRepository.find({
-      where: { user: { id: user.id } },
+      where: {
+        user: { id: user.id },
+        deleted: false,
+      },
       order: { requestDate: 'DESC' },
     });
-    console.log('Solicitudes de vacaciones previas:', allVacationRequests.length);
+
+    //console.log('Solicitudes de vacaciones previas:', allVacationRequests.length);
 
     // Lógica de verificación de solicitudes previas (sin cambios)
     if (allVacationRequests.length > 0) {
@@ -309,7 +314,6 @@ export class VacationRequestService {
     };
   }
 
-  // Método para actualizar el estado de la solicitud de vacaciones 
   // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   async updateVacationRequestStatus(
     id: number,
@@ -467,22 +471,22 @@ export class VacationRequestService {
 
     let requests;
 
-if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
-    requests = await this.vacationRequestRepository.find({
-      where: {
-        user: { department: { id: department.id } },
-        deleted: false, // 👈 Excluir eliminadas
-      },
-      relations: ['user'],
-    });
-  } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
-    requests = await this.vacationRequestRepository.find({
-      where: {
-        user: { academicUnit: { id: academicUnit.id } },
-        deleted: false, // 👈 Excluir eliminadas
-      },
-      relations: ['user'],
-    });
+    if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
+      requests = await this.vacationRequestRepository.find({
+        where: {
+          user: { department: { id: department.id } },
+          deleted: false, // 👈 Excluir eliminadas
+        },
+        relations: ['user'],
+      });
+    } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
+      requests = await this.vacationRequestRepository.find({
+        where: {
+          user: { academicUnit: { id: academicUnit.id } },
+          deleted: false, // 👈 Excluir eliminadas
+        },
+        relations: ['user'],
+      });
     } else {
       throw new HttpException(
         'Supervisor must belong to a department or academic unit',
@@ -878,9 +882,12 @@ if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
         return { canRequest: false, reason: 'Usuario no encontrado' };
       }
 
-      // 2. Obtener la última solicitud
+      // 2. Obtener la última solicitud que no esté eliminada
       const lastRequest = await this.vacationRequestRepository.findOne({
-        where: { user: { id: user.id } },
+        where: {
+          user: { id: user.id },
+          deleted: false,
+        },
         order: { requestDate: 'DESC' },
       });
 
@@ -893,35 +900,38 @@ if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
       if (lastRequest.status === 'PENDING') {
         return {
           canRequest: false,
-          reason: 'La última solicitud aún no ha sido revisada'
+          reason: 'La última solicitud aún no ha sido revisada',
         };
       }
 
-      if (lastRequest.status !== 'AUTHORIZED' && lastRequest.status !== 'SUSPENDED') {
+      if (
+        lastRequest.status !== 'AUTHORIZED' &&
+        lastRequest.status !== 'SUSPENDED'
+      ) {
         return {
           canRequest: false,
-          reason: 'La última solicitud no fue autorizada'
+          reason: 'La última solicitud no fue autorizada',
         };
       }
 
       if (!lastRequest.approvedByHR) {
         return {
           canRequest: false,
-          reason: 'La última solicitud no fue aprobada por el departamento de personal'
+          reason: 'La última solicitud no fue aprobada por el departamento de personal',
         };
       }
 
       // Todas las validaciones pasaron
       return { canRequest: true };
-
     } catch (error) {
       console.error('Error al verificar estado de solicitud:', error);
       return {
         canRequest: false,
-        reason: 'Error al verificar el estado de las solicitudes'
+        reason: 'Error al verificar el estado de las solicitudes',
       };
     }
   }
+
   // Nuevo método para obtener el conteo de solicitudes PENDIENTES para un supervisor
   async getPendingVacationRequestsCountForSupervisor(supervisorId: number): Promise<number> {
     const supervisor = await this.userService.findById(supervisorId, {
@@ -936,8 +946,9 @@ if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
 
     const queryBuilder = this.vacationRequestRepository.createQueryBuilder('vr');
     queryBuilder
-      .leftJoinAndSelect('vr.user', 'user')
-      .where('vr.status = :status', { status: 'PENDING' });
+      .leftJoin('vr.user', 'user')
+      .where('vr.status = :status', { status: 'PENDING' })
+      .andWhere('vr.deleted = false'); // <--- se excluyen eliminadas
 
     if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
       queryBuilder.andWhere('user.departmentId = :departmentId', { departmentId: department.id });
@@ -951,75 +962,85 @@ if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
     }
 
     const pendingCount = await queryBuilder.getCount();
-
     return pendingCount;
   }
- //Eliminar con Estado
-async softDeleteVacationRequest(id: number): Promise<{ message: string }> {
-  // Buscar la solicitud por ID
-  const request = await this.vacationRequestRepository.findOne({ where: { id } });
 
-  // Verificar si existe
-  if (!request) {
-    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+  //Eliminar con Estado
+  async softDeleteVacationRequest(id: number, userId: number): Promise<{ message: string }> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+
+    if (!request) {
+      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    if (request.deleted) {
+      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+    }
+
+    if (request.approvedByHR && request.approvedBySupervisor) {
+      throw new HttpException(
+        'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
+      throw new HttpException(
+        `No se puede eliminar una solicitud con estado '${request.status}'`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // 🔍 Buscar el usuario para conocer su rol
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
+    }
+
+    // 👇 Permitir solo si es dueño o admin
+    if (request.user.id !== userId && user.role !== 'ADMIN') {
+      throw new HttpException('No tienes permiso para cancelar esta solicitud', HttpStatus.FORBIDDEN);
+    }
+
+    request.deleted = true;
+    await this.vacationRequestRepository.save(request);
+
+    return { message: 'La solicitud fue cancelada/eliminada correctamente' };
   }
 
-  // Verificar si ya está eliminada
-  if (request.deleted) {
-    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+
+
+
+  // Obtener Todas las solicitudes eliminadas
+  async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
+    const requests = await this.vacationRequestRepository.find({
+      where: { deleted: true }, // 👈 Solo solicitudes eliminadas
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
+
+    return requests.map((request) => {
+      const { user, ...requestWithoutSensitiveData } = request;
+
+      const ci = user?.ci ?? 'N/A';
+      const username = user?.username ?? 'N/A';
+      const fullname = user?.fullName ?? 'N/A';
+      const department = user?.department?.name ?? null;
+      const academicUnit = user?.academicUnit?.name ?? null;
+
+      return {
+        ...requestWithoutSensitiveData,
+        ci,
+        username,
+        fullname,
+        department,
+        academicUnit,
+      };
+    });
   }
-
-  // Verificar si está completamente aprobada
-  if (request.approvedByHR && request.approvedBySupervisor) {
-    throw new HttpException(
-      'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Verificar si tiene estado AUTHORIZED o SUSPENDED
-  if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
-    throw new HttpException(
-      `No se puede eliminar una solicitud con estado '${request.status}'`,
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Marcar como eliminada
-  request.deleted = true;
-  await this.vacationRequestRepository.save(request);
-
-  return { message: 'La solicitud de vacaciones fue marcada como eliminada correctamente' };
-}
-// Obtener Todas las solicitudes eliminadas
-async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
-  const requests = await this.vacationRequestRepository.find({
-    where: { deleted: true }, // 👈 Solo solicitudes eliminadas
-    relations: ['user', 'user.department', 'user.academicUnit'],
-  });
-
-  return requests.map((request) => {
-    const { user, ...requestWithoutSensitiveData } = request;
-
-    const ci = user?.ci ?? 'N/A';
-    const username = user?.username ?? 'N/A';
-    const fullname = user?.fullName ?? 'N/A';
-    const department = user?.department?.name ?? null;
-    const academicUnit = user?.academicUnit?.name ?? null;
-
-    return {
-      ...requestWithoutSensitiveData,
-      ci,
-      username,
-      fullname,
-      department,
-      academicUnit,
-    };
-  });
-}
-
-
-
   // En vacation-request.service.ts
   async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
     ci: string;
@@ -1028,11 +1049,12 @@ async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { c
     academicUnit?: string;
   })[]> {
     const requests = await this.vacationRequestRepository.find({
-      where: [
-        { approvedByHR: false },              // Aún no revisadas por RRHH
-        { status: 'PENDING' }                 // Estado pendiente en general
-      ],
-      relations: ['user', 'user.department', 'user.academicUnit']
+      where: {
+        approvedByHR: false,
+        status: 'PENDING',
+        deleted: false, // Asegura que solo se obtienen solicitudes no eliminadas
+      },
+      relations: ['user', 'user.department', 'user.academicUnit'],
     });
 
     return requests.map((request) => {
@@ -1046,6 +1068,7 @@ async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { c
       };
     });
   }
+
 
 
 
