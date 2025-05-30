@@ -9,7 +9,7 @@ export class VacationRequest {
   @ManyToOne(() => User, (user) => user.vacationRequests)
   user: User;
 
-  @Column({nullable: true})
+  @Column({ nullable: true })
   position: string;
 
   @Column({ type: 'date' })
@@ -59,4 +59,8 @@ export class VacationRequest {
   // Nuevo campo para la fecha de revisión
   @Column({ type: 'date', nullable: true })
   reviewDate?: string;
+
+  @Column({ default: false })
+  deleted: boolean;
+
 }

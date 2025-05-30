@@ -164,8 +164,6 @@ export class VacationRequestController {
       );
     }
   }
-
-
   // Endpoint para obtener todas las vacaciones registradas
   @Get()
   @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones' })
@@ -203,11 +201,6 @@ export class VacationRequestController {
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
-
-
-
-
-
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cambiar el estado de una Solicitud por el supervisor' })
@@ -339,6 +332,24 @@ export class VacationRequestController {
       };
     }
 
+  }
+
+  @Patch(':id/soft-delete')
+  @ApiOperation({ summary: 'Marcar una solicitud de vacaciones como eliminada (soft delete)' })
+  @ApiParam({ name: 'id', type: Number, description: 'ID de la solicitud de vacaciones' })
+  @ApiResponse({ status: 200, description: 'Solicitud marcada como eliminada correctamente' })
+  @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
+  @ApiResponse({ status: 400, description: 'La solicitud ya está eliminada o no se puede eliminar por su estado' })
+  async softDeleteVacationRequest(
+    @Param('id', ParseIntPipe) id: number
+  ): Promise<{ message: string }> {
+    return this.vacationRequestService.softDeleteVacationRequest(id);
+  }
+  @Get('deleted')
+  @ApiOperation({ summary: 'Obtener todas las solicitudes de vacaciones eliminadas (soft delete)' })
+  @ApiResponse({ status: 200, description: 'Lista de solicitudes eliminadas correctamente recuperada' })
+  async getDeletedVacationRequests() {
+    return this.vacationRequestService.getDeletedVacationRequests();
   }
 
 }

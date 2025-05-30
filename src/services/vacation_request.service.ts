@@ -222,7 +222,10 @@ export class VacationRequestService {
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
     const requests = await this.vacationRequestRepository.find({
-      where: { user: { id: userId } },
+      where: {
+        user: { id: userId },
+        deleted: false, // 👈 Evitar solicitudes eliminadas lógicamente
+      },
       relations: ['user'],
     });
 
@@ -232,34 +235,35 @@ export class VacationRequestService {
     });
   }
 
+
   // Método para obtener todas las solicitudes de vacaciones
-async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
+  async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
 
-  const requests = await this.vacationRequestRepository.find({
-    relations: ['user', 'user.department', 'user.academicUnit'],
-  });
+    const requests = await this.vacationRequestRepository.find({
+      where: { deleted: false }, // 👈 Excluir solicitudes eliminadas
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
+
+    return requests.map((request, index) => {
+      const { user, ...requestWithoutSensitiveData } = request;
+
+      const ci = user?.ci ?? 'N/A';
+      const username = user?.username ?? 'N/A';
+      const fullname = user?.fullName ?? 'N/A';
+      const department = user?.department?.name ?? null;
+      const academicUnit = user?.academicUnit?.name ?? null;
 
 
-  return requests.map((request, index) => {
-    const { user, ...requestWithoutSensitiveData } = request;
-
-    const ci = user?.ci ?? 'N/A';
-    const username = user?.username ?? 'N/A';
-    const fullname = user?.fullName ?? 'N/A';
-    const department = user?.department?.name ?? null;
-    const academicUnit = user?.academicUnit?.name ?? null;
-
-  
-    return {
-      ...requestWithoutSensitiveData,
-      ci,
-      username,
-      fullname,
-      department,
-      academicUnit,
-    };
-  });
-}
+      return {
+        ...requestWithoutSensitiveData,
+        ci,
+        username,
+        fullname,
+        department,
+        academicUnit,
+      };
+    });
+  }
 
 
   async countAuthorizedVacationDaysInRange(
@@ -267,45 +271,44 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
     startDate: string,
     endDate: string
   ): Promise<{ requests: VacationRequest[]; totalAuthorizedVacationDays: number }> {
-    // Validar que la fecha de inicio no sea mayor que la fecha de fin
     if (new Date(startDate) > new Date(endDate)) {
       throw new HttpException('Invalid date range', HttpStatus.BAD_REQUEST);
     }
 
-    // Buscar usuario por carnet de identidad
     const user = await this.userService.findByCarnet(ci);
     if (!user) {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
 
-    // Convertir fechas sin parte horaria para asegurar precisión en comparación
     const startDateWithoutTime = new Date(startDate).toISOString().split('T')[0];
     const endDateWithoutTime = new Date(endDate).toISOString().split('T')[0];
 
-    // Obtener solicitudes autorizadas y aprobadas por Recursos Humanos en el rango de fechas
     const authorizedVacationDays = await this.vacationRequestRepository.find({
       where: {
         user: { id: user.id },
         status: In(['AUTHORIZED', 'SUSPENDED']),
         approvedByHR: true,
-        managementPeriodStart: startDateWithoutTime, // Filtro exacto
-        managementPeriodEnd: endDateWithoutTime,     // Filtro exacto
+        managementPeriodStart: startDateWithoutTime,
+        managementPeriodEnd: endDateWithoutTime,
+        deleted: false, // 👈 Añadido para excluir eliminados lógicamente
       },
     });
 
-    // Verificar que authorizedVacationDays no sea nulo o vacío
     if (!authorizedVacationDays || !Array.isArray(authorizedVacationDays)) {
       throw new HttpException('Failed to fetch authorized vacation days', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    // Calcular el total de días autorizados
-    const totalAuthorizedDays = authorizedVacationDays.reduce((total, request) => total + request.totalDays, 0);
+    const totalAuthorizedDays = authorizedVacationDays.reduce(
+      (total, request) => total + request.totalDays,
+      0
+    );
 
     return {
       requests: authorizedVacationDays,
       totalAuthorizedVacationDays: totalAuthorizedDays,
     };
   }
+
   // Método para actualizar el estado de la solicitud de vacaciones 
   // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   async updateVacationRequestStatus(
@@ -464,18 +467,22 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
 
     let requests;
 
-    if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
-      // Buscar solicitudes de usuarios del mismo departamento
-      requests = await this.vacationRequestRepository.find({
-        where: { user: { department: { id: department.id } } },
-        relations: ['user'],
-      });
-    } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
-      // Buscar solicitudes de usuarios de la misma unidad académica
-      requests = await this.vacationRequestRepository.find({
-        where: { user: { academicUnit: { id: academicUnit.id } } },
-        relations: ['user'],
-      });
+if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
+    requests = await this.vacationRequestRepository.find({
+      where: {
+        user: { department: { id: department.id } },
+        deleted: false, // 👈 Excluir eliminadas
+      },
+      relations: ['user'],
+    });
+  } else if (tipoEmpleado === 'DOCENTE' && academicUnit?.id) {
+    requests = await this.vacationRequestRepository.find({
+      where: {
+        user: { academicUnit: { id: academicUnit.id } },
+        deleted: false, // 👈 Excluir eliminadas
+      },
+      relations: ['user'],
+    });
     } else {
       throw new HttpException(
         'Supervisor must belong to a department or academic unit',
@@ -500,7 +507,6 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
       } as VacationRequestDTO;
     });
   }
-
   // Método para obtener una solicitud de vacaciones por su ID
   async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
     // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
@@ -702,7 +708,6 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
 
     return vacationRequest;
   }
-
   // Método para posponer una solicitud de vacaciones
   async postponeVacationRequest(
     id: number,
@@ -861,7 +866,6 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
 
     return this.vacationRequestRepository.save(request);
   }
-
   async checkLastRequestStatus(ci: string): Promise<{
     canRequest: boolean;
     reason?: string;
@@ -917,7 +921,7 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
       };
     }
   }
- // Nuevo método para obtener el conteo de solicitudes PENDIENTES para un supervisor
+  // Nuevo método para obtener el conteo de solicitudes PENDIENTES para un supervisor
   async getPendingVacationRequestsCountForSupervisor(supervisorId: number): Promise<number> {
     const supervisor = await this.userService.findById(supervisorId, {
       relations: ['department', 'academicUnit'],
@@ -949,32 +953,99 @@ async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: s
 
     return pendingCount;
   }
+ //Eliminar con Estado
+async softDeleteVacationRequest(id: number): Promise<{ message: string }> {
+  // Buscar la solicitud por ID
+  const request = await this.vacationRequestRepository.findOne({ where: { id } });
 
-  // En vacation-request.service.ts
-async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
-  ci: string;
-  fullname: string;
-  department?: string;
-  academicUnit?: string;
-})[]> {
+  // Verificar si existe
+  if (!request) {
+    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+  }
+
+  // Verificar si ya está eliminada
+  if (request.deleted) {
+    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+  }
+
+  // Verificar si está completamente aprobada
+  if (request.approvedByHR && request.approvedBySupervisor) {
+    throw new HttpException(
+      'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Verificar si tiene estado AUTHORIZED o SUSPENDED
+  if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
+    throw new HttpException(
+      `No se puede eliminar una solicitud con estado '${request.status}'`,
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Marcar como eliminada
+  request.deleted = true;
+  await this.vacationRequestRepository.save(request);
+
+  return { message: 'La solicitud de vacaciones fue marcada como eliminada correctamente' };
+}
+// Obtener Todas las solicitudes eliminadas
+async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
   const requests = await this.vacationRequestRepository.find({
-    where: [
-      { approvedByHR: false },              // Aún no revisadas por RRHH
-      { status: 'PENDING' }                 // Estado pendiente en general
-    ],
-    relations: ['user', 'user.department', 'user.academicUnit']
+    where: { deleted: true }, // 👈 Solo solicitudes eliminadas
+    relations: ['user', 'user.department', 'user.academicUnit'],
   });
 
   return requests.map((request) => {
-    const { user, ...rest } = request;
+    const { user, ...requestWithoutSensitiveData } = request;
+
+    const ci = user?.ci ?? 'N/A';
+    const username = user?.username ?? 'N/A';
+    const fullname = user?.fullName ?? 'N/A';
+    const department = user?.department?.name ?? null;
+    const academicUnit = user?.academicUnit?.name ?? null;
+
     return {
-      ...rest,
-      ci: user.ci,
-      fullname: user.fullName,
-      department: user.department?.name ?? null,
-      academicUnit: user.academicUnit?.name ?? null,
+      ...requestWithoutSensitiveData,
+      ci,
+      username,
+      fullname,
+      department,
+      academicUnit,
     };
   });
 }
+
+
+
+  // En vacation-request.service.ts
+  async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
+    ci: string;
+    fullname: string;
+    department?: string;
+    academicUnit?: string;
+  })[]> {
+    const requests = await this.vacationRequestRepository.find({
+      where: [
+        { approvedByHR: false },              // Aún no revisadas por RRHH
+        { status: 'PENDING' }                 // Estado pendiente en general
+      ],
+      relations: ['user', 'user.department', 'user.academicUnit']
+    });
+
+    return requests.map((request) => {
+      const { user, ...rest } = request;
+      return {
+        ...rest,
+        ci: user.ci,
+        fullname: user.fullName,
+        department: user.department?.name ?? null,
+        academicUnit: user.academicUnit?.name ?? null,
+      };
+    });
+  }
+
+
 
 }
