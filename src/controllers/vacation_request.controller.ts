@@ -188,19 +188,7 @@ export class VacationRequestController {
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
-  // Endpoint para obtener una solicitud de vacaciones por ID
-  @Get(':id')
-  @ApiOperation({ summary: 'Obtener solicitud de vacaciones por ID' })
-  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones encontrada' })
-  @ApiResponse({ status: 404, description: 'Solicitud de vacaciones no encontrada' })
-  async getVacationRequestById(@Param('id') id: number): Promise<VacationRequestDTO> {
-    try {
-      const vacationRequest = await this.vacationRequestService.getVacationRequestById(id);
-      return vacationRequest;
-    } catch (error) {
-      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cambiar el estado de una Solicitud por el supervisor' })
@@ -350,6 +338,19 @@ export class VacationRequestController {
   @ApiResponse({ status: 200, description: 'Lista de solicitudes eliminadas correctamente recuperada' })
   async getDeletedVacationRequests() {
     return this.vacationRequestService.getDeletedVacationRequests();
+  }
+    // Endpoint para obtener una solicitud de vacaciones por ID
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtener solicitud de vacaciones por ID' })
+  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones encontrada' })
+  @ApiResponse({ status: 404, description: 'Solicitud de vacaciones no encontrada' })
+  async getVacationRequestById(@Param('id') id: number): Promise<VacationRequestDTO> {
+    try {
+      const vacationRequest = await this.vacationRequestService.getVacationRequestById(id);
+      return vacationRequest;
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
 }

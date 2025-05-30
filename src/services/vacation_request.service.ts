@@ -618,6 +618,7 @@ if (tipoEmpleado === 'ADMINISTRATIVO' && department?.id) {
       recesos: vacationResponse.recesos,
       licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
       solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
+      deleted: request.deleted
     };
   }
   // Actualizar el estado de una solicitud por el supervisor
