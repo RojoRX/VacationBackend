@@ -193,20 +193,20 @@ export class UserService {
   }
 
   // Ajusta findById para aceptar relaciones opcionales
-// Ajusta findById para retornar siempre las relaciones específicas y aceptar otras opcionales
-async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
-  const defaultRelations = ['department', 'academicUnit', 'profession'];
-  const allRelations = options?.relations
-    ? [...new Set([...defaultRelations, ...options.relations])] // Combina y elimina duplicados
-    : defaultRelations; // Si no hay opciones, usa solo las por defecto
+  // Ajusta findById para retornar siempre las relaciones específicas y aceptar otras opcionales
+  async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
+    const defaultRelations = ['department', 'academicUnit', 'profession'];
+    const allRelations = options?.relations
+      ? [...new Set([...defaultRelations, ...options.relations])] // Combina y elimina duplicados
+      : defaultRelations; // Si no hay opciones, usa solo las por defecto
 
-  const user = await this.userRepository.findOne({
-    where: { id: userId },
-    relations: allRelations, // Siempre incluye las relaciones por defecto
-  });
-  console.log(this.transformUser(user));
-  return this.transformUser(user);
-}
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: allRelations, // Siempre incluye las relaciones por defecto
+    });
+    console.log(this.transformUser(user));
+    return this.transformUser(user);
+  }
 
   async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -242,36 +242,36 @@ async findById(userId: number, options?: { relations?: string[] }): Promise<Omit
     return this.transformUser(user) as Omit<User, 'password'>;
   }
   //User Interface
-async updateUserFields(
-  userId: number,
-  updateData: Partial<{
-    email: string; // Nuevo campo permitido para actualización
-    celular: string;
-  }>
-): Promise<Omit<User, 'password'>> {
-  // 1. Buscar al usuario por su ID
-  const user = await this.userRepository.findOne({
-    where: { id: userId },
-    // Ya no necesitamos cargar relaciones si solo actualizamos email y celular directamente en el usuario
-    // Si 'email' o 'celular' son campos de la entidad 'User' directamente, las relaciones son irrelevantes aquí.
-  });
+  async updateUserFields(
+    userId: number,
+    updateData: Partial<{
+      email: string; // Nuevo campo permitido para actualización
+      celular: string;
+    }>
+  ): Promise<Omit<User, 'password'>> {
+    // 1. Buscar al usuario por su ID
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      // Ya no necesitamos cargar relaciones si solo actualizamos email y celular directamente en el usuario
+      // Si 'email' o 'celular' son campos de la entidad 'User' directamente, las relaciones son irrelevantes aquí.
+    });
 
-  // 2. Verificar si el usuario existe
-  if (!user) {
-    throw new BadRequestException('Usuario no encontrado.');
+    // 2. Verificar si el usuario existe
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    // 3. Aplicar las actualizaciones solo para email y celular
+    // Usamos el operador '??' (nullish coalescing) para asegurar que solo se actualicen si el valor está presente en updateData
+    user.email = updateData.email ?? user.email;
+    user.celular = updateData.celular ?? user.celular;
+
+    // 4. Guardar los cambios en la base de datos
+    await this.userRepository.save(user);
+
+    // 5. Transformar y retornar el usuario actualizado (sin la contraseña)
+    return this.transformUser(user) as Omit<User, 'password'>;
   }
-
-  // 3. Aplicar las actualizaciones solo para email y celular
-  // Usamos el operador '??' (nullish coalescing) para asegurar que solo se actualicen si el valor está presente en updateData
-  user.email = updateData.email ?? user.email;
-  user.celular = updateData.celular ?? user.celular;
-
-  // 4. Guardar los cambios en la base de datos
-  await this.userRepository.save(user);
-
-  // 5. Transformar y retornar el usuario actualizado (sin la contraseña)
-  return this.transformUser(user) as Omit<User, 'password'>;
-}
 
   async getUserData(carnetIdentidad: string): Promise<any> {
     // Buscar usuario en la base de datos
@@ -373,13 +373,23 @@ async updateUserFields(
     const { password: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
-//Autenticacion 
+  //Autenticacion 
   async findOne(username: string): Promise<User | undefined> {
     return this.userRepository.findOne({
       where: { username },
       relations: ['department', 'academicUnit', 'profession'], // agrega las relaciones que necesites
     });
   }
+  async findByUsernameOrCi(identifier: string): Promise<User | undefined> {
+  return this.userRepository.findOne({
+    where: [
+      { username: identifier },
+      { ci: identifier }
+    ],
+    relations: ['department', 'academicUnit', 'profession']
+  });
+}
+
 }
 
 
