@@ -1,9 +1,10 @@
 // src/controllers/license.controller.ts
-import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException, Req } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { User } from 'src/entities/user.entity';
 
 @ApiTags('Licencias')
 @Controller('licenses')
@@ -52,7 +53,12 @@ export class LicenseController {
   async getPendingLicensesForHR() {
     return this.licenseService.getPendingLicensesForHR();
   }
-  
+  @Get('deleted')
+  async getDeletedLicenses(): Promise<LicenseResponseDto[]> {
+    return this.licenseService.getDeletedLicenses();
+  }
+
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener una licencia por ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID de la licencia' })
@@ -76,13 +82,19 @@ export class LicenseController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar una licencia' })
+  @ApiOperation({ summary: 'Eliminar una licencia (borrado lógico)' })
   @ApiParam({ name: 'id', required: true, description: 'ID de la licencia a eliminar' })
+  @ApiQuery({ name: 'userId', required: true, description: 'ID del usuario que solicita la eliminación' })
   @ApiResponse({ status: 204, description: 'Licencia eliminada exitosamente' })
+  @ApiResponse({ status: 403, description: 'No tiene permiso para eliminar esta licencia' })
   @ApiResponse({ status: 404, description: 'Licencia no encontrada' })
-  async remove(@Param('id') id: number): Promise<void> {
-    return this.licenseService.removeLicense(id);
+  async remove(
+    @Param('id') id: number,
+    @Query('userId') userId: number,
+  ): Promise<void> {
+    return this.licenseService.removeLicense(id, userId);
   }
+
 
   @Get('authorized/:userId')
   @ApiOperation({ summary: 'Obtener licencias autorizadas para un usuario' })

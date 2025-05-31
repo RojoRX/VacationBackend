@@ -28,6 +28,7 @@ export class LicenseResponseDto {
   userDepartmentName?: string; // Nombre del departamento del usuario
   supervisorDepartmentId?: number; // ID del departamento del supervisor
   supervisorDepartmentName?: string; // Nombre del departamento del supervisor
+  deleted:boolean;
 
   // Nuevos campos agregados:
   message?: string;

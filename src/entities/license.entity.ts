@@ -38,7 +38,7 @@ export class License {
   @Column({ type: 'date' })
   endDate: string;
 
-  @Column({ type: 'numeric', default: 0 }) 
+  @Column({ type: 'numeric', default: 0 })
   totalDays: number;
 
   @CreateDateColumn()
@@ -59,4 +59,8 @@ export class License {
   // Nuevo: Relación con el supervisor que aprobó la licencia
   @ManyToOne(() => User, { nullable: true }) // Opcional al momento de crear la licencia
   approvedBySupervisor: User; // El supervisor que aprobó la licencia
+
+  // Campo para borrado lógico
+  @Column({ type: 'boolean', default: false })
+  deleted: boolean;
 }

@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, Brackets, Repository } from 'typeorm';
 import { License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
@@ -28,7 +28,6 @@ export class LicenseService {
     private readonly notificationService: NotificationService,
     private readonly nonHolidayService: NonHolidayService
   ) { }
-
   async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -91,38 +90,43 @@ export class LicenseService {
 
     let totalDays = 0;
 
+    const zone = 'America/La_Paz';
+
+
     if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
       totalDays = 0.5;
     } else {
-      const dateCursor = new Date(startDate);
+      let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
+      const end = DateTime.fromISO(licenseData.endDate, { zone });
 
-      while (dateCursor <= endDate) {
-        const dateStr = dateCursor.toDateString();
-        const isoDateStr = dateCursor.toISOString().split('T')[0];
-        const dayOfWeek = dateCursor.getDay(); // 0 = domingo, 6 = sábado
-        const isHoliday = holidayDatesMap.has(dateStr);
+      while (dateCursor <= end) {
+        const isoDateStr = dateCursor.toISODate(); // YYYY-MM-DD
+        const dayOfWeek = dateCursor.weekday; // 1 = lunes, ..., 7 = domingo
+        const isHoliday = holidayDatesMap.has(isoDateStr);
 
-        if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday) {
+        console.log(`[DEBUG] Evaluando fecha: ${isoDateStr}`);
+        console.log(`- Día de la semana: ${dayOfWeek} (${dateCursor.toFormat('cccc')})`);
+        console.log(`- ¿Es feriado?: ${isHoliday}`);
+
+        if (dayOfWeek < 6 && !isHoliday) {
+          console.log(`✅ Día hábil contado (${totalDays + 1})`);
           totalDays++;
         }
 
         if (isHoliday) {
-          const holiday = holidayDatesMap.get(dateStr);
-          if (dayOfWeek === 0 || dayOfWeek === 6) {
-            ignoredWeekendHolidays.push({
-              date: isoDateStr,
-              description: holiday.description
-            });
+          const holiday = holidayDatesMap.get(isoDateStr);
+          if (dayOfWeek >= 6) {
+            ignoredWeekendHolidays.push({ date: isoDateStr, description: holiday.description });
           } else {
             holidaysApplied.push({
               date: isoDateStr,
-              year: new Date(holiday.date).getFullYear(),
+              year: dateCursor.year,
               description: holiday.description
             });
           }
         }
 
-        dateCursor.setDate(dateCursor.getDate() + 1);
+        dateCursor = dateCursor.plus({ days: 1 });
       }
     }
 
@@ -164,59 +168,20 @@ export class LicenseService {
       ignoredWeekendHolidays: ignoredWeekendHolidays.length > 0 ? ignoredWeekendHolidays : undefined
     };
   }
-
-
-
-  // Validación de enums
-  private validateLicenseEnums(licenseData: Partial<License>) {
-    if (!Object.values(LicenseType).includes(licenseData.licenseType)) {
-      throw new BadRequestException(`Valor inválido para licenseType: ${licenseData.licenseType}`);
-    }
-
-    if (!Object.values(TimeRequest).includes(licenseData.timeRequested)) {
-      throw new BadRequestException(`Valor inválido para timeRequested: ${licenseData.timeRequested}`);
-    }
-  }
-
-  // Cálculo de los días de licencia
-  private calculateLicenseDays(licenseData: Partial<License>) {
-    const startDate = DateTime.fromISO(licenseData.startDate).startOf('day');
-    const endDate = DateTime.fromISO(licenseData.endDate).startOf('day');
-
-    if (startDate > endDate) {
-      throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
-    }
-
-    let totalDays = 0;
-    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
-      totalDays = 0.5;
-    } else if (licenseData.timeRequested === TimeRequest.FULL_DAY || licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS) {
-      totalDays = endDate.diff(startDate, 'days').days + 1;
-    }
-
-    if (totalDays > 5) {
-      throw new BadRequestException('La licencia no puede exceder los 5 días.');
-    }
-
-    if (licenseData.timeRequested === TimeRequest.HALF_DAY && totalDays > 1) {
-      throw new BadRequestException('Cuando se solicita medio día, el rango de fechas debe ser de un solo día.');
-    }
-
-    return { startDate, endDate, totalDays };
-  }
-
   async findAllLicenses(): Promise<LicenseResponseDto[]> {
     const licenses = await this.licenseRepository.find({
+      where: { deleted: false },
       relations: ['user'],
     });
 
-
     return licenses.map(license => this.mapLicenseToDto(license));
   }
-
   async findOneLicense(id: number): Promise<LicenseResponseDto> {
     const license = await this.licenseRepository.findOne({
-      where: { id },
+      where: {
+        id,
+        deleted: false,
+      },
       relations: ['user'],
     });
 
@@ -226,60 +191,74 @@ export class LicenseService {
 
     return this.mapLicenseToDto(license);
   }
-
   async updateLicense(id: number, updateData: Partial<License>): Promise<LicenseResponseDto> {
     await this.licenseRepository.update(id, updateData);
     const updatedLicense = await this.findOneLicense(id);
     return updatedLicense;
   }
+  // Marca una licencia como eliminada (borrado lógico) si el usuario es ADMIN o el dueño de la licencia
+  async removeLicense(licenseId: number, requestingUserId: number): Promise<void> {
+    const license = await this.licenseRepository.findOne({
+      where: { id: licenseId },
+      relations: ['user'],
+    });
 
-  async removeLicense(id: number): Promise<void> {
-    await this.licenseRepository.delete(id);
+    if (!license) {
+      throw new NotFoundException('Licencia no encontrada');
+    }
+
+    if (license.deleted) {
+      throw new BadRequestException('La licencia ya fue eliminada');
+    }
+
+    // Obtener el usuario que realiza la solicitud
+    const requestingUser = await this.userRepository.findOne({ where: { id: requestingUserId } });
+
+    if (!requestingUser) {
+      throw new NotFoundException('Usuario solicitante no encontrado');
+    }
+
+    // Verificar si es administrador o dueño de la licencia
+    const isAdmin = requestingUser.role === 'ADMIN';
+    const isOwner = requestingUser.id === license.user.id;
+
+    if (!isAdmin && !isOwner) {
+      throw new BadRequestException('No tiene permiso para eliminar esta licencia');
+    }
+
+    // Marcar como eliminada
+    license.deleted = true;
+    await this.licenseRepository.save(license);
   }
-
+  // Retorna todas las licencias activas (no eliminadas) asociadas a un usuario dado
   async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
     // Verificar si el usuario existe
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-    // Buscar todas las licencias asociadas al usuario
+
+    // Buscar licencias no eliminadas asociadas al usuario
     const licenses = await this.licenseRepository.find({
-      where: { user: { id: userId } }, // Buscar por ID del usuario
+      where: {
+        user: { id: userId },
+        deleted: false,
+      },
       order: { issuedDate: 'DESC' },
     });
+
     if (!licenses || licenses.length === 0) {
       throw new NotFoundException('No se encontraron licencias para este usuario');
     }
 
-    // Mapear las licencias a DTOs
     return licenses.map(this.mapLicenseToDto);
   }
-
-  private mapLicenseToDto(license: License): LicenseResponseDto {
-    // Depuración del objeto License
-
-
-    if (!license.user) {
-      console.error('License user is undefined during mapping for License ID:', license.id);
-    }
-
-    return {
-      id: license.id,
-      licenseType: license.licenseType,
-      timeRequested: license.timeRequested,
-      startDate: license.startDate,
-      endDate: license.endDate,
-      issuedDate: license.issuedDate,
-      immediateSupervisorApproval: license.immediateSupervisorApproval,
-      personalDepartmentApproval: license.personalDepartmentApproval,
-      userId: license.user ? license.user.id : null, // Agregar control para caso en que user es undefined
-      totalDays: license.totalDays,
-    };
-  }
-
-
-  async getTotalLicensesForUser(userId: number, startDate: Date, endDate: Date): Promise<{ totalLicenses: number; totalDays: number }> {
+  // Calcula la cantidad total de licencias activas (no eliminadas) y los días usados por un usuario en un rango de fechas
+  async getTotalLicensesForUser(
+    userId: number,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ totalLicenses: number; totalDays: number }> {
     const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
     const endDateTime = DateTime.fromJSDate(endDate).startOf('day').plus({ days: 1 }); // Incluye el último día
 
@@ -287,20 +266,23 @@ export class LicenseService {
       .where('license.user.id = :userId', { userId })
       .andWhere('license.startDate >= :startDate', { startDate: startDateTime.toISODate() })
       .andWhere('license.endDate <= :endDate', { endDate: endDateTime.toISODate() })
+      .andWhere('license.deleted = false') // Filtra licencias no eliminadas
       .getMany();
 
     let totalDays = 0;
     for (const license of licenses) {
       const start = DateTime.fromJSDate(new Date(license.startDate)).startOf('day');
-      const end = DateTime.fromJSDate(new Date(license.endDate)).startOf('day').plus({ days: 1 }); // Incluye el último día
+      const end = DateTime.fromJSDate(new Date(license.endDate)).startOf('day').plus({ days: 1 });
+
       const days = end.diff(start, 'days').days;
 
       let additionalDays = 0;
       if (license.timeRequested === TimeRequest.HALF_DAY) {
         additionalDays = 0.5;
-      } else if (license.timeRequested === TimeRequest.FULL_DAY) {
-        additionalDays = days;
-      } else if (license.timeRequested === TimeRequest.MULTIPLE_DAYS) {
+      } else if (
+        license.timeRequested === TimeRequest.FULL_DAY ||
+        license.timeRequested === TimeRequest.MULTIPLE_DAYS
+      ) {
         additionalDays = days;
       }
 
@@ -327,6 +309,7 @@ export class LicenseService {
         .where('license.user.id = :userId', { userId })
         .andWhere('license.startDate >= :startDate', { startDate: startDateTime.toISODate() })
         .andWhere('license.endDate < :endDate', { endDate: endDateTime.toISODate() })
+        .andWhere('license.deleted = false')
         .andWhere('license.immediateSupervisorApproval = :approved', { approved: true })
         .andWhere('license.personalDepartmentApproval = :approved', { approved: true })
         .getMany();
@@ -349,7 +332,6 @@ export class LicenseService {
       throw new Error('Error al obtener licencias autorizadas');
     }
   }
-
   // Método para obtener las licencias del departamento del supervisor
   async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
     const supervisor = await this.userService.findById(supervisorId, {
@@ -401,9 +383,6 @@ export class LicenseService {
       userId: license.user.id,
     }));
   }
-
-
-
   // Método para que un supervisor apruebe o rechace una licencia
   async approveLicense(
     licenseId: number,
@@ -483,9 +462,9 @@ export class LicenseService {
       approvedBySupervisorName: approval ? supervisor.fullName : undefined,
       supervisorDepartmentId: approval ? supervisor.department?.id : undefined,
       supervisorDepartmentName: approval ? supervisor.department?.name : undefined,
+      deleted: license.deleted,
     };
   }
-
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   async updatePersonalDepartmentApproval(
@@ -548,8 +527,6 @@ export class LicenseService {
 
     return updatedLicense;
   }
-
-
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
     // 1. Validación inicial - Usuario existe
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -680,8 +657,7 @@ export class LicenseService {
       return savedLicenses.map(license => this.mapLicenseToDto(license));
     });
   }
-
-  //Licencias pendientes para Personal
+  // Retorna licencias pendientes de aprobación por el departamento de personal (solo las no eliminadas)
   async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
     ci: string;
     fullname: string;
@@ -689,7 +665,10 @@ export class LicenseService {
     academicUnit?: string;
   })[]> {
     const licenses = await this.licenseRepository.find({
-      where: { personalDepartmentApproval: false },
+      where: {
+        personalDepartmentApproval: false,
+        deleted: false, // Excluir licencias eliminadas lógicamente
+      },
       relations: ['user', 'user.department', 'user.academicUnit'],
     });
 
@@ -704,54 +683,82 @@ export class LicenseService {
       };
     });
   }
+  //Obtener las licencias eliminadas
+  async getDeletedLicenses(): Promise<LicenseResponseDto[]> {
+    const deletedLicenses = await this.licenseRepository.find({
+      where: { deleted: true },
+      relations: ['user'],
+      order: { issuedDate: 'DESC' }
+    });
+
+    return deletedLicenses.map(license => this.mapLicenseToDto(license));
+  }
 
 
 
   // Métodos auxiliares
+  private mapLicenseToDto(license: License): LicenseResponseDto {
+    // Depuración del objeto License
+
+
+    if (!license.user) {
+      console.error('License user is undefined during mapping for License ID:', license.id);
+    }
+
+    return {
+      id: license.id,
+      licenseType: license.licenseType,
+      timeRequested: license.timeRequested,
+      startDate: license.startDate,
+      endDate: license.endDate,
+      issuedDate: license.issuedDate,
+      immediateSupervisorApproval: license.immediateSupervisorApproval,
+      personalDepartmentApproval: license.personalDepartmentApproval,
+      userId: license.user ? license.user.id : null, // Agregar control para caso en que user es undefined
+      totalDays: license.totalDays,
+      deleted:license.deleted
+    };
+  }
   private datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
     return (start1 <= end2) && (end1 >= start2);
   }
-
   private calculateTotalDays(startDateStr: string, endDateStr: string): number {
     const startDate = new Date(startDateStr);
     const endDate = new Date(endDateStr);
     const timeDiff = endDate.getTime() - startDate.getTime();
     return Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // Incluye ambos días extremos
   }
-
   private getLicenseStatus(license: License): string {
     if (license.personalDepartmentApproval) return 'APROBADA';
     if (license.immediateSupervisorApproval) return 'PENDIENTE_APROBACION_DPTO';
     return 'PENDIENTE_APROBACION_SUPERVISOR';
   }
-
   // Verificar si ya existe una licencia en el rango de fechas
   private async validateNoExistingLicense(userId: number, startDateInput: string | Date, endDateInput: string | Date) {
-    // Convertir las fechas de entrada a objetos Date sin hora (solo fecha)
     const startDate = new Date(startDateInput);
     const endDate = new Date(endDateInput);
 
-    // Asegurarse de que las fechas sean válidas
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new BadRequestException('Fechas inválidas');
     }
 
-    // Formatear las fechas como strings YYYY-MM-DD para la comparación en la base de datos
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
-    // Consulta para verificar solapamiento
     const existingLicense = await this.licenseRepository.createQueryBuilder('license')
       .where('license.userId = :userId', { userId })
-      .andWhere(`
-      (license.startDate <= :endDate AND license.endDate >= :startDate) OR
-      (license.startDate BETWEEN :startDate AND :endDate) OR
-      (license.endDate BETWEEN :startDate AND :endDate)
-    `, {
+      .andWhere('license.deleted = false')
+      .andWhere(new Brackets(qb => {
+        qb.where('(license.startDate <= :endDate AND license.endDate >= :startDate)')
+          .orWhere('license.startDate BETWEEN :startDate AND :endDate')
+          .orWhere('license.endDate BETWEEN :startDate AND :endDate');
+      }))
+      .setParameters({
         startDate: startDateStr,
         endDate: endDateStr
       })
       .getOne();
+
 
     if (existingLicense) {
       throw new BadRequestException(
@@ -789,7 +796,6 @@ export class LicenseService {
 
     return workingDays.length;
   }
-
   private countWeekdays(startDate: Date, endDate: Date): number {
     if (!startDate || !endDate) {
       console.error('❌ Fechas inválidas');
@@ -817,8 +823,42 @@ export class LicenseService {
     console.log(`✅ Total días hábiles: ${count}`);
     return count;
   }
+  // Validación de enums
+  private validateLicenseEnums(licenseData: Partial<License>) {
+    if (!Object.values(LicenseType).includes(licenseData.licenseType)) {
+      throw new BadRequestException(`Valor inválido para licenseType: ${licenseData.licenseType}`);
+    }
 
+    if (!Object.values(TimeRequest).includes(licenseData.timeRequested)) {
+      throw new BadRequestException(`Valor inválido para timeRequested: ${licenseData.timeRequested}`);
+    }
+  }
+  // Cálculo de los días de licencia
+  private calculateLicenseDays(licenseData: Partial<License>) {
+    const startDate = DateTime.fromISO(licenseData.startDate).startOf('day');
+    const endDate = DateTime.fromISO(licenseData.endDate).startOf('day');
 
+    if (startDate > endDate) {
+      throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
+    }
+
+    let totalDays = 0;
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      totalDays = 0.5;
+    } else if (licenseData.timeRequested === TimeRequest.FULL_DAY || licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS) {
+      totalDays = endDate.diff(startDate, 'days').days + 1;
+    }
+
+    if (totalDays > 5) {
+      throw new BadRequestException('La licencia no puede exceder los 5 días.');
+    }
+
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY && totalDays > 1) {
+      throw new BadRequestException('Cuando se solicita medio día, el rango de fechas debe ser de un solo día.');
+    }
+
+    return { startDate, endDate, totalDays };
+  }
 
 
 }
