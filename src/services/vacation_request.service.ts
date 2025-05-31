@@ -507,6 +507,7 @@ export class VacationRequestService {
           ci: user.ci,
           fecha_ingreso: user.fecha_ingreso,
           username: user.username,
+          fullname: user.fullName
         },
       } as VacationRequestDTO;
     });
