@@ -200,7 +200,7 @@ export class VacationService {
     // Reusar el método calculateVacationDays
     return this.calculateVacationDays(ci, startDate.toJSDate(), endDate.toJSDate());
   }
-  async calculateAccumulatedDebt(
+async calculateAccumulatedDebt(
     carnetIdentidad: string,
     endDate: Date | string
   ): Promise<{
@@ -376,6 +376,7 @@ export class VacationService {
       promedioDeudaPorGestion: promedioDeuda,
       primeraGestion: detalles[0]?.startDate || null,
       ultimaGestion: detalles[detalles.length - 1]?.endDate || null,
+      
     };
 
     return {
@@ -383,7 +384,8 @@ export class VacationService {
       detalles,
       resumenGeneral
     };
-  }
+  } 
+
 
   async calculateDebtSinceDate(
     carnetIdentidad: string,
@@ -491,6 +493,7 @@ export class VacationService {
       promedioDeudaPorGestion: promedioDeuda,
       primeraGestion: periodosNoFuturos[0]?.startDate || null,
       ultimaGestion: periodosNoFuturos[periodosNoFuturos.length - 1]?.endDate || null,
+
     };
 
     return {

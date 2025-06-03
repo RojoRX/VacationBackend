@@ -6,5 +6,4 @@ export default interface ResumenGeneral {
     promedioDeudaPorGestion: number;
     primeraGestion: Date;
     ultimaGestion: Date;
-
   }
