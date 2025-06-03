@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, OneToOne } from 'typeorm';
 import { License } from './license.entity'; // Importa la entidad License
 import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad UserHolidayPeriod
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
@@ -9,6 +9,7 @@ import { TipoEmpleadoEnum } from 'src/enums/type.enum';
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { AcademicUnit } from './academic-unit.entity';
 import { Profession } from './profession.entity';
+import { UserConfig } from './user-config.entity';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -30,7 +31,7 @@ export class User {
   @IsString()
   username: string;
 
-  @Column({nullable: true})
+  @Column({ nullable: true })
   @IsOptional()
   @IsString()
   password?: string;
@@ -80,5 +81,10 @@ export class User {
 
   @OneToMany(() => Notification, notification => notification.recipient)
   notifications: Notification[];
+
+  // user.entity.ts
+  @OneToOne(() => UserConfig, config => config.user, { cascade: true, eager: true })
+  config: UserConfig;
+
 
 }

@@ -26,6 +26,7 @@ import { ProfessionModule } from './profession.module';
 import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { SystemConfigModule } from 'src/config/system-config.module';
+import { UserConfigModule } from './user-config.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SystemConfigModule } from 'src/config/system-config.module';
     VacationPolicyModule,
     ProfessionModule,
     SystemConfigModule,
+    UserConfigModule,
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],

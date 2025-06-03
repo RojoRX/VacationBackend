@@ -21,6 +21,7 @@ import { AuthGuard } from './auth/auth.guard';
 import { JwtModule } from '@nestjs/jwt';
 import { SystemConfig } from './config/system-config.entity';
 import { SystemConfigModule } from './config/system-config.module';
+import { UserConfigModule } from './modules/user-config.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { SystemConfigModule } from './config/system-config.module';
     NotificationModule,
     ReportsModule,
     AcademicUnitModule,
+    UserConfigModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,

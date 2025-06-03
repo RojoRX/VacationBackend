@@ -12,6 +12,7 @@ import ResumenGeneral from 'src/interfaces/resumen-general.interface';
 import { formatToSimpleDate, parseToStartOfDay } from 'src/utils/dateUtils';
 import { adjustPeriodEnd, isValidPeriod } from 'src/utils/date.helpers';
 import { SystemConfigService } from 'src/config/system-config.service';
+import { UserConfigService } from './user-config.service';
 
 @Injectable()
 export class VacationService {
@@ -24,6 +25,7 @@ export class VacationService {
     private readonly licenseService: LicenseService,
     private readonly vacationRequestService: VacationRequestService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly userConfigService: UserConfigService,
   ) { }
 
   async calculateVacationDays(
@@ -175,7 +177,6 @@ export class VacationService {
       }
     };
   }
-
   /**
    * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.
    * Solo requiere el CI del usuario.
@@ -199,7 +200,6 @@ export class VacationService {
     // Reusar el método calculateVacationDays
     return this.calculateVacationDays(ci, startDate.toJSDate(), endDate.toJSDate());
   }
-
   async calculateAccumulatedDebt(
     carnetIdentidad: string,
     endDate: Date | string
@@ -270,6 +270,7 @@ export class VacationService {
     let deudaAcumulativa = 0;
     const detalles = [];
 
+
     // Obtener configuración general del sistema (si existe)
     // Obtener configuración general del sistema (si existe)
     const systemConfig = await this.systemConfigService.getStartCountingYear(); // Ej: { year: 2015 } o null
@@ -277,18 +278,48 @@ export class VacationService {
     // Determinar fecha de inicio del cálculo
     let currentStartDate: DateTime;
 
-    if (systemConfig?.year) {
+    // Obtener configuración personalizada del usuario (si existe)
+    const userConfig = await this.userConfigService.findByUserId(userData.id).catch((err) => {
+      console.error("❌ Error al obtener configuración personalizada:", err);
+      return null;
+    });
+
+    console.log("🔍 Configuración personalizada del usuario:", userConfig);
+
+    // 1. Fecha personalizada del usuario
+    if (userConfig?.customStartYear) {
+      currentStartDate = DateTime.fromObject({
+        year: userConfig.customStartYear,
+        month: fechaIngreso.month,
+        day: fechaIngreso.day
+      }, { zone: 'utc' });
+
+      console.log(`📆 Inicio de conteo desde configuración personalizada del usuario: ${currentStartDate.toISODate()}`);
+    }
+    // 2. Fecha desde configuración global del sistema
+    else if (systemConfig?.year) {
       currentStartDate = DateTime.fromObject({
         year: systemConfig.year,
         month: fechaIngreso.month,
         day: fechaIngreso.day
       }, { zone: 'utc' });
 
-      console.log(`📆 Inicio de conteo desde configuración global (solo cambia el año): ${currentStartDate.toISODate()}`);
-    } else {
+      console.log(`📆 Inicio de conteo desde configuración global: ${currentStartDate.toISODate()}`);
+    }
+    // 3. Fecha de ingreso del usuario
+    else {
       currentStartDate = fechaIngreso;
       console.log(`📆 Inicio de conteo usando fecha de ingreso del usuario: ${currentStartDate.toISODate()}`);
     }
+
+    // Incluir deuda inicial si existe en la configuración personalizada
+    if (userConfig?.initialVacationBalance !== undefined) {
+      console.log(`💼 Saldo inicial recibido desde configuración: ${userConfig.initialVacationBalance}`);
+      deudaAcumulativa = userConfig.initialVacationBalance;
+    } else {
+      console.log("⚠️ No se recibió saldo inicial (initialVacationBalance) en la configuración.");
+    }
+
 
 
     while (currentStartDate < parsedEndDate) {
@@ -468,7 +499,4 @@ export class VacationService {
       resumenGeneral
     };
   }
-
-
-
 }
