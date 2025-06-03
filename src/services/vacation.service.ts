@@ -11,6 +11,7 @@ import { VacationRequestService } from './vacation_request.service';
 import ResumenGeneral from 'src/interfaces/resumen-general.interface';
 import { formatToSimpleDate, parseToStartOfDay } from 'src/utils/dateUtils';
 import { adjustPeriodEnd, isValidPeriod } from 'src/utils/date.helpers';
+import { SystemConfigService } from 'src/config/system-config.service';
 
 @Injectable()
 export class VacationService {
@@ -22,6 +23,7 @@ export class VacationService {
     private readonly userHolidayPeriodService: UserHolidayPeriodService,
     private readonly licenseService: LicenseService,
     private readonly vacationRequestService: VacationRequestService,
+    private readonly systemConfigService: SystemConfigService,
   ) { }
 
   async calculateVacationDays(
@@ -146,7 +148,7 @@ export class VacationService {
       deuda = Math.abs(remainingVacationDays);
       remainingVacationDays = 0;  // Evitar que los días disponibles sean negativos
     }
-    console.log(`[Depuración - calculateVacationDays] Deuda calculada: ${deuda}`);
+
 
     return {
       carnetIdentidad: userData.carnetIdentidad,
@@ -197,6 +199,7 @@ export class VacationService {
     // Reusar el método calculateVacationDays
     return this.calculateVacationDays(ci, startDate.toJSDate(), endDate.toJSDate());
   }
+
   async calculateAccumulatedDebt(
     carnetIdentidad: string,
     endDate: Date | string
@@ -267,7 +270,27 @@ export class VacationService {
     let deudaAcumulativa = 0;
     const detalles = [];
 
-    let currentStartDate = fechaIngreso;
+    // Obtener configuración general del sistema (si existe)
+    // Obtener configuración general del sistema (si existe)
+    const systemConfig = await this.systemConfigService.getStartCountingYear(); // Ej: { year: 2015 } o null
+
+    // Determinar fecha de inicio del cálculo
+    let currentStartDate: DateTime;
+
+    if (systemConfig?.year) {
+      currentStartDate = DateTime.fromObject({
+        year: systemConfig.year,
+        month: fechaIngreso.month,
+        day: fechaIngreso.day
+      }, { zone: 'utc' });
+
+      console.log(`📆 Inicio de conteo desde configuración global (solo cambia el año): ${currentStartDate.toISODate()}`);
+    } else {
+      currentStartDate = fechaIngreso;
+      console.log(`📆 Inicio de conteo usando fecha de ingreso del usuario: ${currentStartDate.toISODate()}`);
+    }
+
+
     while (currentStartDate < parsedEndDate) {
       const currentEndDate = currentStartDate.plus({ years: 1 });
       const adjustedEndDate = currentEndDate > parsedEndDate ? parsedEndDate : currentEndDate;
@@ -330,6 +353,7 @@ export class VacationService {
       resumenGeneral
     };
   }
+
   async calculateDebtSinceDate(
     carnetIdentidad: string,
     startDate: Date,

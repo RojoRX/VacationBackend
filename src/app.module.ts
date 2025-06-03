@@ -19,6 +19,8 @@ import { AuthModule } from './auth/auth.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { JwtModule } from '@nestjs/jwt';
+import { SystemConfig } from './config/system-config.entity';
+import { SystemConfigModule } from './config/system-config.module';
 
 @Module({
   imports: [
@@ -52,7 +54,8 @@ import { JwtModule } from '@nestjs/jwt';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN },
     }),
-    AuthModule
+    AuthModule, 
+    SystemConfigModule
   ],
   controllers: [],
   providers: [AppService,

@@ -20,6 +20,7 @@ import { LicenseModule } from './license.module';
 import { VacationRequestModule } from './vacation_request.module';
 import { VacationPolicyModule } from './vacationPolicyModule.module';
 import { ProfessionModule } from './profession.module';
+import { SystemConfigModule } from 'src/config/system-config.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ProfessionModule } from './profession.module';
     LicenseModule, // Aquí se usa forwardRef
     VacationPolicyModule,
     ProfessionModule,
+    SystemConfigModule,
     forwardRef(() => VacationRequestModule),
   ],
   controllers: [VacationController],

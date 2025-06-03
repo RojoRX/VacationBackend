@@ -90,11 +90,11 @@ export class VacationRequestService {
     ));
     const startPeriodIso = startPeriodDate.toISOString();
     const endPeriodIso = endPeriodDate.toISOString();
-    console.log('Fechas del período de gestión:', startPeriodDate.toISOString(), endPeriodDate.toISOString());
+
 
     // Obtener las gestiones acumuladas
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodIso);
-    console.log('Respuesta de gestiones acumuladas:', accumulatedDebtResponse);
+
 
     // Validar que no existan gestiones anteriores con días disponibles (sin cambios)
     this.validateVacationRequest(
@@ -113,7 +113,7 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    console.log('Gestión correspondiente encontrada:', gestionCorrespondiente);
+
 
     // Verificar si hay días disponibles
     if (gestionCorrespondiente.diasDisponibles <= 0) {
@@ -122,7 +122,7 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    console.log('Días disponibles en la gestión:', gestionCorrespondiente.diasDisponibles);
+
 
     // Calcular la fecha de fin automáticamente contando solo días hábiles
     // Calcular la fecha de fin automáticamente contando solo días hábiles
@@ -131,8 +131,7 @@ export class VacationRequestService {
     let currentDate = new Date(startDateObj);
     let workingDaysCount = 0;
 
-    console.log('Fecha de inicio para cálculo de endDate:', startDateObj.toISOString());
-    console.log('Días a tomar:', daysToTake);
+
 
     while (workingDaysCount < daysToTake) {
       const dayOfWeek = currentDate.getUTCDay(); // Usar getUTCDay() para evitar problemas de zona horaria
@@ -200,7 +199,7 @@ export class VacationRequestService {
     // Retornar sin datos sensibles
     // Retornar sin datos sensibles, incluyendo los días solicitados
     const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-    console.log('--- Fin de createVacationRequest ---');
+
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
   }
   // Método auxiliar para validar gestiones anteriores con días disponibles
@@ -221,7 +220,7 @@ export class VacationRequestService {
         'No se puede crear la solicitud de vacaciones: existen gestiones anteriores con días disponibles.'
       );
     }
-    console.log(detalles)
+    
   }
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
