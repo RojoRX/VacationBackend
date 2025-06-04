@@ -188,17 +188,9 @@ export class LicenseController {
     description: 'Solicitud incorrecta o parámetro inválido.',
   })
   async getAllLicensesForUser(
-    @Param('userId', ParseIntPipe) userId: number, // Parseamos el parámetro userId como entero
+    @Param('userId', ParseIntPipe) userId: number
   ): Promise<LicenseResponseDto[]> {
-    try {
-      // Llamada al servicio para obtener las licencias
-      return await this.licenseService.getAllLicensesForUser(userId);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException('Usuario o licencias no encontradas');
-      }
-      throw new BadRequestException('Solicitud incorrecta');
-    }
+    return this.licenseService.getAllLicensesForUser(userId);
   }
 
 

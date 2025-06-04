@@ -231,28 +231,28 @@ export class LicenseService {
     await this.licenseRepository.save(license);
   }
   // Retorna todas las licencias activas (no eliminadas) asociadas a un usuario dado
-  async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
-    // Verificar si el usuario existe
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    // Buscar licencias no eliminadas asociadas al usuario
-    const licenses = await this.licenseRepository.find({
-      where: {
-        user: { id: userId },
-        deleted: false,
-      },
-      order: { issuedDate: 'DESC' },
-    });
-
-    if (!licenses || licenses.length === 0) {
-      throw new NotFoundException('No se encontraron licencias para este usuario');
-    }
-
-    return licenses.map(this.mapLicenseToDto);
+async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
+  // Verificar si el usuario existe
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+  if (!user) {
+    throw new NotFoundException('Usuario no encontrado');
   }
+
+  // Buscar licencias no eliminadas asociadas al usuario
+  const licenses = await this.licenseRepository.find({
+    where: {
+      user: { id: userId },
+      deleted: false,
+    },
+    order: { issuedDate: 'DESC' },
+  });
+
+  if (!licenses || licenses.length === 0) {
+    throw new BadRequestException('El usuario no tiene licencias activas registradas');
+  }
+
+  return licenses.map(this.mapLicenseToDto);
+}
   // Calcula la cantidad total de licencias activas (no eliminadas) y los días usados por un usuario en un rango de fechas
   async getTotalLicensesForUser(
     userId: number,
@@ -693,8 +693,6 @@ export class LicenseService {
 
     return deletedLicenses.map(license => this.mapLicenseToDto(license));
   }
-
-
 
   // Métodos auxiliares
   private mapLicenseToDto(license: License): LicenseResponseDto {
