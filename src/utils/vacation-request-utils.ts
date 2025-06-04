@@ -73,34 +73,31 @@ export async function ensureNoOverlappingVacations(
   endDate: string,
   excludeRequestId?: number
 ): Promise<void> {
-  const where: any = [
-    {
-      user: { id: userId },
-      status: 'AUTHORIZED',
-      approvedByHR: true,
-      approvedBySupervisor: true,
-      startDate: LessThanOrEqual(endDate),
-      endDate: MoreThanOrEqual(startDate),
-    },
-    {
-      user: { id: userId },
-      status: 'PENDING',
-      startDate: LessThanOrEqual(endDate),
-      endDate: MoreThanOrEqual(startDate),
-    },
-    {
-      user: { id: userId },
-      status: 'SUSPENDED',
-      startDate: LessThanOrEqual(endDate),
-      endDate: MoreThanOrEqual(startDate),
-    },
-  ];
+  const baseCondition = {
+    user: { id: userId },
+    startDate: LessThanOrEqual(endDate),
+    endDate: MoreThanOrEqual(startDate),
+    deleted: false,  // <-- DESCARTAR eliminadas lógicamente
+  };
 
-  if (excludeRequestId) {
-    where.forEach((condition) => {
+  const statuses = ['AUTHORIZED', 'PENDING', 'SUSPENDED'];
+
+  // Creamos condiciones por cada status
+  const where = statuses.map(status => {
+    const condition: any = { ...baseCondition, status };
+
+    if (status === 'AUTHORIZED') {
+      // Para authorized también se requiere aprobación de RRHH y supervisor
+      condition.approvedByHR = true;
+      condition.approvedBySupervisor = true;
+    }
+
+    if (excludeRequestId) {
       condition.id = Not(excludeRequestId);
-    });
-  }
+    }
+
+    return condition;
+  });
 
   const overlappingRequests = await vacationRequestRepository.find({ where });
 
@@ -110,7 +107,6 @@ export async function ensureNoOverlappingVacations(
     );
   }
 }
-
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(
     vacationRequestRepository: any,

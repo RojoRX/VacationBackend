@@ -242,7 +242,6 @@ export class VacationRequestService {
     });
   }
 
-
   // Método para obtener todas las solicitudes de vacaciones
   async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
 
@@ -271,7 +270,6 @@ export class VacationRequestService {
       };
     });
   }
-
 
   async countAuthorizedVacationDaysInRange(
     ci: string,
@@ -1150,29 +1148,46 @@ export class VacationRequestService {
       totalDays,
       this.nonHolidayService
     );
+    // Convertir fechas de inicio y fin en UTC, hora 00:00 (inicio del día)
+    const startDateUTC = DateTime.fromISO(startDate, { zone: 'utc' }).startOf('day').toISO();
+    const endDateUTC = DateTime.fromISO(endDate, { zone: 'utc' }).startOf('day').toISO();
 
-    // Crear la entidad de solicitud con los tipos correctos
+    // requestDate puede ser opcional, si viene convertimos igual
+    const requestDateUTC = requestDate
+      ? DateTime.fromISO(requestDate, { zone: 'utc' }).startOf('day').toISO()
+      : DateTime.now().setZone('utc').startOf('day').toISO();
+
+    // returnDate viene de calculateReturnDate, que según tu código probablemente retorna fecha en formato ISO simple, convertimos igual:
+    const returnDateUTC = DateTime.fromISO(returnDate, { zone: 'utc' }).startOf('day').toISO();
+
+    // managementPeriodStart y managementPeriodEnd opcionales
+    const managementStartUTC = managementPeriodStart
+      ? DateTime.fromISO(managementPeriodStart, { zone: 'utc' }).startOf('day').toISO()
+      : null;
+
+    const managementEndUTC = managementPeriodEnd
+      ? DateTime.fromISO(managementPeriodEnd, { zone: 'utc' }).startOf('day').toISO()
+      : null;
+
+    // Luego en el objeto a guardar:
     const vacationData = {
-      user: { id: user.id }, // Referencia al usuario por ID
-      requestDate: requestDate ? DateTime.fromISO(requestDate).toISODate() : DateTime.now().toISODate(),
-      startDate: start.toISODate(),
-      endDate: end.toISODate(),
+      user: { id: user.id },
+      requestDate: requestDateUTC,
+      startDate: startDateUTC,
+      endDate: endDateUTC,
       totalDays,
       position,
       status,
       approvedByHR: true,
       approvedBySupervisor: true,
-      approvedBy: { id: user.id }, // Referencia al aprobador por ID
-      returnDate: DateTime.fromISO(returnDate).toISODate(),
-      managementPeriodStart: managementPeriodStart
-        ? DateTime.fromISO(managementPeriodStart).toISODate()
-        : null,
-      managementPeriodEnd: managementPeriodEnd
-        ? DateTime.fromISO(managementPeriodEnd).toISODate()
-        : null,
-      reviewDate: DateTime.now().toISODate(),
+      approvedBy: { id: user.id },
+      returnDate: returnDateUTC,
+      managementPeriodStart: managementStartUTC,
+      managementPeriodEnd: managementEndUTC,
+      reviewDate: DateTime.now().setZone('utc').toISO(),
       isPast: true,
     };
+
 
     try {
       const vacation = this.vacationRequestRepository.create(vacationData);

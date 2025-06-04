@@ -154,20 +154,18 @@ export class ReportsService {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Reporte Usuario');
 
-    // Obtener datos del usuario
     try {
       const user = await this.userRepository.findOne({
         where: { ci: params.ci },
+        relations: ['department', 'academicUnit'],
       });
-
-      console.log('👤 Datos del usuario obtenidos:', user);
 
       if (!user) {
         throw new NotFoundException('Usuario no encontrado');
       }
 
-      // Cabecera con datos personales
-      worksheet.addRow(['Reporte de licencias por usuario']).font = { bold: true, size: 14 };
+      // Cabecera con datos del usuario
+      worksheet.addRow(['Reporte detallado de licencias por usuario']).font = { bold: true, size: 14 };
       worksheet.addRow([]);
       worksheet.addRow(['Nombre completo', user.fullName]);
       worksheet.addRow(['Carnet de identidad', user.ci]);
@@ -175,77 +173,82 @@ export class ReportsService {
       worksheet.addRow(['Tipo de empleado', user.tipoEmpleado]);
       worksheet.addRow(['Fecha de ingreso', user.fecha_ingreso]);
       worksheet.addRow(['Cargo/Posición', user.position || '—']);
+      worksheet.addRow(['Unidad académica', user.academicUnit?.name || '—']);
+      worksheet.addRow(['Departamento', user.department?.name || '—']);
       worksheet.addRow([]);
 
-      // Cabecera de tabla
-      worksheet.addRow(['Mes', 'Año', 'Estado', 'Solicitudes', 'Días']).eachCell(cell => {
+      // Encabezado de tabla
+      worksheet.addRow([
+        'ID', 'Tipo', 'Tiempo Solicitado', 'Fecha Inicio', 'Fecha Fin',
+        'Días Totales', 'Emitido', 'Aprobación Supervisor', 'Aprobación Personal',
+        'Estado', 'Mes', 'Año'
+      ]).eachCell(cell => {
         cell.font = { bold: true };
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFCCE5FF' }
+          fgColor: { argb: 'FFCCE5FF' },
         };
         cell.border = {
           top: { style: 'thin' },
           bottom: { style: 'thin' },
           left: { style: 'thin' },
-          right: { style: 'thin' }
+          right: { style: 'thin' },
         };
       });
 
-      // Query de licencias por usuario
-      const query = this.licenseRepository
-        .createQueryBuilder('license')
-        .select([
-          'EXTRACT(MONTH FROM license.startDate) AS month',
-          'EXTRACT(YEAR FROM license.startDate) AS year',
-          'license.personalDepartmentApproval AS approved',
-          'COUNT(license.id) AS totalrequests',
-          'SUM(license.totalDays) AS totaldays'
-        ])
-        .leftJoin('license.user', 'user')
+      // Licencias del usuario con filtro de fecha, excluyendo eliminadas
+      const qb = this.licenseRepository.createQueryBuilder('license')
+        .leftJoinAndSelect('license.user', 'user')
         .where('user.ci = :ci', { ci: params.ci })
-        .groupBy('EXTRACT(MONTH FROM license.startDate), EXTRACT(YEAR FROM license.startDate), license.personalDepartmentApproval')
-        .orderBy('year, month');
+        .andWhere('license.deleted = false');
 
       if (params.year) {
-        query.andWhere('EXTRACT(YEAR FROM license.startDate) = :year', { year: params.year });
+        qb.andWhere('EXTRACT(YEAR FROM license.startDate) = :year', { year: params.year });
       }
 
       if (params.month) {
-        query.andWhere('EXTRACT(MONTH FROM license.startDate) = :month', { month: params.month });
+        qb.andWhere('EXTRACT(MONTH FROM license.startDate) = :month', { month: params.month });
       }
 
-      const reportData = await query.getRawMany();
-      console.log('📄 Resultado de la consulta de licencias:', reportData);
+      const licenses = await qb.getMany();
+      console.log('📄 Licencias encontradas:', licenses.length);
 
       let totalAprobadas = 0;
       let totalNoAprobadas = 0;
 
-      for (const item of reportData) {
-        const estado = item.approved ? 'Aprobadas' : 'No aprobadas';
+      for (const lic of licenses) {
+        const estado = lic.personalDepartmentApproval ? 'Aprobada' : 'No aprobada';
+
         worksheet.addRow([
-          this.getMonthName(Number(item.month)),
-          item.year,
+          lic.id,
+          lic.licenseType,
+          lic.timeRequested,
+          lic.startDate,
+          lic.endDate,
+          lic.totalDays,
+          lic.issuedDate.toISOString().split('T')[0],
+          lic.immediateSupervisorApproval ? 'Sí' : 'No',
+          lic.personalDepartmentApproval ? 'Sí' : 'No',
           estado,
-          Number(item.totalrequests),
-          Number(item.totaldays)
+          this.getMonthName(new Date(lic.startDate).getMonth() + 1),
+          new Date(lic.startDate).getFullYear()
         ]);
 
-        if (item.approved) {
-          totalAprobadas += Number(item.totaldays);
+        if (lic.personalDepartmentApproval) {
+          totalAprobadas += Number(lic.totalDays);
         } else {
-          totalNoAprobadas += Number(item.totaldays);
+          totalNoAprobadas += Number(lic.totalDays);
         }
       }
 
       worksheet.addRow([]);
-      worksheet.addRow(['Subtotal días aprobados', '', '', '', totalAprobadas]);
-      worksheet.addRow(['Subtotal días no aprobados', '', '', '', totalNoAprobadas]);
-      const totalRow = worksheet.addRow(['Total días solicitados', '', '', '', totalAprobadas + totalNoAprobadas]);
+      worksheet.addRow(['Subtotal días aprobados', '', '', '', '', totalAprobadas]);
+      worksheet.addRow(['Subtotal días no aprobados', '', '', '', '', totalNoAprobadas]);
+      const totalRow = worksheet.addRow(['Total días solicitados', '', '', '', '', totalAprobadas + totalNoAprobadas]);
       totalRow.font = { bold: true };
 
-      // Ajuste de columnas
+      // Ajustar ancho de columnas
       worksheet.columns.forEach(column => {
         let maxLength = 12;
         column.eachCell?.({ includeEmpty: true }, cell => {
@@ -259,9 +262,10 @@ export class ReportsService {
 
     } catch (error) {
       console.error('🔴 Error en generateUserMonthlyReport:', error);
-      throw error; // Re-lanza el error para que lo capture el controlador
+      throw error;
     }
   }
+
 
   private getMonthName(monthNumber: number): string {
     const months = [
@@ -280,11 +284,16 @@ export class ReportsService {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Vacaciones Usuario');
 
-    const user = await this.userRepository.findOne({ where: { ci: params.ci } });
+    const user = await this.userRepository.findOne({
+      where: { ci: params.ci },
+      relations: ['department', 'academicUnit', 'profession'],
+    });
+
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    // Cabecera
     worksheet.addRow(['Reporte de vacaciones por usuario']).font = { bold: true, size: 14 };
     worksheet.addRow([]);
     worksheet.addRow(['Nombre completo', user.fullName]);
@@ -293,6 +302,9 @@ export class ReportsService {
     worksheet.addRow(['Tipo de empleado', user.tipoEmpleado]);
     worksheet.addRow(['Fecha de ingreso', user.fecha_ingreso]);
     worksheet.addRow(['Cargo', user.position || '—']);
+    worksheet.addRow(['Unidad académica', user.academicUnit?.name || '—']);
+    worksheet.addRow(['Departamento', user.department?.name || '—']);
+    worksheet.addRow(['Profesión', user.profession?.name || '—']);
     worksheet.addRow([]);
 
     // Encabezado
@@ -311,11 +323,11 @@ export class ReportsService {
       };
     });
 
-    // Construcción del query con filtros
     const query = this.vacationRepository
       .createQueryBuilder('vacation')
       .leftJoin('vacation.user', 'user')
-      .where('user.ci = :ci', { ci: params.ci });
+      .where('user.ci = :ci', { ci: params.ci })
+      .andWhere('vacation.deleted = false'); // <-- filtro agregado para excluir eliminados
 
     if (params.year) {
       query.andWhere('EXTRACT(YEAR FROM vacation.startDate) = :year', { year: params.year });
@@ -327,17 +339,27 @@ export class ReportsService {
 
     const vacaciones = await query.getMany();
 
+    const statusTranslations: Record<string, string> = {
+      PENDING: 'Pendiente',
+      AUTHORIZED: 'Autorizada',
+      POSTPONED: 'Postergada',
+      DENIED: 'Denegada',
+      SUSPENDED: 'Suspendida',
+    };
+
     let totalDias = 0;
     const statusCounter: Record<string, number> = {};
 
     for (const vac of vacaciones) {
+      const statusEsp = statusTranslations[vac.status] || vac.status;
+
       worksheet.addRow([
         vac.id,
         vac.requestDate,
         vac.startDate,
         vac.endDate,
         vac.totalDays,
-        vac.status,
+        statusEsp,
         vac.returnDate || '—',
         vac.approvedByHR ? 'Sí' : 'No',
         vac.approvedBySupervisor ? 'Sí' : 'No',
@@ -345,21 +367,24 @@ export class ReportsService {
         vac.managementPeriodEnd,
       ]);
 
-      totalDias += vac.totalDays;
-      statusCounter[vac.status] = (statusCounter[vac.status] || 0) + vac.totalDays;
+      // Solo contar días tomados si el estado es AUTHORIZED o SUSPENDED
+      if (vac.status === 'AUTHORIZED' || vac.status === 'SUSPENDED') {
+        totalDias += vac.totalDays;
+      }
+      statusCounter[statusEsp] = (statusCounter[statusEsp] || 0) + vac.totalDays;
+
     }
 
     worksheet.addRow([]);
     worksheet.addRow(['Resumen de días por estado']).font = { bold: true };
 
-    for (const status of Object.keys(statusCounter)) {
-      worksheet.addRow([status, statusCounter[status]]);
+    for (const estado in statusCounter) {
+      worksheet.addRow([estado, statusCounter[estado]]);
     }
 
     const totalRow = worksheet.addRow(['Total días tomados', totalDias]);
     totalRow.font = { bold: true };
 
-    // Ajuste automático de columnas
     worksheet.columns.forEach(col => {
       let max = 12;
       col.eachCell?.({ includeEmpty: true }, cell => {
@@ -371,4 +396,5 @@ export class ReportsService {
 
     return await workbook.xlsx.writeBuffer();
   }
+
 }
