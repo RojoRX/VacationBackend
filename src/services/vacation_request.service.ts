@@ -512,120 +512,130 @@ export class VacationRequestService {
       } as VacationRequestDTO;
     });
   }
+
   // Método para obtener una solicitud de vacaciones por su ID
-  async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
-    // Buscar la solicitud de vacaciones por ID, incluyendo la relación con el usuario
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user', 'approvedBy'], // Incluir la relación con el usuario y con el aprobador
-    });
+async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
+  // Buscar la solicitud con las relaciones necesarias
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: [
+      'user',
+      'user.academicUnit',
+      'user.department',
+      'approvedBy',
+    ],
+  });
 
-    // Si la solicitud no se encuentra, lanzar una excepción
-    if (!request) {
-      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-    }
-
-    // Mapear los datos de la solicitud a un DTO
-    const vacationRequestDTO: VacationRequestDTO = {
-      id: request.id,
-      position: request.position,
-      requestDate: request.requestDate,
-      startDate: request.startDate,
-      endDate: request.endDate,
-      totalDays: request.totalDays,
-      status: request.status,
-      returnDate: request.returnDate,
-      postponedDate: request.postponedDate,
-      reviewDate: request.reviewDate,
-      postponedReason: request.postponedReason,
-      approvedByHR: request.approvedByHR,
-      approvedBySupervisor: request.approvedBySupervisor,
-      user: {
-        id: request.user.id,
-        ci: request.user.ci,
-        fecha_ingreso: request.user.fecha_ingreso,
-        username: request.user.username,
-      },
-      managementPeriodStart: request.managementPeriodStart,
-      managementPeriodEnd: request.managementPeriodEnd,
-      approvedBy: request.approvedBy ? {
-        id: request.approvedBy.id,
-        ci: request.approvedBy.ci,
-        fecha_ingreso: request.approvedBy.fecha_ingreso,
-        username: request.approvedBy.username,
-      } : undefined, // Manejar caso en que no hay aprobador
-    };
-
-    return vacationRequestDTO;
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
   }
 
-  async getVacationRequestDetails(id: number): Promise<any> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user', 'user.department'], // Asegúrate de que las relaciones estén correctamente configuradas
-    });
-
-    if (!request) {
-      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-    }
-
-    if (!request.user) {
-      throw new HttpException('User not found for this vacation request', HttpStatus.NOT_FOUND);
-    }
-
-    // Obtener los datos necesarios
-    const ci = request.user.ci; // Asegúrate de que este campo esté disponible
-    const managementPeriodStart = request.managementPeriodStart; // Cambiado
-    const managementPeriodEnd = request.managementPeriodEnd; // Cambiado
-
-    if (!managementPeriodStart || !managementPeriodEnd) {
-      throw new HttpException('Management period not found for this request', HttpStatus.NOT_FOUND);
-    }
-
-    // Obtener los días restantes de vacaciones del empleado
-    let vacationResponse;
-    try {
-      vacationResponse = await this.vacationService.calculateVacationDays(
-        ci,
-        new Date(managementPeriodStart),
-        new Date(managementPeriodEnd)
-      );
-    } catch (error) {
-      console.error('Error al calcular los días de vacaciones:', error);
-      throw new HttpException('Error al calcular los días de vacaciones', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-
-    // Construir la respuesta con la información deseada
-    return {
-      requestId: request.id,
-      userName: request.user.fullName,
+  const vacationRequestDTO: VacationRequestDTO = {
+    id: request.id,
+    position: request.position,
+    requestDate: request.requestDate,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    reviewDate: request.reviewDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    user: {
+      id: request.user.id,
       ci: request.user.ci,
-      position: request.user.position,
-      requestDate: request.requestDate,
-      department: request.user.department ? request.user.department.name : null,
-      startDate: request.startDate,
-      endDate: request.endDate,
-      reviewDate: request.reviewDate,
-      totalDays: request.totalDays,
-      status: request.status,
-      returnDate: request.returnDate,
-      postponedDate: request.postponedDate,
-      postponedReason: request.postponedReason,
-      approvedByHR: request.approvedByHR,
-      approvedBySupervisor: request.approvedBySupervisor,
-      managementPeriodStart: managementPeriodStart,
-      managementPeriodEnd: managementPeriodEnd,
-      // Agregar los datos calculados
-      fechaIngreso: vacationResponse.fechaIngreso,
-      antiguedadEnAnios: vacationResponse.antiguedadEnAnios,
-      diasDeVacacion: vacationResponse.diasDeVacacion,
-      diasDeVacacionRestantes: vacationResponse.diasDeVacacionRestantes,
-      recesos: vacationResponse.recesos,
-      licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
-      solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
-      deleted: request.deleted
-    };
+      fecha_ingreso: request.user.fecha_ingreso,
+      username: request.user.username,
+      academicUnitName: request.user.academicUnit?.name || null,
+      departmentName: request.user.department?.name || null,
+    },
+    managementPeriodStart: request.managementPeriodStart,
+    managementPeriodEnd: request.managementPeriodEnd,
+    approvedBy: request.approvedBy
+      ? {
+          id: request.approvedBy.id,
+          ci: request.approvedBy.ci,
+          fecha_ingreso: request.approvedBy.fecha_ingreso,
+          username: request.approvedBy.username,
+        }
+      : undefined,
+  };
+
+  return vacationRequestDTO;
+}
+
+
+
+
+async getVacationRequestDetails(id: number): Promise<any> {
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user', 'user.department', 'user.academicUnit'], // Añadido academicUnit
+  });
+
+  if (!request) {
+    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
   }
+
+  if (!request.user) {
+    throw new HttpException('User not found for this vacation request', HttpStatus.NOT_FOUND);
+  }
+
+  const ci = request.user.ci;
+  const managementPeriodStart = request.managementPeriodStart;
+  const managementPeriodEnd = request.managementPeriodEnd;
+
+  if (!managementPeriodStart || !managementPeriodEnd) {
+    throw new HttpException('Management period not found for this request', HttpStatus.NOT_FOUND);
+  }
+
+  let vacationResponse;
+  try {
+    vacationResponse = await this.vacationService.calculateVacationDays(
+      ci,
+      new Date(managementPeriodStart),
+      new Date(managementPeriodEnd)
+    );
+  } catch (error) {
+    console.error('Error al calcular los días de vacaciones:', error);
+    throw new HttpException('Error al calcular los días de vacaciones', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  return {
+    requestId: request.id,
+    userName: request.user.fullName,
+    ci: request.user.ci,
+    position: request.user.position,
+    requestDate: request.requestDate,
+    // Mostrar uno u otro nombre según corresponda
+    department: request.user.department?.name || null,
+    academicUnit: request.user.academicUnit?.name || null,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    reviewDate: request.reviewDate,
+    totalDays: request.totalDays,
+    status: request.status,
+    returnDate: request.returnDate,
+    postponedDate: request.postponedDate,
+    postponedReason: request.postponedReason,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+    managementPeriodStart,
+    managementPeriodEnd,
+    fechaIngreso: vacationResponse.fechaIngreso,
+    antiguedadEnAnios: vacationResponse.antiguedadEnAnios,
+    diasDeVacacion: vacationResponse.diasDeVacacion,
+    diasDeVacacionRestantes: vacationResponse.diasDeVacacionRestantes,
+    recesos: vacationResponse.recesos,
+    licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
+    solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
+    deleted: request.deleted
+  };
+}
+
   // Actualizar el estado de una solicitud por el supervisor
   async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
     const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];

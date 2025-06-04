@@ -25,5 +25,9 @@ export class VacationRequestDTO {
     ci: string;
     fecha_ingreso: string;
     username: string;
+    // Dentro de UserDTO
+    academicUnitName?: string | null;
+    departmentName?: string | null;
+
   };
 }
