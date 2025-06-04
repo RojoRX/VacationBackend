@@ -19,6 +19,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/s
 import { UpdateStatusDto } from 'src/dto/updateStatus.dto';
 import { PostponeVacationRequestDTO } from 'src/dto/postponed-vacation-request.dto';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
+import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -341,6 +342,11 @@ export class VacationRequestController {
   @ApiResponse({ status: 200, description: 'Lista de solicitudes eliminadas correctamente recuperada' })
   async getDeletedVacationRequests() {
     return this.vacationRequestService.getDeletedVacationRequests();
+  }
+
+  @Post('pastVacations')
+  async createPastVacation(@Body() createPastVacationDto: CreatePastVacationDto) {
+    return this.vacationRequestService.createPastVacation(createPastVacationDto);
   }
   // Endpoint para obtener una solicitud de vacaciones por ID
   @Get(':id')

@@ -1,4 +1,5 @@
 // src/utils/vacation-request-utils.ts
+import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { NonHolidayService } from 'src/services/nonholiday.service';
@@ -72,7 +73,6 @@ export async function ensureNoOverlappingVacations(
   endDate: string,
   excludeRequestId?: number
 ): Promise<void> {
-  // Verificamos todas las solicitudes relevantes, no solo las autorizadas
   const where: any = [
     {
       user: { id: userId },
@@ -105,10 +105,11 @@ export async function ensureNoOverlappingVacations(
   const overlappingRequests = await vacationRequestRepository.find({ where });
 
   if (overlappingRequests.length > 0) {
-    throw new Error('La solicitud de vacaciones se solapa con otra solicitud activa (pendiente, suspendida o autorizada)');
+    throw new BadRequestException(
+      'La solicitud se solapa con otra vacación activa (pendiente, suspendida o autorizada).'
+    );
   }
 }
-
 
 // Contar los días de vacaciones autorizados en un rango de fechas
 export async function countAuthorizedVacationDaysInRange(
