@@ -11,6 +11,9 @@ import {
   Put,
   ParseIntPipe,
   HttpCode,
+  Delete,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { VacationRequestService } from 'src/services/vacation_request.service';
 import { CreateVacationRequestDto } from 'src/dto/create-vacation-request.dto';
@@ -20,6 +23,7 @@ import { UpdateStatusDto } from 'src/dto/updateStatus.dto';
 import { PostponeVacationRequestDTO } from 'src/dto/postponed-vacation-request.dto';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
+import { AuthGuard } from 'src/auth/auth.guard';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -348,6 +352,25 @@ export class VacationRequestController {
   async createPastVacation(@Body() createPastVacationDto: CreatePastVacationDto) {
     return this.vacationRequestService.createPastVacation(createPastVacationDto);
   }
+  // vacation-requests.controller.ts
+
+@UseGuards(AuthGuard)
+@Delete(':id/force')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Elimina lógicamente una solicitud de vacaciones sin validar aprobaciones ni estado' })
+@ApiResponse({ status: 200, description: 'Solicitud eliminada correctamente' })
+@ApiResponse({ status: 403, description: 'No tienes permiso para eliminar esta solicitud' })
+@ApiResponse({ status: 404, description: 'Solicitud o usuario no encontrado' })
+async forceDelete(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: any
+) {
+  const userId = req.user?.sub; // ✅ Usa `sub` porque así viene del payload
+  return this.vacationRequestService.forceSoftDeleteVacationRequest(id, userId);
+}
+
+
+
   // Endpoint para obtener una solicitud de vacaciones por ID
   @Get(':id')
   @ApiOperation({ summary: 'Obtener solicitud de vacaciones por ID' })

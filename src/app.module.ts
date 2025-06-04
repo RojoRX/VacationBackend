@@ -25,7 +25,10 @@ import { UserConfigModule } from './modules/user-config.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      isGlobal: true, // 👈 Esto hace disponible ConfigService en todo el proyecto
+    }),
+
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DATABASE_HOST,
@@ -56,7 +59,7 @@ import { UserConfigModule } from './modules/user-config.module';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN },
     }),
-    AuthModule, 
+    AuthModule,
     SystemConfigModule
   ],
   controllers: [],

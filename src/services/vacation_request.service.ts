@@ -1014,10 +1014,6 @@ export class VacationRequestService {
 
     return { message: 'La solicitud fue cancelada/eliminada correctamente' };
   }
-
-
-
-
   // Obtener Todas las solicitudes eliminadas
   async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -1072,120 +1068,152 @@ export class VacationRequestService {
     });
   }
 
-async createPastVacation(dto: CreatePastVacationDto) {
-  const {
-    userId,
-    requestDate,
-    startDate,
-    endDate,
-    position,
-    status,
-    managementPeriodStart,
-    managementPeriodEnd,
-  } = dto;
+  async createPastVacation(dto: CreatePastVacationDto) {
+    const {
+      userId,
+      requestDate,
+      startDate,
+      endDate,
+      position,
+      status,
+      managementPeriodStart,
+      managementPeriodEnd,
+    } = dto;
 
-  // Validación de estados permitidos
-  const allowedStatuses = ['AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
-  if (!allowedStatuses.includes(status)) {
-    throw new HttpException(
-      `El estado '${status}' no es válido para una solicitud pasada.`,
-      HttpStatus.BAD_REQUEST,
+    // Validación de estados permitidos
+    const allowedStatuses = ['AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
+    if (!allowedStatuses.includes(status)) {
+      throw new HttpException(
+        `El estado '${status}' no es válido para una solicitud pasada.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Validación de usuario
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new HttpException(
+        `Usuario con ID ${userId} no encontrado.`,
+        HttpStatus.NOT_FOUND
+      );
+    }
+
+    // Validación de fechas
+    const start = DateTime.fromISO(startDate, { zone: 'utc' });
+    const end = DateTime.fromISO(endDate, { zone: 'utc' });
+
+    if (!start.isValid || !end.isValid) {
+      throw new HttpException(
+        'Formato de fecha inválido. Use formato ISO (YYYY-MM-DD).',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    if (end < start) {
+      throw new HttpException(
+        'La fecha de inicio no puede ser posterior a la fecha de fin.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Verificar solicitudes pendientes
+    const allRequests = await this.vacationRequestRepository.find({
+      where: { user: { id: user.id }, deleted: false },
+      order: { requestDate: 'DESC' },
+    });
+
+    if (allRequests.some(r => r.status === 'PENDING')) {
+      throw new HttpException(
+        'No puedes registrar una solicitud pasada mientras exista una pendiente.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Verificar solapamiento con otras solicitudes
+    await ensureNoOverlappingVacations(
+      this.vacationRequestRepository,
+      user.id,
+      start.toISODate(),
+      end.toISODate()
     );
+
+    // Calcular días de vacaciones
+    const totalDays = await calculateVacationDays(
+      start.toISODate(),
+      end.toISODate(),
+      this.nonHolidayService
+    );
+
+    // Calcular fecha de retorno
+    const returnDate = await calculateReturnDate(
+      end.toISODate(),
+      totalDays,
+      this.nonHolidayService
+    );
+
+    // Crear la entidad de solicitud con los tipos correctos
+    const vacationData = {
+      user: { id: user.id }, // Referencia al usuario por ID
+      requestDate: requestDate ? DateTime.fromISO(requestDate).toISODate() : DateTime.now().toISODate(),
+      startDate: start.toISODate(),
+      endDate: end.toISODate(),
+      totalDays,
+      position,
+      status,
+      approvedByHR: true,
+      approvedBySupervisor: true,
+      approvedBy: { id: user.id }, // Referencia al aprobador por ID
+      returnDate: DateTime.fromISO(returnDate).toISODate(),
+      managementPeriodStart: managementPeriodStart
+        ? DateTime.fromISO(managementPeriodStart).toISODate()
+        : null,
+      managementPeriodEnd: managementPeriodEnd
+        ? DateTime.fromISO(managementPeriodEnd).toISODate()
+        : null,
+      reviewDate: DateTime.now().toISODate(),
+      isPast: true,
+    };
+
+    try {
+      const vacation = this.vacationRequestRepository.create(vacationData);
+      return await this.vacationRequestRepository.save(vacation);
+    } catch (error) {
+      throw new HttpException(
+        'Error al guardar la solicitud de vacaciones pasada',
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
   }
 
-  // Validación de usuario
-  const user = await this.userService.findById(userId);
-  if (!user) {
-    throw new HttpException(
-      `Usuario con ID ${userId} no encontrado.`,
-      HttpStatus.NOT_FOUND
-    );
+  // Eliminar sin considerar estado ni aprobaciones
+  async forceSoftDeleteVacationRequest(id: number, userId: number): Promise<{ message: string }> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+
+    if (!request) {
+      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    if (request.deleted) {
+      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
+    }
+
+    if (request.user.id !== userId && user.role !== 'ADMIN') {
+      throw new HttpException('No tienes permiso para eliminar esta solicitud', HttpStatus.FORBIDDEN);
+    }
+
+    request.deleted = true;
+    await this.vacationRequestRepository.save(request);
+
+    return { message: 'La solicitud fue eliminada correctamente (forzado)' };
   }
 
-  // Validación de fechas
-  const start = DateTime.fromISO(startDate, { zone: 'utc' });
-  const end = DateTime.fromISO(endDate, { zone: 'utc' });
-
-  if (!start.isValid || !end.isValid) {
-    throw new HttpException(
-      'Formato de fecha inválido. Use formato ISO (YYYY-MM-DD).',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  if (end < start) {
-    throw new HttpException(
-      'La fecha de inicio no puede ser posterior a la fecha de fin.',
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-
-  // Verificar solicitudes pendientes
-  const allRequests = await this.vacationRequestRepository.find({
-    where: { user: { id: user.id }, deleted: false },
-    order: { requestDate: 'DESC' },
-  });
-
-  if (allRequests.some(r => r.status === 'PENDING')) {
-    throw new HttpException(
-      'No puedes registrar una solicitud pasada mientras exista una pendiente.',
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-
-  // Verificar solapamiento con otras solicitudes
-  await ensureNoOverlappingVacations(
-    this.vacationRequestRepository,
-    user.id,
-    start.toISODate(),
-    end.toISODate()
-  );
-
-  // Calcular días de vacaciones
-  const totalDays = await calculateVacationDays(
-    start.toISODate(),
-    end.toISODate(),
-    this.nonHolidayService
-  );
-
-  // Calcular fecha de retorno
-  const returnDate = await calculateReturnDate(
-    end.toISODate(),
-    totalDays,
-    this.nonHolidayService
-  );
-
-  // Crear la entidad de solicitud con los tipos correctos
-  const vacationData = {
-    user: { id: user.id }, // Referencia al usuario por ID
-    requestDate: requestDate ? DateTime.fromISO(requestDate).toISODate() : DateTime.now().toISODate(),
-    startDate: start.toISODate(),
-    endDate: end.toISODate(),
-    totalDays,
-    position,
-    status,
-    approvedByHR: true,
-    approvedBySupervisor: true,
-    approvedBy: { id: user.id }, // Referencia al aprobador por ID
-    returnDate: DateTime.fromISO(returnDate).toISODate(),
-    managementPeriodStart: managementPeriodStart 
-      ? DateTime.fromISO(managementPeriodStart).toISODate() 
-      : null,
-    managementPeriodEnd: managementPeriodEnd 
-      ? DateTime.fromISO(managementPeriodEnd).toISODate() 
-      : null,
-    reviewDate: DateTime.now().toISODate(),
-    isPast: true,
-  };
-
-  try {
-    const vacation = this.vacationRequestRepository.create(vacationData);
-    return await this.vacationRequestRepository.save(vacation);
-  } catch (error) {
-    throw new HttpException(
-      'Error al guardar la solicitud de vacaciones pasada',
-      HttpStatus.INTERNAL_SERVER_ERROR
-    );
-  }
-}
 }
