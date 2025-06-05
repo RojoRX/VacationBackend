@@ -1,10 +1,14 @@
 // src/controllers/license.controller.ts
-import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException, Req } from '@nestjs/common';
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException, Req, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { User } from 'src/entities/user.entity';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Licencias')
 @Controller('licenses')
@@ -167,6 +171,28 @@ export class LicenseController {
     @Param('supervisorId') supervisorId: number,
   ): Promise<LicenseResponseDto[]> { // Cambia el tipo de retorno a LicenseResponseDto[]
     return this.licenseService.findLicensesByDepartment(supervisorId);
+  }
+
+  // --- ¡CAMBIOS AQUÍ! ---
+  @UseGuards(AuthGuard, RolesGuard) // 1. Aplica AMBOS guards en este orden.
+  @Roles(RoleEnum.ADMIN)               // 2. Especifica que solo el rol 'ADMIN' puede acceder.
+  // --- FIN DE CAMBIOS ---
+  @Delete(':id/admin-remove') // Una ruta más específica para la eliminación por admin
+  @HttpCode(HttpStatus.NO_CONTENT) // Retorna 204 No Content para eliminaciones exitosas
+  @ApiOperation({
+    summary: 'Elimina lógicamente una licencia por un administrador',
+    description: 'Permite a un administrador marcar una licencia como eliminada (borrado lógico) sin requerir validaciones adicionales de estado o aprobación.',
+  })
+  @ApiResponse({ status: 204, description: 'Licencia eliminada correctamente' })
+  @ApiResponse({ status: 400, description: 'La licencia ya fue eliminada' })
+  @ApiResponse({ status: 403, description: 'No tienes permiso para realizar esta acción (solo administradores)' }) // Importante: ahora RolesGuard lanzará 403
+  @ApiResponse({ status: 404, description: 'Licencia no encontrada' })
+  async adminRemoveLicense(
+    @Param('id', ParseIntPipe) licenseId: number,
+  ): Promise<void> {
+    // La lógica de verificación de rol ya está en los guards.
+    // El servicio solo necesita la lógica de negocio de la eliminación.
+    await this.licenseService.adminRemoveLicense(licenseId);
   }
 
 

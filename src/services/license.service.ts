@@ -231,28 +231,28 @@ export class LicenseService {
     await this.licenseRepository.save(license);
   }
   // Retorna todas las licencias activas (no eliminadas) asociadas a un usuario dado
-async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
-  // Verificar si el usuario existe
-  const user = await this.userRepository.findOne({ where: { id: userId } });
-  if (!user) {
-    throw new NotFoundException('Usuario no encontrado');
+  async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
+    // Verificar si el usuario existe
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Buscar licencias no eliminadas asociadas al usuario
+    const licenses = await this.licenseRepository.find({
+      where: {
+        user: { id: userId },
+        deleted: false,
+      },
+      order: { issuedDate: 'DESC' },
+    });
+
+    if (!licenses || licenses.length === 0) {
+      throw new BadRequestException('El usuario no tiene licencias activas registradas');
+    }
+
+    return licenses.map(this.mapLicenseToDto);
   }
-
-  // Buscar licencias no eliminadas asociadas al usuario
-  const licenses = await this.licenseRepository.find({
-    where: {
-      user: { id: userId },
-      deleted: false,
-    },
-    order: { issuedDate: 'DESC' },
-  });
-
-  if (!licenses || licenses.length === 0) {
-    throw new BadRequestException('El usuario no tiene licencias activas registradas');
-  }
-
-  return licenses.map(this.mapLicenseToDto);
-}
   // Calcula la cantidad total de licencias activas (no eliminadas) y los días usados por un usuario en un rango de fechas
   async getTotalLicensesForUser(
     userId: number,
@@ -694,6 +694,29 @@ async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
     return deletedLicenses.map(license => this.mapLicenseToDto(license));
   }
 
+  //Eliminacion logica del administrador
+  async adminRemoveLicense(licenseId: number): Promise<void> {
+    const license = await this.licenseRepository.findOne({
+      where: { id: licenseId },
+    });
+
+    if (!license) {
+      throw new NotFoundException('Licencia no encontrada');
+    }
+
+    if (license.deleted) {
+      throw new BadRequestException('La licencia ya fue eliminada');
+    }
+
+    // Marcar como eliminada
+    license.deleted = true;
+    await this.licenseRepository.save(license);
+  }
+
+
+
+
+
   // Métodos auxiliares
   private mapLicenseToDto(license: License): LicenseResponseDto {
     // Depuración del objeto License
@@ -714,7 +737,7 @@ async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
       personalDepartmentApproval: license.personalDepartmentApproval,
       userId: license.user ? license.user.id : null, // Agregar control para caso en que user es undefined
       totalDays: license.totalDays,
-      deleted:license.deleted
+      deleted: license.deleted
     };
   }
   private datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
@@ -857,6 +880,4 @@ async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
 
     return { startDate, endDate, totalDays };
   }
-
-
 }
