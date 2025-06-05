@@ -24,8 +24,7 @@ async createUserHolidayPeriod(createHolidayPeriodDto: {
   userId: number;
 }): Promise<UserHolidayPeriod> {
   const { name, startDate, endDate, userId } = createHolidayPeriodDto;
-  console.log("Recibiendo startDate " + " " + startDate)
-  console.log("Recibiendo endDate " + " " + endDate)
+
   const user = await this.userRepository.findOne({ where: { id: userId } });
   if (!user) {
     throw new BadRequestException('El usuario especificado no existe.');
@@ -45,13 +44,11 @@ async createUserHolidayPeriod(createHolidayPeriodDto: {
   const startDateToStore = normalizeToMidnight(startDate);
   const endDateToStore = normalizeToMidnight(endDate);
 
-  console.log(`Después de formatear para almacenar: ${startDateToStore} - ${endDateToStore}`);
 
   const start = new Date(startDateToStore);
   const end = new Date(endDateToStore);
 
-  console.log("Convirtiendo startDate a start " + " " + start)
-  console.log("Convirtiendo endDate a end " + " " + end)
+
   if (start >= end) {
     throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
   }
@@ -114,7 +111,6 @@ async updateUserHolidayPeriod(
     relations: ['user'],
   });
 
-  console.log("Datos recibidos:", updateData.startDate, updateData.endDate);
 
   if (!existingPeriod) {
     throw new NotFoundException(`Período de receso con id ${id} no encontrado.`);
@@ -144,10 +140,6 @@ async updateUserHolidayPeriod(
     const startDate = updateData.startDate ? normalizeDateInput(updateData.startDate) : new Date(existingPeriod.startDate);
     const endDate = updateData.endDate ? normalizeDateInput(updateData.endDate) : new Date(existingPeriod.endDate);
 
-    console.log("Fechas normalizadas (UTC):", {
-      start: startDate.toISOString(),
-      end: endDate.toISOString()
-    });
 
     // Ajustar para almacenamiento en BD (formato YYYY-MM-DD HH:MM:SS)
     const formatForDB = (date: Date): string => {
@@ -158,7 +150,7 @@ async updateUserHolidayPeriod(
     const startDateForDB = formatForDB(startDate);
     const endDateForDB = formatForDB(endDate);
 
-    console.log("Fechas para BD:", { startDateForDB, endDateForDB });
+
 
     // Validaciones de fechas
     if (startDate >= endDate) {
@@ -205,11 +197,6 @@ async updateUserHolidayPeriod(
       .getOne();
 
     if (overlapping) {
-      console.log('Conflicto con período existente:', {
-        id: overlapping.id,
-        start: overlapping.startDate,
-        end: overlapping.endDate
-      });
       throw new BadRequestException('Las fechas ingresadas se superponen con otro receso existente.');
     }
 
@@ -224,7 +211,7 @@ async updateUserHolidayPeriod(
 }
 
   async getUserHolidayPeriods(userId: number, year: number): Promise<UserHolidayPeriodDto[]> {
-    console.log(`Buscando recesos para userId: ${userId}, year: ${year}`);
+
 
     const result = await this.userHolidayPeriodRepository.find({
       where: { user: { id: userId }, year },
@@ -249,7 +236,7 @@ async updateUserHolidayPeriod(
 
 
   async getAllUserHolidayPeriods(userId: number): Promise<UserHolidayPeriodDto[]> {
-    console.log(`Buscando recesos para userId: ${userId}`); // Verifica el userId
+    //console.log(`Buscando recesos para userId: ${userId}`); // Verifica el userId
     const result = await this.userHolidayPeriodRepository.find({
       where: { user: { id: userId } }, // Realiza la consulta
     });

@@ -9,6 +9,8 @@ import { VacationModule } from './vacation.module'; // forwardRef para evitar la
 import { NotificationModule } from './notification.module';
 import { NonHolidayModule } from './nonholiday.module';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
+import { LicenseValidationService } from 'src/services/license-validation.service';
+import { LicensesValidationController } from 'src/controllers/licenseValidation.controller';
 
 @Module({
   imports: [
@@ -19,8 +21,8 @@ import { NonHoliday } from 'src/entities/nonholiday.entity';
     NonHolidayModule
 
   ],
-  providers: [LicenseService],
-  controllers: [LicenseController],
+  providers: [LicenseService, LicenseValidationService],
+  controllers: [LicenseController, LicensesValidationController],
   exports: [LicenseService],
 })
 export class LicenseModule {}
