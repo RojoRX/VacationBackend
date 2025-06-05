@@ -11,22 +11,30 @@ export class AuthService {
     private jwtService: JwtService
   ) { }
 
+  // ...
   async signIn(
-    identifier: string, // puede ser username o ci
+    identifier: string,
     pass: string
   ): Promise<{ accessToken: string; userData: any }> {
-    // Buscar usuario por username o ci
     const user = await this.usersService.findByUsernameOrCi(identifier);
 
-    const isMatch = await bcrypt.compare(pass, user.password);
-    if (!user || !isMatch) {
+    // --- MODIFICACIÓN RECOMENDADA AQUÍ ---
+    // Primero verifica si el usuario fue encontrado
+    if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const userRoleMapped = mapRole(user.role); // Usamos tu mapRole para obtener el string final del rol
+    // Ahora, solo si el usuario existe, compara la contraseña
+    const isMatch = await bcrypt.compare(pass, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+    // --- FIN MODIFICACIÓN ---
 
+    const userRoleMapped = mapRole(user.role);
 
-    const payload = { sub: user.id, username: user.username, role: userRoleMapped, };
+    // El payload ahora incluye 'sub' (ID), 'username', y 'role'
+    const payload = { sub: user.id, username: user.username, role: userRoleMapped };
     const token = await this.jwtService.signAsync(payload);
 
     return {
@@ -35,7 +43,7 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email ?? null,
-        role: mapRole(user.role),
+        role: mapRole(user.role), // Still good to map for userData display
         ci: user.ci,
         fullName: user.fullName,
         celular: user.celular ?? null,

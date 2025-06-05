@@ -11,6 +11,7 @@ import { NotificationService } from './notification.service';
 import toLocalDateOnly from 'src/utils/normalizaedDate';
 import { NonHolidayService } from './nonholiday.service';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
+import { parseISO, format, setYear, getYear } from 'date-fns';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -28,7 +29,8 @@ export class LicenseService {
     private readonly notificationService: NotificationService,
     private readonly nonHolidayService: NonHolidayService
   ) { }
-  async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+    // Validaciones básicas de usuario y datos requeridos
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
@@ -36,8 +38,10 @@ export class LicenseService {
       throw new BadRequestException('Fechas, tipo de licencia y tiempo solicitado son requeridos');
     }
 
+    // Validar enums
     this.validateLicenseEnums(licenseData);
 
+    // Validación de fechas
     const startDate = new Date(licenseData.startDate);
     const endDate = new Date(licenseData.endDate);
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
@@ -48,6 +52,7 @@ export class LicenseService {
       throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
     }
 
+    // Validaciones específicas por tipo de tiempo solicitado
     if (
       licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
       licenseData.startDate === licenseData.endDate
@@ -59,7 +64,7 @@ export class LicenseService {
       throw new BadRequestException('La licencia de medio día debe tener la misma fecha de inicio y fin');
     }
 
-
+    // Validación de fecha/hora para solicitudes
     const now = DateTime.local().setZone('America/La_Paz');
     const today = now.startOf('day');
     const cutoffTime = today.set({ hour: 20 });
@@ -71,6 +76,45 @@ export class LicenseService {
       );
     }
 
+    // VALIDACIÓN DE DÍAS DISPONIBLES PARA VACACIONES
+    if (licenseData.licenseType === LicenseType.VACATION) {
+      // 1. Obtener fecha de ingreso ajustada al año actual
+      const fechaIngreso = parseISO(user.fecha_ingreso);
+      const currentYear = getYear(new Date());
+      const endDateForDebtCalculation = format(setYear(fechaIngreso, currentYear), 'yyyy-MM-dd');
+
+      // 2. Calcular días disponibles
+      const debtResult = await this.vacationService.calculateAccumulatedDebt(
+        user.ci,
+        endDateForDebtCalculation
+      );
+
+      // 3. Obtener días disponibles de la última gestión (año actual)
+      const lastGestion = debtResult.detalles[debtResult.detalles.length - 1];
+      const diasDisponibles = lastGestion?.diasDisponibles ?? 0;
+
+      console.log(`[DEBUG] Días disponibles para VACACION: ${diasDisponibles}`);
+
+      // 4. Validar según el tipo de tiempo solicitado
+      if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+        if (diasDisponibles < 0.5) {
+          throw new BadRequestException(
+            `No tiene suficientes días disponibles (${diasDisponibles}) para solicitar medio día de vacaciones`
+          );
+        }
+      } else {
+        // Calcular días totales solicitados
+        const totalRequestedDays = await this.calculateRequestedDays(licenseData);
+        
+        if (totalRequestedDays > diasDisponibles) {
+          throw new BadRequestException(
+            `Solicitó ${totalRequestedDays} día(s) pero solo tiene ${diasDisponibles} día(s) disponibles`
+          );
+        }
+      }
+    }
+
+    // Cálculo de días hábiles y feriados
     const startStr = startDate.toISOString().split('T')[0];
     const endStr = endDate.toISOString().split('T')[0];
 
@@ -89,9 +133,7 @@ export class LicenseService {
     }
 
     let totalDays = 0;
-
     const zone = 'America/La_Paz';
-
 
     if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
       totalDays = 0.5;
@@ -100,16 +142,11 @@ export class LicenseService {
       const end = DateTime.fromISO(licenseData.endDate, { zone });
 
       while (dateCursor <= end) {
-        const isoDateStr = dateCursor.toISODate(); // YYYY-MM-DD
-        const dayOfWeek = dateCursor.weekday; // 1 = lunes, ..., 7 = domingo
+        const isoDateStr = dateCursor.toISODate();
+        const dayOfWeek = dateCursor.weekday;
         const isHoliday = holidayDatesMap.has(isoDateStr);
 
-        console.log(`[DEBUG] Evaluando fecha: ${isoDateStr}`);
-        console.log(`- Día de la semana: ${dayOfWeek} (${dateCursor.toFormat('cccc')})`);
-        console.log(`- ¿Es feriado?: ${isHoliday}`);
-
         if (dayOfWeek < 6 && !isHoliday) {
-          console.log(`✅ Día hábil contado (${totalDays + 1})`);
           totalDays++;
         }
 
@@ -130,14 +167,16 @@ export class LicenseService {
       }
     }
 
-
+    // Validación de máximo de días consecutivos
     const maxDays = 5;
     if (totalDays > maxDays) {
       throw new BadRequestException(`No puede solicitar más de ${maxDays} días consecutivos (excluyendo feriados)`);
     }
 
+    // Validar que no existan licencias solapadas
     await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
 
+    // Crear y guardar la licencia
     const license = this.licenseRepository.create({
       ...licenseData,
       user,
@@ -153,13 +192,13 @@ export class LicenseService {
       }
     );
 
+    // Notificar a supervisores y administradores
     await this.notificationService.notifyRelevantSupervisorsAndAdmins(
       `El usuario ${user.fullName} ha solicitado una licencia del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
       user.id,
       'LICENSE',
-      savedLicense.id  // ✅ Este es el ID correcto // si tienes el ID de la licencia para referenciar
+      savedLicense.id
     );
-
 
     return {
       ...this.mapLicenseToDto(savedLicense),
@@ -168,6 +207,7 @@ export class LicenseService {
       ignoredWeekendHolidays: ignoredWeekendHolidays.length > 0 ? ignoredWeekendHolidays : undefined
     };
   }
+
   async findAllLicenses(): Promise<LicenseResponseDto[]> {
     const licenses = await this.licenseRepository.find({
       where: { deleted: false },
@@ -879,5 +919,31 @@ export class LicenseService {
     }
 
     return { startDate, endDate, totalDays };
+  }
+
+  private async calculateRequestedDays(licenseData: Partial<License>): Promise<number> {
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      return 0.5;
+    }
+    
+    if (licenseData.timeRequested === TimeRequest.FULL_DAY) {
+      return 1;
+    }
+    
+    // Para MULTIPLE_DAYS calculamos la diferencia real en días hábiles
+    const zone = 'America/La_Paz';
+    let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
+    const end = DateTime.fromISO(licenseData.endDate, { zone });
+    let daysCount = 0;
+
+    while (dateCursor <= end) {
+      const dayOfWeek = dateCursor.weekday;
+      if (dayOfWeek < 6) { // Lunes a Viernes
+        daysCount++;
+      }
+      dateCursor = dateCursor.plus({ days: 1 });
+    }
+
+    return daysCount;
   }
 }

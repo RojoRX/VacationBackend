@@ -1,5 +1,5 @@
 // src/controllers/license.controller.ts
-import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException, Req, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Param, Put, Delete, Body, Query, Patch, ParseIntPipe, BadRequestException, NotFoundException, Req, HttpCode, HttpStatus, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
@@ -9,6 +9,7 @@ import { AuthGuard } from 'src/auth/auth.guard';
 import { Roles } from 'src/auth/roles.decorator';
 import { RolesGuard } from 'src/auth/roles.guard';
 import { RoleEnum } from 'src/enums/role.enum';
+import { CustomRequest } from 'src/interfaces/request.interface';
 
 @ApiTags('Licencias')
 @Controller('licenses')
@@ -85,18 +86,38 @@ export class LicenseController {
     return this.licenseService.updateLicense(id, updateData);
   }
 
-  @Delete(':id')
+@Delete(':id')
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Eliminar una licencia (borrado lógico)' })
   @ApiParam({ name: 'id', required: true, description: 'ID de la licencia a eliminar' })
-  @ApiQuery({ name: 'userId', required: true, description: 'ID del usuario que solicita la eliminación' })
   @ApiResponse({ status: 204, description: 'Licencia eliminada exitosamente' })
   @ApiResponse({ status: 403, description: 'No tiene permiso para eliminar esta licencia' })
   @ApiResponse({ status: 404, description: 'Licencia no encontrada' })
   async remove(
     @Param('id') id: number,
-    @Query('userId') userId: number,
+    @Req() req: CustomRequest,
   ): Promise<void> {
-    return this.licenseService.removeLicense(id, userId);
+    console.log(`[LicensesController] Intentando eliminar licencia con ID: ${id}`);
+
+    // Asegúrate de que req.user exista y contenga el ID del usuario
+    if (!req.user || !req.user.id) {
+      console.error('[LicensesController] Error: req.user o req.user.id no está disponible después del AuthGuard.');
+      throw new UnauthorizedException('No se pudo obtener la información del usuario autenticado.');
+    }
+
+    const requestingUserId = req.user.id;
+    console.log(`[LicensesController] Usuario autenticado (requestingUserId): ${requestingUserId}`);
+    console.log(`[LicensesController] Rol del usuario autenticado: ${req.user.role}`);
+
+
+    try {
+      await this.licenseService.removeLicense(id, requestingUserId);
+      console.log(`[LicensesController] Licencia ${id} eliminada exitosamente por el usuario ${requestingUserId}.`);
+    } catch (error) {
+      console.error(`[LicensesController] Error al intentar eliminar licencia ${id}:`, error.message);
+      // Re-lanzar el error para que NestJS lo maneje y devuelva la respuesta adecuada
+      throw error;
+    }
   }
 
 
