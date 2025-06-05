@@ -6,7 +6,8 @@ import {
   HttpStatus,
   Get,
   UseGuards,
-  Request
+  Request,
+  Req
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -37,17 +38,14 @@ export class AuthController {
     return this.authService.signIn(signInDto.username, signInDto.password);
   }
 
+@UseGuards(AuthGuard) // Aquí usas tu AuthGuard
   @Get('me')
-  @UseGuards(AuthGuard) // Asegura que haya token válido
-  @ApiOperation({ summary: 'Obtener datos del usuario autenticado' })
-  @ApiResponse({
-    status: 200,
-    description: 'Usuario autenticado',
-  })
-  async getMe(@Request() req) {
-    const user = await this.authService.getUserById(req.user.sub);
-    return { userData: user };
+  async getMe(@Req() req) {
+    // 1. PRIMER CONSOLE.LOG: Verifica lo que tu AuthGuard ha puesto en req.user
+    // 2. Llama al servicio para obtener el usuario completo por su ID
+    //    (el ID que viene del token y que tu AuthGuard puso en req.user.id)
+    const userDetails = await this.authService.getUserById(req.user.id); // <--- LÍNEA CLAVE
+    // Asegúrate de que el objeto que devuelves aquí tenga el rol correcto
+    return { userData: userDetails }; // Esto es lo que el frontend recibe como response.data.userData
   }
-
-
 }
