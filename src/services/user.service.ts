@@ -381,17 +381,171 @@ export class UserService {
     });
   }
   async findByUsernameOrCi(identifier: string): Promise<User | undefined> {
-  return this.userRepository.findOne({
-    where: [
-      { username: identifier },
-      { ci: identifier }
-    ],
-    relations: ['department', 'academicUnit', 'profession']
-  });
-}
+    return this.userRepository.findOne({
+      where: [
+        { username: identifier },
+        { ci: identifier }
+      ],
+      relations: ['department', 'academicUnit', 'profession']
+    });
+  }
+ async getAllUsersWithDetails(): Promise<
+    Array<{
+      id: number;
+      ci: string;
+      fullName: string;
+      role: RoleEnum; // Es mejor mantenerlo tipado como RoleEnum
+      department?: string | null; // Puede ser string o null si no tiene
+      academicUnit?: string | null; // Puede ser string o null si no tiene
+      email?: string | null;
+      position?: string | null;
+      celular?: string | null;
+      profession?: string | null;
+      tipoEmpleado?: string | null;
+    }>
+  > {
+    const users = await this.userRepository.find({
+      // Eliminamos la cláusula 'where' para obtener todos los usuarios
+      relations: ['department', 'academicUnit', 'profession'], // Aseguramos que estas relaciones se carguen
+      select: [
+        'id',
+        'ci',
+        'fullName',
+        'role',
+        'email',
+        'position',
+        'celular', // Añade celular si lo quieres mostrar
+        'tipoEmpleado', // Añade tipoEmpleado si lo quieres mostrar
+        // Las relaciones 'department', 'academicUnit', 'profession' no se listan aquí en 'select' directamente,
+        // pero sus propiedades serán accesibles si se cargan en 'relations'.
+      ],
+      order: {
+        // Ordena primero por el nombre del departamento y luego por la unidad académica
+        // TypeORM 0.3.x+ permite ordenar por propiedades de relaciones.
+        // Si tienes problemas con esto en tu versión de TypeORM, consulta la nota a continuación.
+        department: { name: 'ASC' },
+        academicUnit: { name: 'ASC' },
+        fullName: 'ASC', // Luego por el nombre completo del usuario
+      },
+    });
 
-}
+    // Mapeamos los usuarios para aplanar los datos y devolver solo lo necesario para el frontend
+    return users.map(user => ({
+      id: user.id,
+      ci: user.ci,
+      fullName: user.fullName,
+      role: user.role,
+      department: user.department ? user.department.name : null, // Accede al nombre del departamento
+      academicUnit: user.academicUnit ? user.academicUnit.name : null, // Accede al nombre de la unidad académica
+      email: user.email || null,
+      position: user.position || null,
+      celular: user.celular || null,
+      profession: user.profession ? user.profession.name : null, // Accede al nombre de la profesión
+      tipoEmpleado: user.tipoEmpleado || null,
+    }));
+  }
+  async updateRole(id: number, newRole: RoleEnum): Promise<User> {
+    // 1. Iniciar una transacción para asegurar la atomicidad de las operaciones
+    //    Esto es crucial si vamos a actualizar dos usuarios diferentes (el nuevo supervisor y el antiguo)
+    const queryRunner = this.userRepository.manager.connection.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
+    try {
+      // 2. Verificar si el usuario a actualizar existe y cargar sus relaciones
+      const userToUpdate = await queryRunner.manager.findOne(User, {
+        where: { id },
+        relations: ['department', 'academicUnit'], // Cargar relaciones para validación de supervisor
+      });
+
+      if (!userToUpdate) {
+        throw new NotFoundException(`Usuario con ID ${id} no encontrado.`);
+      }
+
+      // Si el rol es el mismo y no es supervisor (no hay lógica de reemplazo para otros roles),
+      // no hacemos nada y devolvemos el usuario actual.
+      if (userToUpdate.role === newRole && newRole !== RoleEnum.SUPERVISOR) {
+        return userToUpdate; // Retorna el userToUpdate original si el rol no cambia y no es supervisor
+      }
+
+      const oldRole = userToUpdate.role; // Guardamos el rol actual del usuario
+
+      // 3. Aplicar lógica de validación según el nuevo rol
+      if (newRole === RoleEnum.SUPERVISOR) {
+        // 3.1. Validar que el usuario tenga un departamento o unidad académica asignados
+        if (!userToUpdate.department && !userToUpdate.academicUnit) {
+          throw new BadRequestException(
+            'Para asignar el rol de Supervisor, el usuario debe tener un Departamento o una Unidad Académica asignados.',
+          );
+        }
+
+        // 3.2. Buscar un supervisor existente en la misma unidad/departamento
+        const existingSupervisorQuery = queryRunner.manager.createQueryBuilder(User, 'user')
+          .where('user.role = :supervisorRole', { supervisorRole: RoleEnum.SUPERVISOR })
+          .andWhere('user.id != :currentUserId', { currentUserId: id }); // Excluir al usuario que estamos actualizando
+
+        if (userToUpdate.department) {
+          existingSupervisorQuery.andWhere('user.department.id = :departmentId', {
+            departmentId: userToUpdate.department.id,
+          });
+        } else if (userToUpdate.academicUnit) {
+          existingSupervisorQuery.andWhere('user.academicUnit.id = :academicUnitId', {
+            academicUnitId: userToUpdate.academicUnit.id,
+          });
+        }
+
+        const existingSupervisor = await existingSupervisorQuery.getOne();
+
+        // 3.3. Si se encontró un supervisor anterior, desasignarle el rol de Supervisor
+        if (existingSupervisor) {
+          existingSupervisor.role = RoleEnum.USER; // Asignar el rol 'USER' al supervisor anterior
+          await queryRunner.manager.save(existingSupervisor); // Guardar el cambio al supervisor anterior
+          console.log(`Supervisor anterior (ID: ${existingSupervisor.id}, Rol: ${oldRole}) desasignado del ${
+            userToUpdate.department ? 'Departamento' : 'Unidad Académica'
+          } y asignado a USER.`);
+        }
+
+        // 3.4. Si el usuario que estamos actualizando ya era supervisor de la misma unidad/dpto
+        // y le estamos asignando el mismo rol de supervisor, no es un cambio.
+        // La validación anterior `userToUpdate.role === newRole` ya debería haberlo capturado si no hay reemplazo.
+        // Pero si hay reemplazo, siempre aplicamos la lógica.
+
+      } else if (newRole === RoleEnum.ADMIN) {
+        // 3.5. Validar límite máximo de administradores
+        const MAX_ADMINS = 10;
+        const adminCount = await queryRunner.manager.count(User, {
+          where: { role: RoleEnum.ADMIN },
+        });
+
+        // Si el usuario actual no era admin, y al añadirlo se excede el límite
+        if (oldRole !== RoleEnum.ADMIN && adminCount >= MAX_ADMINS) {
+          throw new BadRequestException(
+            `No se puede asignar el rol de Administrador. Ya existen ${MAX_ADMINS} administradores (límite máximo).`,
+          );
+        }
+      }
+      // Si el nuevo rol es 'USER' o cualquier otro que no sea Supervisor/Admin,
+      // no se aplican restricciones especiales aquí, solo se actualizará el rol del usuario.
+
+      // 4. Asignar el nuevo rol al usuario principal
+      userToUpdate.role = newRole;
+      const updatedUser = await queryRunner.manager.save(userToUpdate); // Guardar el usuario principal
+
+      // 5. Confirmar la transacción
+      await queryRunner.commitTransaction();
+
+      return updatedUser;
+    } catch (error) {
+      // 6. Si ocurre un error, revertir la transacción
+      await queryRunner.rollbackTransaction();
+      // Re-lanzar la excepción para que sea manejada por el controlador o la capa superior
+      throw error;
+    } finally {
+      // 7. Liberar el queryRunner
+      await queryRunner.release();
+    }
+  }
+}
 
 
 function parseDatePreservingLocal(dateString: string): Date {

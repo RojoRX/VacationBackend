@@ -165,17 +165,28 @@ export class UserController {
     return this.userService.updateDepartment(userId, departmentId);
   }
 
-  @Put(':id/role')
+  @Patch(':id/role')
   @ApiOperation({ summary: 'Actualizar el rol del usuario' })
   @ApiParam({ name: 'id', required: true, description: 'ID del usuario a actualizar' })
   @ApiBody({ type: UpdateRoleDto, description: 'Nuevo rol del usuario' })  // Usar el DTO aquí
   @ApiResponse({ status: 200, description: 'Rol actualizado correctamente' })
   async updateUserRole(
-    @Param('id', ParseIntPipe) userId: number,
-    @Body() updateRoleDto: UpdateRoleDto  // Usar el DTO aquí
+    @Param('id') id: number,
+    @Body() updateRoleDto: { role: RoleEnum }
   ) {
-    await this.userService.updateUserRole(userId, updateRoleDto.role);
-    return { message: 'Rol actualizado correctamente.' };
+    return this.userService.updateRole(id, updateRoleDto.role);
+  }
+
+
+  @Get('supervisors-admins')
+  @ApiOperation({ summary: 'Obtener todos los supervisores y administradores' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de supervisores y administradores con sus departamentos/unidades académicas',
+    type: [Object]
+  })
+  async getSupervisorsAndAdmins() {
+    return this.userService.getAllUsersWithDetails();
   }
 
   @ApiOperation({ summary: 'Search for users by CI' })
@@ -202,6 +213,7 @@ export class UserController {
 
     return users;
   }
+
 
   @Get(':userId')
   @ApiOperation({ summary: 'Obtener información básica de un usuario por su ID' })
@@ -252,6 +264,8 @@ export class UserController {
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error interno del servidor.' });
     }
   }
+
+
 
 
   @Put(':id')
