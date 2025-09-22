@@ -428,7 +428,6 @@ export class UserService {
         fullName: 'ASC', // Luego por el nombre completo del usuario
       },
     });
-
     // Mapeamos los usuarios para aplanar los datos y devolver solo lo necesario para el frontend
     return users.map(user => ({
       id: user.id,
