@@ -21,7 +21,7 @@ export class VacationRequest {
   @Column({ type: 'date' })
   endDate: string;
 
-  @Column({ type: 'int' })
+  @Column({ type: 'decimal', precision: 5, scale: 2 })
   totalDays: number;
 
   @Column({

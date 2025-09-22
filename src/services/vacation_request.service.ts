@@ -35,176 +35,235 @@ export class VacationRequestService {
     private readonly notificationService: NotificationService,
   ) { }
 
-  async createVacationRequest(
-    ci: string,
-    startDate: string,
-    position: string,
-    managementPeriod: { startPeriod: string; endPeriod: string },
-  ): Promise<Omit<VacationRequest, 'user'> & { ci: string, totalWorkingDays: number }> {
+async createVacationRequest(
+  ci: string,
+  startDate: string,
+  position: string,
+  managementPeriod: { startPeriod: string; endPeriod: string },
+): Promise<Omit<VacationRequest, 'user'> & { ci: string, totalWorkingDays: number }> {
 
-    // Buscar el usuario por CI
-    const user = await this.userService.findByCarnet(ci);
-    if (!user) {
-      throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
+  // Buscar el usuario por CI
+  const user = await this.userService.findByCarnet(ci);
+  if (!user) {
+    throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
+  }
+  console.log('Usuario encontrado:', user.fullName, user.ci);
+
+  // Verificar TODAS las solicitudes de vacaciones para el usuario
+  const allVacationRequests = await this.vacationRequestRepository.find({
+    where: {
+      user: { id: user.id },
+      deleted: false,
+    },
+    order: { requestDate: 'DESC' },
+  });
+
+  if (allVacationRequests.length > 0) {
+    const hasPendingRequest = allVacationRequests.some(request => request.status === 'PENDING');
+    if (hasPendingRequest) {
+      throw new HttpException('No puedes crear una nueva solicitud. Hay una solicitud pendiente.', HttpStatus.BAD_REQUEST);
     }
-    console.log('Usuario encontrado:', user.fullName, user.ci);
+    const lastVacationRequest = allVacationRequests[0];
+    const isAuthorizedOrSuspended =
+      (lastVacationRequest.status === 'AUTHORIZED' || lastVacationRequest.status === 'SUSPENDED') &&
+      lastVacationRequest.approvedByHR &&
+      lastVacationRequest.approvedBySupervisor;
 
-    // Verificar TODAS las solicitudes de vacaciones para el usuario
-    const allVacationRequests = await this.vacationRequestRepository.find({
-      where: {
-        user: { id: user.id },
-        deleted: false,
-      },
-      order: { requestDate: 'DESC' },
-    });
-
-    //console.log('Solicitudes de vacaciones previas:', allVacationRequests.length);
-
-    // Lógica de verificación de solicitudes previas (sin cambios)
-    if (allVacationRequests.length > 0) {
-      const hasPendingRequest = allVacationRequests.some(request => request.status === 'PENDING');
-      if (hasPendingRequest) {
-        throw new HttpException('No puedes crear una nueva solicitud. Hay una solicitud pendiente.', HttpStatus.BAD_REQUEST);
-      }
-      const lastVacationRequest = allVacationRequests[0];
-      const isAuthorizedOrSuspended =
-        (lastVacationRequest.status === 'AUTHORIZED' || lastVacationRequest.status === 'SUSPENDED') &&
-        lastVacationRequest.approvedByHR &&
-        lastVacationRequest.approvedBySupervisor;
-
-      if (!isAuthorizedOrSuspended) {
-        throw new HttpException(
-          'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada, suspendida y aprobada.',
-          HttpStatus.BAD_REQUEST
-        );
-      }
+    if (!isAuthorizedOrSuspended) {
+      throw new HttpException(
+        'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada, suspendida y aprobada.',
+        HttpStatus.BAD_REQUEST
+      );
     }
+  }
 
-    // Crear fechas de período de gestión
-    const startPeriodDate = new Date(Date.UTC(
-      parseInt(managementPeriod.startPeriod.substring(0, 4)),
-      parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1,
-      parseInt(managementPeriod.startPeriod.substring(8, 10))
-    ));
-    const endPeriodDate = new Date(Date.UTC(
-      parseInt(managementPeriod.endPeriod.substring(0, 4)),
-      parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
-      parseInt(managementPeriod.endPeriod.substring(8, 10))
-    ));
-    const startPeriodIso = startPeriodDate.toISOString();
-    const endPeriodIso = endPeriodDate.toISOString();
+  // Crear fechas de período de gestión
+  const startPeriodDate = new Date(Date.UTC(
+    parseInt(managementPeriod.startPeriod.substring(0, 4)),
+    parseInt(managementPeriod.startPeriod.substring(5, 7)) - 1,
+    parseInt(managementPeriod.startPeriod.substring(8, 10))
+  ));
+  const endPeriodDate = new Date(Date.UTC(
+    parseInt(managementPeriod.endPeriod.substring(0, 4)),
+    parseInt(managementPeriod.endPeriod.substring(5, 7)) - 1,
+    parseInt(managementPeriod.endPeriod.substring(8, 10))
+  ));
+  const startPeriodIso = startPeriodDate.toISOString();
+  const endPeriodIso = endPeriodDate.toISOString();
 
+  // Obtener las gestiones acumuladas
+  const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodIso);
 
-    // Obtener las gestiones acumuladas
-    const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodIso);
+  // Validar que no existan gestiones anteriores con días disponibles
+  this.validateVacationRequest(
+    accumulatedDebtResponse.detalles,
+    managementPeriod.startPeriod,
+    managementPeriod.endPeriod
+  );
 
-
-    // Validar que no existan gestiones anteriores con días disponibles (sin cambios)
-    this.validateVacationRequest(
-      accumulatedDebtResponse.detalles,
-      managementPeriod.startPeriod,
-      managementPeriod.endPeriod
+  // Lógica para encontrar la gestión correspondiente
+  const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
+    return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
+  });
+  if (!gestionCorrespondiente) {
+    throw new HttpException(
+      `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
+      HttpStatus.BAD_REQUEST,
     );
+  }
 
-    // Lógica para encontrar la gestión correspondiente
-    const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
-      return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
-    });
-    if (!gestionCorrespondiente) {
-      throw new HttpException(
-        `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
-        HttpStatus.BAD_REQUEST,
-      );
+  // Verificar si hay días disponibles
+  if (gestionCorrespondiente.diasDisponibles <= 0) {
+    throw new HttpException(
+      `No puedes solicitar vacaciones. No tienes días disponibles en la gestión seleccionada.`,
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  // ---------------------------
+  // Helper local: detectar día no laborable (fin de semana o feriado si el servicio lo soporta)
+  // ---------------------------
+  const isNonWorkingDate = async (date: Date): Promise<boolean> => {
+    const dow = date.getUTCDay();
+    // weekend
+    if (dow === 0 || dow === 6) return true;
+
+    // chequeo con nonHolidayService (si existe): intentamos métodos comunes
+    const isoDate = date.toISOString().split('T')[0];
+    try {
+      if (this.nonHolidayService) {
+        // método típico: isNonWorkingDay(dateString)
+        if (typeof (this.nonHolidayService as any).isNonWorkingDay === 'function') {
+          const r = (this.nonHolidayService as any).isNonWorkingDay(isoDate);
+          return r instanceof Promise ? await r : r;
+        }
+        // otro método común: isHoliday(dateString) -> true si es feriado
+        if (typeof (this.nonHolidayService as any).isHoliday === 'function') {
+          const r = (this.nonHolidayService as any).isHoliday(isoDate);
+          return r instanceof Promise ? await r : r;
+        }
+        // método inverso: isNonHoliday(dateString) -> true si NO es feriado
+        if (typeof (this.nonHolidayService as any).isNonHoliday === 'function') {
+          const r = (this.nonHolidayService as any).isNonHoliday(isoDate);
+          const val = r instanceof Promise ? await r : r;
+          return !val; // si isNonHoliday = false => es feriado => no laborable
+        }
+      }
+    } catch (e) {
+      // Si falla el servicio, ignoramos y usamos solo fin de semana
+      console.warn('nonHolidayService check failed, fallback a solo weekend check', e);
     }
 
+    return false; // por defecto es laborable (no feriado detectado)
+  };
 
-    // Verificar si hay días disponibles
-    if (gestionCorrespondiente.diasDisponibles <= 0) {
-      throw new HttpException(
-        `No puedes solicitar vacaciones. No tienes días disponibles en la gestión seleccionada.`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+  // ---------------------------
+  // Calcular endDate tomando en cuenta medios días (.5)
+  // ---------------------------
+  const startDateObj = new Date(startDate + "T00:00:00Z"); // forzar UTC
+  const daysToTake = gestionCorrespondiente.diasDisponibles;
+  const fullDays = Math.floor(daysToTake);
+  const hasHalfDay = daysToTake % 1 !== 0;
 
+  let workingDaysCount = 0;
+  let currentDate = new Date(startDateObj);
 
-    // Calcular la fecha de fin automáticamente contando solo días hábiles
-    // Calcular la fecha de fin automáticamente contando solo días hábiles
-    const startDateObj = new Date(startDate + "T00:00:00Z"); // Asegurar UTC
-    const daysToTake = gestionCorrespondiente.diasDisponibles;
-    let currentDate = new Date(startDateObj);
-    let workingDaysCount = 0;
-
-
-
-    while (workingDaysCount < daysToTake) {
-      const dayOfWeek = currentDate.getUTCDay(); // Usar getUTCDay() para evitar problemas de zona horaria
-      const currentDateISO = currentDate.toISOString().split('T')[0];
-      console.log(`Fecha evaluada: ${currentDateISO}, día de la semana: ${dayOfWeek}`);
-
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0=Dom, 6=Sáb
+  // Avanzar por los días completos (solo contar días hábiles)
+  while (workingDaysCount < fullDays) {
+    const dayOfWeek = currentDate.getUTCDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      // además, si tenemos nonHolidayService, podríamos comprobar feriados cuando contemos
+      // (opcional) si date es feriado, no incrementar
+      const isNonWorking = await isNonWorkingDate(currentDate);
+      if (!isNonWorking) {
         workingDaysCount++;
-        console.log(`Día hábil contado. Contador: ${workingDaysCount}, Fecha actual: ${currentDateISO}`);
-      }
-
-      // Solo avanzamos al siguiente día si aún necesitamos contar más días
-      if (workingDaysCount < daysToTake) {
-        currentDate.setUTCDate(currentDate.getUTCDate() + 1); // Usar setUTCDate para evitar cambios por zona horaria
       }
     }
+    if (workingDaysCount < fullDays) {
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+  }
 
-    const endDateCalculated = currentDate.toISOString().split('T')[0];
-    console.log('Fecha de fin calculada (endDateCalculated):', endDateCalculated);
-    // Verificar si las fechas se solapan
-    await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDateCalculated);
+  // currentDate ahora apunta al último día completo consumido (o al startDate si fullDays === 0 y ese día es laborable)
+  // Si hay medio día, el medio día se toma en el SIGUIENTE día hábil:
+  let endDateFinal = new Date(currentDate);
+  if (hasHalfDay) {
+    // avanzar al siguiente día hábil (saltando fin de semana y feriados)
+    endDateFinal.setUTCDate(endDateFinal.getUTCDate() + 1);
+    while (await isNonWorkingDate(endDateFinal)) {
+      endDateFinal.setUTCDate(endDateFinal.getUTCDate() + 1);
+    }
+    console.log('⚠️ Incluyendo medio día en la fecha final (half day):', endDateFinal.toISOString().split('T')[0]);
+  } else {
+    // Si no hay medio día, endDateFinal ya es currentDate
+    // Aseguramos que si currentDate cae en fin de semana/feriado (raro), lo movemos al próximo laborable
+    while (await isNonWorkingDate(endDateFinal)) {
+      endDateFinal.setUTCDate(endDateFinal.getUTCDate() + 1);
+    }
+  }
 
-    // Los días solicitados ahora son los días disponibles
-    const daysRequested = daysToTake;
-    console.log('Días solicitados (daysRequested):', daysRequested);
+  const endDateCalculated = endDateFinal.toISOString().split('T')[0];
+  console.log('Fecha de fin calculada (endDateCalculated):', endDateCalculated);
 
-    // Preparar fechas ISO y calcular fecha de reincorporación
-    const startDateForISO = new Date(startDate + "T00:00:00Z").toISOString();
-    const endDateISO = new Date(endDateCalculated + "T23:59:59Z").toISOString();
-    console.log('startDateISO:', startDateForISO);
-    console.log('endDateISO:', endDateISO);
+  // Verificar si las fechas se solapan (usamos startDate y el endDate calculado)
+  await ensureNoOverlappingVacations(this.vacationRequestRepository, user.id, startDate, endDateCalculated);
 
-    const returnDateISO = new Date(
+  // Los días solicitados ahora son los días disponibles (decimales permitidos)
+  const daysRequested = daysToTake;
+  console.log('Días solicitados (daysRequested):', daysRequested);
+
+  // Preparar fechas ISO
+  const startDateForISO = new Date(startDate + "T00:00:00Z").toISOString();
+  const endDateISO = new Date(endDateCalculated + "T23:59:59Z").toISOString();
+  console.log('startDateISO:', startDateForISO);
+  console.log('endDateISO:', endDateISO);
+
+  // Calcular fecha de reincorporación:
+  // - Si hubo medio día: el retorno es el MISMO día (la persona se reincorpora ese mismo día),
+  // - Si no hubo medio día: usar la lógica existente para obtener el siguiente día hábil de reincorporación.
+  let returnDateISO: string;
+  if (hasHalfDay) {
+    // Reincorpora ese mismo día (puedes ajustar a hora específica si manejas horarios)
+    returnDateISO = new Date(endDateCalculated + "T00:00:00Z").toISOString();
+  } else {
+    returnDateISO = new Date(
       await calculateReturnDate(endDateISO, daysRequested, this.nonHolidayService)
     ).toISOString();
-    console.log('Fecha de reincorporación (returnDateISO):', returnDateISO);
-
-    // Crear y guardar la solicitud
-    const vacationRequest = this.vacationRequestRepository.create({
-      user,
-      position,
-      requestDate: new Date().toISOString(),
-      startDate: startDateForISO,
-      endDate: endDateISO,
-      totalDays: daysRequested,
-      status: 'PENDING',
-      returnDate: returnDateISO,
-      managementPeriodStart: startPeriodDate.toISOString(),
-      managementPeriodEnd: endPeriodDate.toISOString(),
-    });
-    console.log('Objeto vacationRequest creado:', vacationRequest);
-
-    const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
-    console.log('Solicitud guardada:', savedRequest);
-
-    // Notificar
-    await this.notificationService.notifyRelevantSupervisorsAndAdmins(
-      `El usuario ${user.fullName} ha creado una nueva solicitud de vacaciones del ${startDate} al ${endDateCalculated} (${daysRequested} días).`,
-      user.id,
-      'VACATION',
-      savedRequest.id
-    );
-
-
-    // Retornar sin datos sensibles
-    // Retornar sin datos sensibles, incluyendo los días solicitados
-    const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
-
-    return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
   }
+  console.log('Fecha de reincorporación (returnDateISO):', returnDateISO);
+
+  // Crear y guardar la solicitud
+  const vacationRequest = this.vacationRequestRepository.create({
+    user,
+    position,
+    requestDate: new Date().toISOString(),
+    startDate: startDateForISO,
+    endDate: endDateISO,
+    totalDays: daysRequested,
+    status: 'PENDING',
+    returnDate: returnDateISO,
+    managementPeriodStart: startPeriodDate.toISOString(),
+    managementPeriodEnd: endPeriodDate.toISOString(),
+  });
+  console.log('Objeto vacationRequest creado:', vacationRequest);
+
+  const savedRequest = await this.vacationRequestRepository.save(vacationRequest);
+  console.log('Solicitud guardada:', savedRequest);
+
+  // Notificar
+  await this.notificationService.notifyRelevantSupervisorsAndAdmins(
+    `El usuario ${user.fullName} ha creado una nueva solicitud de vacaciones del ${startDate} al ${endDateCalculated} (${daysRequested} días).`,
+    user.id,
+    'VACATION',
+    savedRequest.id
+  );
+
+  // Retornar sin datos sensibles
+  const { user: _user, ...requestWithoutSensitiveData } = savedRequest;
+
+  return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
+}
+
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(
     detalles: VacationDetail[],
@@ -514,127 +573,127 @@ export class VacationRequestService {
   }
 
   // Método para obtener una solicitud de vacaciones por su ID
-async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
-  // Buscar la solicitud con las relaciones necesarias
-  const request = await this.vacationRequestRepository.findOne({
-    where: { id },
-    relations: [
-      'user',
-      'user.academicUnit',
-      'user.department',
-      'approvedBy',
-    ],
-  });
+  async getVacationRequestById(id: number): Promise<VacationRequestDTO> {
+    // Buscar la solicitud con las relaciones necesarias
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: [
+        'user',
+        'user.academicUnit',
+        'user.department',
+        'approvedBy',
+      ],
+    });
 
-  if (!request) {
-    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
-  }
+    if (!request) {
+      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+    }
 
-  const vacationRequestDTO: VacationRequestDTO = {
-    id: request.id,
-    position: request.position,
-    requestDate: request.requestDate,
-    startDate: request.startDate,
-    endDate: request.endDate,
-    totalDays: request.totalDays,
-    status: request.status,
-    returnDate: request.returnDate,
-    postponedDate: request.postponedDate,
-    reviewDate: request.reviewDate,
-    postponedReason: request.postponedReason,
-    approvedByHR: request.approvedByHR,
-    approvedBySupervisor: request.approvedBySupervisor,
-    user: {
-      id: request.user.id,
-      ci: request.user.ci,
-      fecha_ingreso: request.user.fecha_ingreso,
-      username: request.user.username,
-      academicUnitName: request.user.academicUnit?.name || null,
-      departmentName: request.user.department?.name || null,
-    },
-    managementPeriodStart: request.managementPeriodStart,
-    managementPeriodEnd: request.managementPeriodEnd,
-    approvedBy: request.approvedBy
-      ? {
+    const vacationRequestDTO: VacationRequestDTO = {
+      id: request.id,
+      position: request.position,
+      requestDate: request.requestDate,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      totalDays: request.totalDays,
+      status: request.status,
+      returnDate: request.returnDate,
+      postponedDate: request.postponedDate,
+      reviewDate: request.reviewDate,
+      postponedReason: request.postponedReason,
+      approvedByHR: request.approvedByHR,
+      approvedBySupervisor: request.approvedBySupervisor,
+      user: {
+        id: request.user.id,
+        ci: request.user.ci,
+        fecha_ingreso: request.user.fecha_ingreso,
+        username: request.user.username,
+        academicUnitName: request.user.academicUnit?.name || null,
+        departmentName: request.user.department?.name || null,
+      },
+      managementPeriodStart: request.managementPeriodStart,
+      managementPeriodEnd: request.managementPeriodEnd,
+      approvedBy: request.approvedBy
+        ? {
           id: request.approvedBy.id,
           ci: request.approvedBy.ci,
           fecha_ingreso: request.approvedBy.fecha_ingreso,
           username: request.approvedBy.username,
         }
-      : undefined,
-  };
+        : undefined,
+    };
 
-  return vacationRequestDTO;
-}
-
-
-
-
-async getVacationRequestDetails(id: number): Promise<any> {
-  const request = await this.vacationRequestRepository.findOne({
-    where: { id },
-    relations: ['user', 'user.department', 'user.academicUnit'], // Añadido academicUnit
-  });
-
-  if (!request) {
-    throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+    return vacationRequestDTO;
   }
 
-  if (!request.user) {
-    throw new HttpException('User not found for this vacation request', HttpStatus.NOT_FOUND);
+
+
+
+  async getVacationRequestDetails(id: number): Promise<any> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user', 'user.department', 'user.academicUnit'], // Añadido academicUnit
+    });
+
+    if (!request) {
+      throw new HttpException('Vacation request not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (!request.user) {
+      throw new HttpException('User not found for this vacation request', HttpStatus.NOT_FOUND);
+    }
+
+    const ci = request.user.ci;
+    const managementPeriodStart = request.managementPeriodStart;
+    const managementPeriodEnd = request.managementPeriodEnd;
+
+    if (!managementPeriodStart || !managementPeriodEnd) {
+      throw new HttpException('Management period not found for this request', HttpStatus.NOT_FOUND);
+    }
+
+    let vacationResponse;
+    try {
+      vacationResponse = await this.vacationService.calculateVacationDays(
+        ci,
+        new Date(managementPeriodStart),
+        new Date(managementPeriodEnd)
+      );
+    } catch (error) {
+      console.error('Error al calcular los días de vacaciones:', error);
+      throw new HttpException('Error al calcular los días de vacaciones', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    return {
+      requestId: request.id,
+      userName: request.user.fullName,
+      ci: request.user.ci,
+      position: request.user.position,
+      requestDate: request.requestDate,
+      // Mostrar uno u otro nombre según corresponda
+      department: request.user.department?.name || null,
+      academicUnit: request.user.academicUnit?.name || null,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      reviewDate: request.reviewDate,
+      totalDays: request.totalDays,
+      status: request.status,
+      returnDate: request.returnDate,
+      postponedDate: request.postponedDate,
+      postponedReason: request.postponedReason,
+      approvedByHR: request.approvedByHR,
+      approvedBySupervisor: request.approvedBySupervisor,
+      managementPeriodStart,
+      managementPeriodEnd,
+      fechaIngreso: vacationResponse.fechaIngreso,
+      antiguedadEnAnios: vacationResponse.antiguedadEnAnios,
+      diasDeVacacion: vacationResponse.diasDeVacacion,
+      diasDeVacacionRestantes: vacationResponse.diasDeVacacionRestantes,
+      recesos: vacationResponse.recesos,
+      licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
+      solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
+      deleted: request.deleted
+    };
   }
-
-  const ci = request.user.ci;
-  const managementPeriodStart = request.managementPeriodStart;
-  const managementPeriodEnd = request.managementPeriodEnd;
-
-  if (!managementPeriodStart || !managementPeriodEnd) {
-    throw new HttpException('Management period not found for this request', HttpStatus.NOT_FOUND);
-  }
-
-  let vacationResponse;
-  try {
-    vacationResponse = await this.vacationService.calculateVacationDays(
-      ci,
-      new Date(managementPeriodStart),
-      new Date(managementPeriodEnd)
-    );
-  } catch (error) {
-    console.error('Error al calcular los días de vacaciones:', error);
-    throw new HttpException('Error al calcular los días de vacaciones', HttpStatus.INTERNAL_SERVER_ERROR);
-  }
-
-  return {
-    requestId: request.id,
-    userName: request.user.fullName,
-    ci: request.user.ci,
-    position: request.user.position,
-    requestDate: request.requestDate,
-    // Mostrar uno u otro nombre según corresponda
-    department: request.user.department?.name || null,
-    academicUnit: request.user.academicUnit?.name || null,
-    startDate: request.startDate,
-    endDate: request.endDate,
-    reviewDate: request.reviewDate,
-    totalDays: request.totalDays,
-    status: request.status,
-    returnDate: request.returnDate,
-    postponedDate: request.postponedDate,
-    postponedReason: request.postponedReason,
-    approvedByHR: request.approvedByHR,
-    approvedBySupervisor: request.approvedBySupervisor,
-    managementPeriodStart,
-    managementPeriodEnd,
-    fechaIngreso: vacationResponse.fechaIngreso,
-    antiguedadEnAnios: vacationResponse.antiguedadEnAnios,
-    diasDeVacacion: vacationResponse.diasDeVacacion,
-    diasDeVacacionRestantes: vacationResponse.diasDeVacacionRestantes,
-    recesos: vacationResponse.recesos,
-    licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
-    solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
-    deleted: request.deleted
-  };
-}
 
   // Actualizar el estado de una solicitud por el supervisor
   async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
