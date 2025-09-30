@@ -265,8 +265,6 @@ export class ReportsService {
       throw error;
     }
   }
-
-
   private getMonthName(monthNumber: number): string {
     const months = [
       'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -274,8 +272,6 @@ export class ReportsService {
     ];
     return months[monthNumber - 1];
   }
-
-
   async generateUserVacationReport(params: {
     year?: number;
     month?: number;
@@ -396,5 +392,101 @@ export class ReportsService {
 
     return await workbook.xlsx.writeBuffer();
   }
+  async generateGlobalUserReport(params: {
+    from?: string;   // rango fecha inicio (YYYY-MM-DD)
+    to?: string;     // rango fecha fin (YYYY-MM-DD)
+    year?: number;   // opcional, si no usan from/to
+    month?: number;  // opcional
+    employeeType?: string; // 'ADMINISTRATIVO' | 'DOCENTE' | 'ALL'
+  }) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Reporte General Usuarios');
+
+    // 🔹 Generar leyenda de filtros
+    let filterText = 'Reporte de todos los usuarios';
+    if (params.from && params.to) {
+      filterText = `Reporte generado desde ${params.from} al ${params.to}`;
+    } else if (params.year && params.month) {
+      const monthName = [
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ][params.month];
+      filterText = `Reporte generado para ${monthName} de ${params.year}`;
+    } else if (params.year) {
+      filterText = `Reporte generado para el año ${params.year}`;
+    }
+
+    if (params.employeeType && params.employeeType !== 'ALL') {
+      filterText += ` - Tipo de empleado: ${params.employeeType}`;
+    }
+
+    // 🔹 Cabecera del reporte
+    worksheet.addRow(['Reporte general de usuarios']).font = { bold: true, size: 14 };
+    worksheet.addRow([filterText]).font = { italic: true, size: 12, color: { argb: 'FF0000FF' } };
+    worksheet.addRow([]);
+
+    // 🔹 Encabezados de columnas
+    worksheet.addRow([
+      'Usuario', 'CI', 'Tipo Empleado', 'Departamento', 'Unidad Académica',
+      'Tipo Licencia', 'Tiempo Solicitado', 'Inicio', 'Fin',
+      'Días Totales', 'Emitido', 'Supervisor', 'RRHH', 'Estado'
+    ]).eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCE5FF' } };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+
+    // 🔹 Consulta de datos
+    const qb = this.licenseRepository.createQueryBuilder('license')
+      .leftJoinAndSelect('license.user', 'user')
+      .leftJoinAndSelect('user.department', 'department')
+      .leftJoinAndSelect('user.academicUnit', 'academicUnit')
+      .where('license.deleted = false');
+
+    if (params.year) qb.andWhere('EXTRACT(YEAR FROM license.startDate) = :year', { year: params.year });
+    if (params.month) qb.andWhere('EXTRACT(MONTH FROM license.startDate) = :month', { month: params.month });
+    if (params.from) qb.andWhere('license.startDate >= :from', { from: params.from });
+    if (params.to) qb.andWhere('license.endDate <= :to', { to: params.to });
+    if (params.employeeType && params.employeeType !== 'ALL') qb.andWhere('user.tipoEmpleado = :employeeType', { employeeType: params.employeeType });
+
+    const licenses = await qb.getMany();
+
+    for (const lic of licenses) {
+      worksheet.addRow([
+        lic.user.fullName,
+        lic.user.ci,
+        lic.user.tipoEmpleado,
+        lic.user.department?.name || '—',
+        lic.user.academicUnit?.name || '—',
+        lic.licenseType,
+        lic.timeRequested,
+        lic.startDate,
+        lic.endDate,
+        lic.totalDays,
+        lic.issuedDate?.toISOString().split('T')[0] || '—',
+        lic.immediateSupervisorApproval ? 'Sí' : 'No',
+        lic.personalDepartmentApproval ? 'Sí' : 'No',
+        lic.personalDepartmentApproval ? 'Aprobada' : 'No aprobada',
+      ]);
+    }
+
+    // 🔹 Ajuste de ancho de columnas
+    worksheet.columns.forEach(col => {
+      let max = 12;
+      col.eachCell?.({ includeEmpty: true }, cell => {
+        const len = cell.value?.toString().length || 0;
+        max = Math.max(max, len);
+      });
+      col.width = max + 2;
+    });
+
+    return await workbook.xlsx.writeBuffer();
+  }
+
 
 }
