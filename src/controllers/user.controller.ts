@@ -136,6 +136,28 @@ export class UserController {
     }
   }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Buscar usuarios por CI, nombre, username, email, celular o posición' })
+  @ApiQuery({
+    name: 'term',
+    required: true,
+    description: 'Texto a buscar (ej: CI, nombre, username, email, celular, posición)',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de usuarios encontrados', type: [User] })
+  @ApiResponse({ status: 400, description: 'Error en la búsqueda de usuarios' })
+  async searchUsers(
+    @Query('term') term: string,
+  ): Promise<Omit<User, 'password'>[]> {
+    return this.userService.searchUsers(term);
+  }   
+   @Get('latest')
+  @ApiOperation({ summary: 'Obtener los últimos 20 usuarios registrados' })
+  @ApiResponse({ status: 200, description: 'Lista de los últimos usuarios', type: [User] })
+  @ApiResponse({ status: 400, description: 'Error al obtener los últimos usuarios' })
+  async getLatestUsers(): Promise<Omit<User, 'password'>[]> {
+    return this.userService.findLatestUsers();
+  }
+
   @Get('validate/:username')
   @ApiOperation({ summary: 'Validar la contraseña del usuario' })
   @ApiParam({ name: 'username', required: true, description: 'Nombre de usuario para validar la contraseña' })

@@ -1,7 +1,7 @@
 import { Injectable, HttpException, HttpStatus, BadRequestException, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { ILike, Like, Repository } from 'typeorm';
 import { User } from 'src/entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { Department } from 'src/entities/department.entity';
@@ -207,6 +207,30 @@ export class UserService {
     console.log(this.transformUser(user));
     return this.transformUser(user);
   }
+
+async searchUsers(term: string): Promise<Omit<User, 'password'>[]> {
+  return this.userRepository.find({
+    where: [
+      { ci: ILike(`%${term}%`) },
+      { username: ILike(`%${term}%`) },
+      { fullName: ILike(`%${term}%`) },
+      { email: ILike(`%${term}%`) },
+      { celular: ILike(`%${term}%`) },
+      { position: ILike(`%${term}%`) },
+    ],
+    relations: ['department', 'academicUnit', 'profession'],
+    take: 20, // límite para no traer demasiados resultados
+  });
+}
+
+async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
+  return this.userRepository.find({
+    order: { createdAt: 'DESC' }, // ordena por fecha de creación
+    take: 20, // solo los últimos 20
+    relations: ['department', 'academicUnit', 'profession'],
+  });
+}
+
 
   async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
