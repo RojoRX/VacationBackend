@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { NonHolidayService } from 'src/services/nonholiday.service';
-import { LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
+import { Brackets, LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
 
 // Calcular los días de vacaciones, considerando solo días hábiles y excluyendo feriados
 export async function calculateVacationDays(
@@ -67,43 +67,51 @@ export async function calculateReturnDate(
 
 // Verificar solapamiento de vacaciones
 export async function ensureNoOverlappingVacations(
-  vacationRequestRepository: any,
+  vacationRequestRepository: Repository<VacationRequest>,
   userId: number,
-  startDate: string,
-  endDate: string,
+  startDate: string, // 'YYYY-MM-DD'
+  endDate: string,   // 'YYYY-MM-DD'
   excludeRequestId?: number
 ): Promise<void> {
-  const baseCondition = {
-    user: { id: userId },
-    startDate: LessThanOrEqual(endDate),
-    endDate: MoreThanOrEqual(startDate),
-    deleted: false,  // <-- DESCARTAR eliminadas lógicamente
-  };
+  // Normalizar fechas (00:00 y 23:59:59.999 UTC)
+  const startIso = new Date(`${startDate}T00:00:00Z`).toISOString();
+  const endIso = new Date(`${endDate}T23:59:59.999Z`).toISOString();
 
-  const statuses = ['AUTHORIZED', 'PENDING', 'SUSPENDED'];
+  console.log('🔎 [OverlapCheck] Parámetros recibidos:');
+  console.log('   userId:', userId);
+  console.log('   startDate:', startDate, '->', startIso);
+  console.log('   endDate:', endDate, '->', endIso);
+  console.log('   excludeRequestId:', excludeRequestId);
 
-  // Creamos condiciones por cada status
-  const where = statuses.map(status => {
-    const condition: any = { ...baseCondition, status };
+  const openStatuses = ['PENDING', 'SUSPENDED'];
 
-    if (status === 'AUTHORIZED') {
-      // Para authorized también se requiere aprobación de RRHH y supervisor
-      condition.approvedByHR = true;
-      condition.approvedBySupervisor = true;
-    }
+  const qb = vacationRequestRepository.createQueryBuilder('vacation')
+    .where('vacation.userId = :userId', { userId })
+    .andWhere('vacation.deleted = false')
+    .andWhere('vacation.startDate <= :endIso AND vacation.endDate >= :startIso', { startIso, endIso })
+    .andWhere(new Brackets(qbBr => {
+      qbBr.where('vacation.status IN (:...openStatuses)', { openStatuses })
+        .orWhere('(vacation.status = :auth AND vacation.approvedByHR = true AND vacation.approvedBySupervisor = true)', { auth: 'AUTHORIZED' });
+    }));
 
-    if (excludeRequestId) {
-      condition.id = Not(excludeRequestId);
-    }
+  if (excludeRequestId) {
+    qb.andWhere('vacation.id != :excludeRequestId', { excludeRequestId });
+  }
 
-    return condition;
+  // DEBUG: mostrar SQL generado
+  console.log('🔎 [OverlapCheck] SQL generado:', qb.getSql());
+
+  const overlappingRequests = await qb.getMany();
+
+  // DEBUG: mostrar solicitudes encontradas
+  console.log('🔎 [OverlapCheck] Solicitudes encontradas:', overlappingRequests.length);
+  overlappingRequests.forEach(req => {
+    console.log(`   → ID:${req.id}, estado:${req.status}, start:${req.startDate}, end:${req.endDate}, HR:${req.approvedByHR}, SUP:${req.approvedBySupervisor}`);
   });
-
-  const overlappingRequests = await vacationRequestRepository.find({ where });
 
   if (overlappingRequests.length > 0) {
     throw new BadRequestException(
-      'La solicitud se solapa con otra vacación activa (pendiente, suspendida o autorizada).'
+      'La solicitud se solapa con otra vacación activa (pendiente, suspendida o autorizada y aprobada por RRHH y supervisor).'
     );
   }
 }

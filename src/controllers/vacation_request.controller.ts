@@ -51,6 +51,33 @@ export class VacationRequestController {
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+  // Endpoint para actualizar una solicitud de vacaciones
+  @Put(':id')
+  @ApiOperation({ summary: 'Actualizar una solicitud de vacaciones existente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', example: '2025-11-03', description: 'Nueva fecha de inicio (opcional)' },
+        endDate: { type: 'string', example: '2025-11-07', description: 'Nueva fecha de fin (opcional, si no se manda se recalcula)' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error al actualizar la solicitud de vacaciones' })
+  @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
+  async updateVacationRequest(
+    @Param('id') id: number,
+    @Body() updates: { startDate?: string; endDate?: string; position?: string },
+  ) {
+    try {
+      const vacationRequest = await this.vacationRequestService.updateVacationRequest(id, updates);
+      return vacationRequest;
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
 
   // Endpoint para obtener todas las solicitudes de vacaciones de un usuario
   @Get('user/:userId')
@@ -354,20 +381,20 @@ export class VacationRequestController {
   }
   // vacation-requests.controller.ts
 
-@UseGuards(AuthGuard)
-@Delete(':id/force')
-@HttpCode(HttpStatus.OK)
-@ApiOperation({ summary: 'Elimina lógicamente una solicitud de vacaciones sin validar aprobaciones ni estado' })
-@ApiResponse({ status: 200, description: 'Solicitud eliminada correctamente' })
-@ApiResponse({ status: 403, description: 'No tienes permiso para eliminar esta solicitud' })
-@ApiResponse({ status: 404, description: 'Solicitud o usuario no encontrado' })
-async forceDelete(
-  @Param('id', ParseIntPipe) id: number,
-  @Req() req: any
-) {
-  const userId = req.user?.sub; // ✅ Usa `sub` porque así viene del payload
-  return this.vacationRequestService.forceSoftDeleteVacationRequest(id, userId);
-}
+  @UseGuards(AuthGuard)
+  @Delete(':id/force')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Elimina lógicamente una solicitud de vacaciones sin validar aprobaciones ni estado' })
+  @ApiResponse({ status: 200, description: 'Solicitud eliminada correctamente' })
+  @ApiResponse({ status: 403, description: 'No tienes permiso para eliminar esta solicitud' })
+  @ApiResponse({ status: 404, description: 'Solicitud o usuario no encontrado' })
+  async forceDelete(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: any
+  ) {
+    const userId = req.user?.sub; // ✅ Usa `sub` porque así viene del payload
+    return this.vacationRequestService.forceSoftDeleteVacationRequest(id, userId);
+  }
 
 
 
