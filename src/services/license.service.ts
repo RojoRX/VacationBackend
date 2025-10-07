@@ -668,8 +668,20 @@ export class LicenseService {
           }
         }
 
-        // 3.7. Cálculo de días totales según tipo de solicitud
+        // 3.7. Cálculo de días totales según tipo de solicitud y medios días
         let totalDays = 0;
+
+        const startHalfDay = licenseData.startHalfDay || 'Completo';
+        const endHalfDay = licenseData.endHalfDay || 'Completo';
+
+        // Validaciones medias días
+        if (!['Completo', 'Media Mañana', 'Media Tarde'].includes(startHalfDay)) {
+          throw new Error('startHalfDay inválido');
+        }
+        if (!['Completo', 'Media Mañana'].includes(endHalfDay)) {
+          throw new Error('endHalfDay inválido (solo Completo o Media Mañana en múltiples días)');
+        }
+
         switch (licenseData.timeRequested) {
           case TimeRequest.HALF_DAY:
             totalDays = 0.5;
@@ -680,21 +692,30 @@ export class LicenseService {
           case TimeRequest.MULTIPLE_DAYS:
             totalDays = this.countWeekdays(startDate, endDate);
 
+            // Ajuste por medios días
+            if (startHalfDay !== 'Completo') totalDays -= 0.5;
+            if (endHalfDay !== 'Completo') totalDays -= 0.5;
+
+            // Asegurar mínimo 0.5 días
+            if (totalDays < 0.5) totalDays = 0.5;
             break;
           default:
             throw new Error('Tipo de tiempo solicitado no reconocido');
         }
 
-        // 3.8. Preparar entidad validada
+        // 3.8. Preparar entidad validada incluyendo medios días
         validatedLicenses.push({
           ...licenseData,
           startDate: licenseData.startDate,
           endDate: licenseData.endDate,
           totalDays,
+          startHalfDay,
+          endHalfDay,
           user,
-          immediateSupervisorApproval: true, // Por defecto no aprobado
-          personalDepartmentApproval: true // Por defecto no aprobado
+          immediateSupervisorApproval: true,
+          personalDepartmentApproval: true
         });
+
 
       } catch (error) {
         errors.push({
