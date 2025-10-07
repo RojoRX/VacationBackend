@@ -1,6 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, BeforeInsert, BeforeUpdate } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+} from 'typeorm';
 import { User } from './user.entity';
-import { BadRequestException } from '@nestjs/common';
 
 export enum LicenseType {
   VACATION = 'VACACION',
@@ -13,23 +18,21 @@ export enum TimeRequest {
   MULTIPLE_DAYS = 'Varios Días',
 }
 
+export enum HalfDayType {
+  MORNING = 'Media Mañana',
+  AFTERNOON = 'Media Tarde',
+  NONE = 'Completo',
+}
+
 @Entity()
 export class License {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({
-    type: 'enum',
-    enum: LicenseType,
-    default: LicenseType.VACATION,
-  })
+  @Column({ type: 'enum', enum: LicenseType, default: LicenseType.VACATION })
   licenseType: LicenseType;
 
-  @Column({
-    type: 'enum',
-    enum: TimeRequest,
-    default: TimeRequest.FULL_DAY,
-  })
+  @Column({ type: 'enum', enum: TimeRequest, default: TimeRequest.FULL_DAY })
   timeRequested: TimeRequest;
 
   @Column({ type: 'date' })
@@ -38,29 +41,30 @@ export class License {
   @Column({ type: 'date' })
   endDate: string;
 
+  @Column({ type: 'enum', enum: HalfDayType, default: HalfDayType.NONE })
+  startHalfDay: HalfDayType;
+
+  @Column({ type: 'enum', enum: HalfDayType, default: HalfDayType.NONE })
+  endHalfDay: HalfDayType;
+
   @Column({ type: 'numeric', default: 0 })
   totalDays: number;
 
   @CreateDateColumn()
   issuedDate: Date;
 
-  // Aprobación del supervisor inmediato
   @Column({ type: 'boolean', default: false })
   immediateSupervisorApproval: boolean;
 
-  // Aprobación del administrador del sistema
   @Column({ type: 'boolean', default: false })
   personalDepartmentApproval: boolean;
 
-  // Relación con el usuario que solicita la licencia
   @ManyToOne(() => User, (user) => user.licenses)
   user: User;
 
-  // Nuevo: Relación con el supervisor que aprobó la licencia
-  @ManyToOne(() => User, { nullable: true }) // Opcional al momento de crear la licencia
-  approvedBySupervisor: User; // El supervisor que aprobó la licencia
+  @ManyToOne(() => User, { nullable: true })
+  approvedBySupervisor: User;
 
-  // Campo para borrado lógico
   @Column({ type: 'boolean', default: false })
   deleted: boolean;
 }

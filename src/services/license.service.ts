@@ -29,7 +29,7 @@ export class LicenseService {
     private readonly notificationService: NotificationService,
     private readonly nonHolidayService: NonHolidayService
   ) { }
-async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+  async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
     // Validaciones básicas de usuario y datos requeridos
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -51,7 +51,34 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     if (startDate > endDate) {
       throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
     }
+    // 🔹 Validar coherencia de medios días
+    if (
+      licenseData.startHalfDay &&
+      licenseData.endHalfDay &&
+      licenseData.startDate === licenseData.endDate &&
+      licenseData.startHalfDay !== 'Completo' &&
+      licenseData.endHalfDay !== 'Completo'
+    ) {
+      throw new BadRequestException(
+        'No se pueden seleccionar medio día de inicio y medio día de fin en la misma fecha.'
+      );
+    }
+    // Validar que no existan solicitudes pendientes
+    const pendingLicense = await this.licenseRepository.findOne({
+      where: {
+        user: { id: userId },
+        immediateSupervisorApproval: false,
+        personalDepartmentApproval: false,
+        deleted: false
+      },
+      order: { issuedDate: 'DESC' }
+    });
 
+    if (pendingLicense) {
+      throw new BadRequestException(
+        'No puede crear una nueva licencia mientras tenga otra pendiente de aprobación.'
+      );
+    }
     // Validaciones específicas por tipo de tiempo solicitado
     if (
       licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
@@ -105,7 +132,7 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
       } else {
         // Calcular días totales solicitados
         const totalRequestedDays = await this.calculateRequestedDays(licenseData);
-        
+
         if (totalRequestedDays > diasDisponibles) {
           throw new BadRequestException(
             `Solicitó ${totalRequestedDays} día(s) pero solo tiene ${diasDisponibles} día(s) disponibles`
@@ -131,41 +158,47 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
       const isoDate = date.toISOString().split('T')[0];
       holidayDatesMap.set(date.toDateString(), { date: isoDate, description: h.description });
     }
-
     let totalDays = 0;
     const zone = 'America/La_Paz';
 
-    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
-      totalDays = 0.5;
-    } else {
-      let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
-      const end = DateTime.fromISO(licenseData.endDate, { zone });
+    let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
+    const end = DateTime.fromISO(licenseData.endDate, { zone });
 
-      while (dateCursor <= end) {
-        const isoDateStr = dateCursor.toISODate();
-        const dayOfWeek = dateCursor.weekday;
-        const isHoliday = holidayDatesMap.has(isoDateStr);
+    while (dateCursor <= end) {
+      const isoDateStr = dateCursor.toISODate();
+      const dayOfWeek = dateCursor.weekday;
+      const isHoliday = holidayDatesMap.has(isoDateStr);
 
-        if (dayOfWeek < 6 && !isHoliday) {
-          totalDays++;
-        }
-
-        if (isHoliday) {
-          const holiday = holidayDatesMap.get(isoDateStr);
-          if (dayOfWeek >= 6) {
-            ignoredWeekendHolidays.push({ date: isoDateStr, description: holiday.description });
-          } else {
-            holidaysApplied.push({
-              date: isoDateStr,
-              year: dateCursor.year,
-              description: holiday.description
-            });
-          }
-        }
-
-        dateCursor = dateCursor.plus({ days: 1 });
+      if (dayOfWeek < 6 && !isHoliday) {
+        totalDays++;
       }
+
+      if (isHoliday) {
+        const holiday = holidayDatesMap.get(isoDateStr);
+        if (dayOfWeek >= 6) {
+          ignoredWeekendHolidays.push({ date: isoDateStr, description: holiday.description });
+        } else {
+          holidaysApplied.push({
+            date: isoDateStr,
+            year: dateCursor.year,
+            description: holiday.description
+          });
+        }
+      }
+
+      dateCursor = dateCursor.plus({ days: 1 });
     }
+    // 🔹 Ajuste por medios días de inicio/fin
+    if (licenseData.startHalfDay && licenseData.startHalfDay !== 'Completo') {
+      totalDays -= 0.5;
+    }
+
+    if (licenseData.endHalfDay && licenseData.endHalfDay !== 'Completo') {
+      totalDays -= 0.5;
+    }
+
+    // Evitar negativos en caso extremo
+    if (totalDays < 0.5) totalDays = Math.max(totalDays, 0.5);
 
     // Validación de máximo de días consecutivos
     const maxDays = 5;
@@ -925,11 +958,11 @@ async createLicense(userId: number, licenseData: Partial<License>): Promise<Lice
     if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
       return 0.5;
     }
-    
+
     if (licenseData.timeRequested === TimeRequest.FULL_DAY) {
       return 1;
     }
-    
+
     // Para MULTIPLE_DAYS calculamos la diferencia real en días hábiles
     const zone = 'America/La_Paz';
     let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });

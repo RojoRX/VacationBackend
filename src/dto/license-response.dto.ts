@@ -1,4 +1,5 @@
-import { LicenseType, TimeRequest } from 'src/entities/license.entity';
+import { IsOptional, IsEnum } from 'class-validator';
+import { HalfDayType, LicenseType, TimeRequest } from 'src/entities/license.entity';
 
 export class HolidayInfoDto {
   date: string;        // Formato YYYY-MM-DD
@@ -28,10 +29,19 @@ export class LicenseResponseDto {
   userDepartmentName?: string; // Nombre del departamento del usuario
   supervisorDepartmentId?: number; // ID del departamento del supervisor
   supervisorDepartmentName?: string; // Nombre del departamento del supervisor
-  deleted:boolean;
+  deleted: boolean;
 
   // Nuevos campos agregados:
   message?: string;
   holidaysApplied?: HolidayInfoDto[];
   ignoredWeekendHolidays?: IgnoredWeekendHolidayDto[];
+
+  @IsOptional()
+  @IsEnum(HalfDayType)
+  startHalfDay?: HalfDayType;
+
+  @IsOptional()
+  @IsEnum(HalfDayType)
+  endHalfDay?: HalfDayType;
+
 }
