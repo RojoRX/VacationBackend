@@ -11,6 +11,7 @@ import { NonHolidayModule } from './nonholiday.module';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { LicenseValidationService } from 'src/services/license-validation.service';
 import { LicensesValidationController } from 'src/controllers/licenseValidation.controller';
+import { LicenseUtilsService } from 'src/services/license-utils.service';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { LicensesValidationController } from 'src/controllers/licenseValidation.
     NonHolidayModule
 
   ],
-  providers: [LicenseService, LicenseValidationService],
+  providers: [LicenseService, LicenseValidationService, LicenseUtilsService],
   controllers: [LicenseController, LicensesValidationController],
   exports: [LicenseService],
 })

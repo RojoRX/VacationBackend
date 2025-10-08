@@ -27,6 +27,7 @@ import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { SystemConfigModule } from 'src/config/system-config.module';
 import { UserConfigModule } from './user-config.module';
+import { LicenseUtilsService } from 'src/services/license-utils.service';
 
 @Module({
   imports: [
@@ -39,7 +40,7 @@ import { UserConfigModule } from './user-config.module';
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],
-  providers: [VacationRequestService, UserService, NonHolidayService, VacationService, VacationCalculatorService, RecesoService, UserHolidayPeriodService, LicenseService, NotificationService],
+  providers: [VacationRequestService, UserService, NonHolidayService, VacationService, VacationCalculatorService, RecesoService, UserHolidayPeriodService, LicenseService, NotificationService, LicenseUtilsService],
   exports: [VacationRequestService],
 })
 export class VacationRequestModule {}

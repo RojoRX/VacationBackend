@@ -44,4 +44,7 @@ export class LicenseResponseDto {
   @IsEnum(HalfDayType)
   endHalfDay?: HalfDayType;
 
+   // 🔹 Nuevo campo para resultados dinámicos de cálculo
+  detectedHolidays?: HolidayInfoDto[];
+
 }

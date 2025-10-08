@@ -1,7 +1,7 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Brackets, Repository } from 'typeorm';
-import { License, LicenseType, TimeRequest } from 'src/entities/license.entity';
+import { HalfDayType, License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
 import { LicenseResponseDto } from 'src/dto/license-response.dto';
@@ -11,7 +11,8 @@ import { NotificationService } from './notification.service';
 import toLocalDateOnly from 'src/utils/normalizaedDate';
 import { NonHolidayService } from './nonholiday.service';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
-import { parseISO, format, setYear, getYear } from 'date-fns';
+import { parseISO, format, setYear, getYear, eachDayOfInterval } from 'date-fns';
+import { LicenseUtilsService } from './license-utils.service';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -27,7 +28,8 @@ export class LicenseService {
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
     private readonly notificationService: NotificationService,
-    private readonly nonHolidayService: NonHolidayService
+    private readonly nonHolidayService: NonHolidayService,
+    private readonly licenseUtilsService: LicenseUtilsService,
   ) { }
   async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
     // Validaciones básicas de usuario y datos requeridos
@@ -165,14 +167,18 @@ export class LicenseService {
     const end = DateTime.fromISO(licenseData.endDate, { zone });
 
     while (dateCursor <= end) {
-      const isoDateStr = dateCursor.toISODate();
       const dayOfWeek = dateCursor.weekday;
-      const isHoliday = holidayDatesMap.has(isoDateStr);
 
-      if (dayOfWeek < 6 && !isHoliday) {
+      // Contar solo días hábiles (lunes a viernes)
+      if (dayOfWeek < 6) {
         totalDays++;
       }
 
+      // 🔹 Comentado: lógica que descontaba feriados
+      /*
+      const isoDateStr = dateCursor.toISODate();
+      const isHoliday = holidayDatesMap.has(isoDateStr);
+    
       if (isHoliday) {
         const holiday = holidayDatesMap.get(isoDateStr);
         if (dayOfWeek >= 6) {
@@ -185,9 +191,11 @@ export class LicenseService {
           });
         }
       }
+      */
 
       dateCursor = dateCursor.plus({ days: 1 });
     }
+
     // 🔹 Ajuste por medios días de inicio/fin
     if (licenseData.startHalfDay && licenseData.startHalfDay !== 'Completo') {
       totalDays -= 0.5;
@@ -241,29 +249,32 @@ export class LicenseService {
     };
   }
 
+  async findOneLicense(id: number): Promise<LicenseResponseDto> {
+    const license = await this.licenseRepository.findOne({
+      where: { id, deleted: false },
+      relations: ['user', 'approvedBySupervisor'],
+    });
+
+    if (!license) throw new NotFoundException('Licencia no encontrada');
+
+    // Usamos el método auxiliar
+    return this.licenseUtilsService.mapLicenseToDtoWithHolidays(license);
+  }
+
   async findAllLicenses(): Promise<LicenseResponseDto[]> {
     const licenses = await this.licenseRepository.find({
       where: { deleted: false },
-      relations: ['user'],
+      relations: ['user', 'approvedBySupervisor'],
     });
 
-    return licenses.map(license => this.mapLicenseToDto(license));
+    return Promise.all(
+      licenses.map(license => this.licenseUtilsService.mapLicenseToDtoWithHolidays(license))
+    );
   }
-  async findOneLicense(id: number): Promise<LicenseResponseDto> {
-    const license = await this.licenseRepository.findOne({
-      where: {
-        id,
-        deleted: false,
-      },
-      relations: ['user'],
-    });
 
-    if (!license) {
-      throw new NotFoundException('Licencia no encontrada');
-    }
 
-    return this.mapLicenseToDto(license);
-  }
+
+
   async updateLicense(id: number, updateData: Partial<License>): Promise<LicenseResponseDto> {
     await this.licenseRepository.update(id, updateData);
     const updatedLicense = await this.findOneLicense(id);
@@ -305,27 +316,30 @@ export class LicenseService {
   }
   // Retorna todas las licencias activas (no eliminadas) asociadas a un usuario dado
   async getAllLicensesForUser(userId: number): Promise<LicenseResponseDto[]> {
-    // Verificar si el usuario existe
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    // Buscar licencias no eliminadas asociadas al usuario
     const licenses = await this.licenseRepository.find({
       where: {
         user: { id: userId },
         deleted: false,
       },
       order: { issuedDate: 'DESC' },
+      relations: ['user', 'approvedBySupervisor'], // agregar relaciones necesarias
     });
 
     if (!licenses || licenses.length === 0) {
       throw new BadRequestException('El usuario no tiene licencias activas registradas');
     }
 
-    return licenses.map(this.mapLicenseToDto);
+    // 🔹 Recalculamos totalDays y agregamos feriados detectados para cada licencia
+    return Promise.all(
+      licenses.map(license => this.licenseUtilsService.mapLicenseToDtoWithHolidays(license))
+    );
   }
+
   // Calcula la cantidad total de licencias activas (no eliminadas) y los días usados por un usuario en un rango de fechas
   async getTotalLicensesForUser(
     userId: number,
@@ -333,33 +347,30 @@ export class LicenseService {
     endDate: Date
   ): Promise<{ totalLicenses: number; totalDays: number }> {
     const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
-    const endDateTime = DateTime.fromJSDate(endDate).startOf('day').plus({ days: 1 }); // Incluye el último día
+    const endDateTime = DateTime.fromJSDate(endDate).startOf('day');
 
-    const licenses = await this.licenseRepository.createQueryBuilder('license')
-      .where('license.user.id = :userId', { userId })
-      .andWhere('license.startDate >= :startDate', { startDate: startDateTime.toISODate() })
-      .andWhere('license.endDate <= :endDate', { endDate: endDateTime.toISODate() })
-      .andWhere('license.deleted = false') // Filtra licencias no eliminadas
-      .getMany();
+    const licenses = await this.licenseRepository.find({
+      where: {
+        user: { id: userId },
+        startDate: Between(startDateTime.toISODate(), endDateTime.toISODate()),
+        deleted: false,
+      },
+      relations: ['user'],
+    });
 
     let totalDays = 0;
+
     for (const license of licenses) {
-      const start = DateTime.fromJSDate(new Date(license.startDate)).startOf('day');
-      const end = DateTime.fromJSDate(new Date(license.endDate)).startOf('day').plus({ days: 1 });
+      // 🔹 Usamos el método auxiliar para calcular días reales considerando feriados y medias jornadas
+      const { totalDays: effectiveDays } =
+        await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
+          license.startDate,
+          license.endDate,
+          license.startHalfDay,
+          license.endHalfDay,
+        );
 
-      const days = end.diff(start, 'days').days;
-
-      let additionalDays = 0;
-      if (license.timeRequested === TimeRequest.HALF_DAY) {
-        additionalDays = 0.5;
-      } else if (
-        license.timeRequested === TimeRequest.FULL_DAY ||
-        license.timeRequested === TimeRequest.MULTIPLE_DAYS
-      ) {
-        additionalDays = days;
-      }
-
-      totalDays += additionalDays;
+      totalDays += effectiveDays;
     }
 
     return {
@@ -367,95 +378,88 @@ export class LicenseService {
       totalDays,
     };
   }
+
+
   async getTotalAuthorizedLicensesForUser(
     userId: number,
     startDate: Date,
     endDate: Date
   ): Promise<{ totalAuthorizedDays: number; requests: LicenseResponseDto[] }> {
     const startDateTime = DateTime.fromJSDate(startDate).startOf('day');
-    const endDateTime = DateTime.fromJSDate(endDate).startOf('day').plus({ days: 1 }); // Incluye el último día
+    const endDateTime = DateTime.fromJSDate(endDate).startOf('day');
 
     try {
-      // Filtrar solo las licencias autorizadas
-      const licenses = await this.licenseRepository.createQueryBuilder('license')
-        .leftJoinAndSelect('license.user', 'user')
-        .where('license.user.id = :userId', { userId })
-        .andWhere('license.startDate >= :startDate', { startDate: startDateTime.toISODate() })
-        .andWhere('license.endDate < :endDate', { endDate: endDateTime.toISODate() })
-        .andWhere('license.deleted = false')
-        .andWhere('license.immediateSupervisorApproval = :approved', { approved: true })
-        .andWhere('license.personalDepartmentApproval = :approved', { approved: true })
-        .getMany();
+      // Filtrar solo licencias aprobadas y no eliminadas
+      const licenses = await this.licenseRepository.find({
+        where: {
+          user: { id: userId },
+          startDate: Between(startDateTime.toISODate(), endDateTime.toISODate()),
+          deleted: false,
+          immediateSupervisorApproval: true,
+          personalDepartmentApproval: true,
+        },
+        relations: ['user', 'approvedBySupervisor'],
+      });
 
-      // Usar directamente totalDays de cada licencia
-      const totalAuthorizedDays = licenses.reduce((sum, license) => {
-        return sum + Number(license.totalDays ?? 0);
-      }, 0);
+      let totalAuthorizedDays = 0;
 
+      // Recalculamos totalDays dinámico usando el servicio auxiliar
+      const requests: LicenseResponseDto[] = await Promise.all(
+        licenses.map(async (license) => {
+          const dto = await this.licenseUtilsService.mapLicenseToDtoWithHolidays(license);
+          totalAuthorizedDays += dto.totalDays;
+          return dto;
+        })
+      );
 
-      const requests = licenses.map(license => this.mapLicenseToDto(license));
-
-      return {
-        totalAuthorizedDays,
-        requests,
-      };
+      return { totalAuthorizedDays, requests };
 
     } catch (error) {
       console.error('Error al obtener licencias autorizadas:', error);
       throw new Error('Error al obtener licencias autorizadas');
     }
   }
+
+
+
   // Método para obtener las licencias del departamento del supervisor
   async findLicensesByDepartment(supervisorId: number): Promise<LicenseResponseDto[]> {
     const supervisor = await this.userService.findById(supervisorId, {
       relations: ['department', 'academicUnit'],
     });
 
-    if (!supervisor) {
-      throw new Error('Supervisor not found');
-    }
+    if (!supervisor) throw new Error('Supervisor not found');
 
     const tipoEmpleado = supervisor.tipoEmpleado;
 
-    let licenses;
+    let licenses: License[] = [];
 
     if (tipoEmpleado === 'ADMINISTRATIVO') {
-      if (!supervisor.department) {
-        throw new Error('Supervisor does not belong to any department');
-      }
+      if (!supervisor.department) throw new Error('Supervisor does not belong to any department');
 
-      licenses = await this.licenseRepository.createQueryBuilder('license')
-        .leftJoinAndSelect('license.user', 'user')
-        .where('user.departmentId = :departmentId', { departmentId: supervisor.department.id })
-        .getMany();
+      licenses = await this.licenseRepository.find({
+        where: { user: { department: { id: supervisor.department.id } } },
+        relations: ['user', 'approvedBySupervisor'],
+      });
 
     } else if (tipoEmpleado === 'DOCENTE') {
-      if (!supervisor.academicUnit) {
-        throw new Error('Supervisor does not belong to any academic unit');
-      }
+      if (!supervisor.academicUnit) throw new Error('Supervisor does not belong to any academic unit');
 
-      licenses = await this.licenseRepository.createQueryBuilder('license')
-        .leftJoinAndSelect('license.user', 'user')
-        .where('user.academicUnitId = :academicUnitId', { academicUnitId: supervisor.academicUnit.id })
-        .getMany();
+      licenses = await this.licenseRepository.find({
+        where: { user: { academicUnit: { id: supervisor.academicUnit.id } } },
+        relations: ['user', 'approvedBySupervisor'],
+      });
 
     } else {
       throw new Error('Tipo de empleado del supervisor no reconocido');
     }
 
-    return licenses.map(license => ({
-      id: license.id,
-      licenseType: license.licenseType,
-      timeRequested: license.timeRequested,
-      startDate: license.startDate,
-      endDate: license.endDate,
-      totalDays: license.totalDays,
-      issuedDate: license.issuedDate,
-      immediateSupervisorApproval: license.immediateSupervisorApproval,
-      personalDepartmentApproval: license.personalDepartmentApproval,
-      userId: license.user.id,
-    }));
+    // 🔹 Recalculamos totalDays dinámico y mapeamos al DTO
+    return Promise.all(
+      licenses.map(license => this.licenseUtilsService.mapLicenseToDtoWithHolidays(license))
+    );
   }
+
   // Método para que un supervisor apruebe o rechace una licencia
   async approveLicense(
     licenseId: number,
@@ -761,22 +765,35 @@ export class LicenseService {
     const licenses = await this.licenseRepository.find({
       where: {
         personalDepartmentApproval: false,
-        deleted: false, // Excluir licencias eliminadas lógicamente
+        deleted: false,
       },
       relations: ['user', 'user.department', 'user.academicUnit'],
     });
 
-    return licenses.map((license) => {
-      const { user, ...rest } = license;
-      return {
-        ...rest,
-        ci: user.ci,
-        fullname: user.fullName,
-        department: user.department?.name ?? null,
-        academicUnit: user.academicUnit?.name ?? null,
-      };
-    });
+    return Promise.all(
+      licenses.map(async (license) => {
+        // 🔹 Recalcular totalDays dinámico
+        const { totalDays } = await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
+          license.startDate,
+          license.endDate,
+          license.startHalfDay,
+          license.endHalfDay
+        );
+
+        const { user, ...rest } = license;
+
+        return {
+          ...rest,
+          totalDays, // valor recalculado
+          ci: user.ci,
+          fullname: user.fullName,
+          department: user.department?.name ?? null,
+          academicUnit: user.academicUnit?.name ?? null,
+        };
+      })
+    );
   }
+
   //Obtener las licencias eliminadas
   async getDeletedLicenses(): Promise<LicenseResponseDto[]> {
     const deletedLicenses = await this.licenseRepository.find({
@@ -1000,4 +1017,5 @@ export class LicenseService {
 
     return daysCount;
   }
+
 }
