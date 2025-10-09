@@ -54,10 +54,17 @@ export class LicenseService {
       throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
     }
     // 🔹 Validar coherencia de medios días
+    // Para licencias de medio día
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      // Asegurarse de que startDate === endDate
+      licenseData.endDate = licenseData.startDate;
+      // Asegurarse de que ambos turnos tengan el mismo valor
+      licenseData.endHalfDay = licenseData.startHalfDay;
+    }
+
+    // Validación de coherencia de medios días solo para rangos >1 día
     if (
-      licenseData.startHalfDay &&
-      licenseData.endHalfDay &&
-      licenseData.startDate === licenseData.endDate &&
+      licenseData.startDate !== licenseData.endDate &&
       licenseData.startHalfDay !== 'Completo' &&
       licenseData.endHalfDay !== 'Completo'
     ) {
@@ -65,6 +72,7 @@ export class LicenseService {
         'No se pueden seleccionar medio día de inicio y medio día de fin en la misma fecha.'
       );
     }
+
     // Validar que no existan solicitudes pendientes
     const pendingLicense = await this.licenseRepository.findOne({
       where: {
@@ -81,7 +89,6 @@ export class LicenseService {
         'No puede crear una nueva licencia mientras tenga otra pendiente de aprobación.'
       );
     }
-    // Validaciones específicas por tipo de tiempo solicitado
     if (
       licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS &&
       licenseData.startDate === licenseData.endDate
@@ -92,6 +99,23 @@ export class LicenseService {
     if (licenseData.timeRequested === TimeRequest.HALF_DAY && licenseData.startDate !== licenseData.endDate) {
       throw new BadRequestException('La licencia de medio día debe tener la misma fecha de inicio y fin');
     }
+
+    // 🧩 Validar medios días para HALF_DAY
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      if (!licenseData.startHalfDay) {
+        throw new BadRequestException('Debe indicar si el medio día es por la mañana o por la tarde');
+      }
+
+      if (![HalfDayType.MORNING, HalfDayType.AFTERNOON].includes(licenseData.startHalfDay)) {
+        throw new BadRequestException('Valor de startHalfDay inválido (use "Media Mañana" o "Media Tarde")');
+      }
+
+      // 🔹 Asegurar que endHalfDay sea igual al turno seleccionado
+      licenseData.endHalfDay = licenseData.startHalfDay;
+      // 🔹 Asegurar que la fecha de fin sea igual a la de inicio
+      licenseData.endDate = licenseData.startDate;
+    }
+
 
     // Validación de fecha/hora para solicitudes
     const now = DateTime.local().setZone('America/La_Paz');
@@ -194,6 +218,12 @@ export class LicenseService {
       */
 
       dateCursor = dateCursor.plus({ days: 1 });
+      // Ajuste por medios días de inicio/fin
+      if (licenseData.startHalfDay && licenseData.startHalfDay !== HalfDayType.NONE) totalDays -= 0.5;
+      if (licenseData.endHalfDay && licenseData.endHalfDay !== HalfDayType.NONE) totalDays -= 0.5;
+
+      if (totalDays < 0.5) totalDays = 0.5;
+      break;
     }
 
     // 🔹 Ajuste por medios días de inicio/fin
@@ -658,17 +688,48 @@ export class LicenseService {
         if (licenseData.timeRequested && !Object.values(TimeRequest).includes(licenseData.timeRequested)) {
           throw new Error('Tipo de tiempo solicitado no válido');
         }
-
+        // 🔹 Manejo de medio día: asegurar mismo turno y fecha de inicio = fin
+        if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+          if (!licenseData.startHalfDay || ![HalfDayType.MORNING, HalfDayType.AFTERNOON].includes(licenseData.startHalfDay)) {
+            throw new Error('Debe indicar si el medio día es por la mañana o por la tarde');
+          }
+          licenseData.endHalfDay = licenseData.startHalfDay;
+          licenseData.endDate = licenseData.startDate;
+        }
         // 3.5. Validación de solapamiento con licencias existentes
         await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
-
-        // 3.6. Validación de solapamiento dentro del mismo lote
+        // 3.6. Validación de solapamiento dentro del mismo lote (robusta)
         for (const otherLicense of validatedLicenses) {
-          const otherStart = new Date(otherLicense.startDate);
-          const otherEnd = new Date(otherLicense.endDate);
+          if (licenseData === otherLicense) continue; // Saltar mismo objeto
 
-          if (this.datesOverlap(startDate, endDate, otherStart, otherEnd)) {
-            throw new Error(`La licencia se solapa con otra en el mismo lote (${otherLicense.startDate} - ${otherLicense.endDate})`);
+          // Generar arrays de días ocupados para cada licencia
+          const getOccupiedDays = (license: Partial<License>) => {
+            const start = new Date(license.startDate);
+            const end = new Date(license.endDate);
+            const days: { date: string; half?: HalfDayType }[] = [];
+
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+              const dayStr = d.toISOString().split('T')[0];
+              if (license.timeRequested === TimeRequest.HALF_DAY) {
+                days.push({ date: dayStr, half: license.startHalfDay });
+              } else {
+                days.push({ date: dayStr });
+              }
+            }
+            return days;
+          };
+
+          const currentDays = getOccupiedDays(licenseData);
+          const otherDays = getOccupiedDays(otherLicense);
+
+          // Comparar cada día del currentDays con otherDays
+          for (const c of currentDays) {
+            const conflict = otherDays.find(o => o.date === c.date && (!c.half || !o.half || c.half === o.half));
+            if (conflict) {
+              throw new Error(
+                `La licencia (${licenseData.timeRequested}${c.half ? ' ' + c.half : ''}) se solapa con otra licencia (${otherLicense.timeRequested}${conflict.half ? ' ' + conflict.half : ''}) en la misma fecha (${c.date})`
+              );
+            }
           }
         }
 
@@ -682,9 +743,12 @@ export class LicenseService {
         if (!['Completo', 'Media Mañana', 'Media Tarde'].includes(startHalfDay)) {
           throw new Error('startHalfDay inválido');
         }
-        if (!['Completo', 'Media Mañana'].includes(endHalfDay)) {
-          throw new Error('endHalfDay inválido (solo Completo o Media Mañana en múltiples días)');
+        if (licenseData.timeRequested !== TimeRequest.HALF_DAY) {
+          if (!['Completo', 'Media Mañana'].includes(endHalfDay)) {
+            throw new Error('endHalfDay inválido (solo Completo o Media Mañana en múltiples días)');
+          }
         }
+
 
         switch (licenseData.timeRequested) {
           case TimeRequest.HALF_DAY:
@@ -695,13 +759,10 @@ export class LicenseService {
             break;
           case TimeRequest.MULTIPLE_DAYS:
             totalDays = this.countWeekdays(startDate, endDate);
-
             // Ajuste por medios días
             if (startHalfDay !== 'Completo') totalDays -= 0.5;
             if (endHalfDay !== 'Completo') totalDays -= 0.5;
-
-            // Asegurar mínimo 0.5 días
-            if (totalDays < 0.5) totalDays = 0.5;
+            totalDays = Math.max(totalDays, 0.5);
             break;
           default:
             throw new Error('Tipo de tiempo solicitado no reconocido');
