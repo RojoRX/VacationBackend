@@ -18,6 +18,7 @@ import { VacationDetail } from 'src/interfaces/vacation-detail';
 import { User } from 'src/entities/user.entity';
 import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
 import { DateTime } from 'luxon';
+import { RoleEnum } from 'src/enums/role.enum';
 
 
 @Injectable()
@@ -1227,52 +1228,79 @@ export class VacationRequestService {
     return pendingCount;
   }
 
-  //Eliminar con Estado
-  async softDeleteVacationRequest(id: number, userId: number): Promise<{ message: string }> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
+async softDeleteVacationRequest(
+  id: number,
+  user: { id: number; role?: string },
+): Promise<{ message: string }> {
+  console.log('[softDeleteVacationRequest] Usuario que solicita la eliminación:', user);
 
-    if (!request) {
-      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
-    }
+  // 🔹 Buscar la solicitud de vacaciones
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user'],
+  });
 
-    if (request.deleted) {
-      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
-    }
-
-    if (request.approvedByHR && request.approvedBySupervisor) {
-      throw new HttpException(
-        'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
-      throw new HttpException(
-        `No se puede eliminar una solicitud con estado '${request.status}'`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    // 🔍 Buscar el usuario para conocer su rol
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
-    }
-
-    // 👇 Permitir solo si es dueño o admin
-    if (request.user.id !== userId && user.role !== 'ADMIN') {
-      throw new HttpException('No tienes permiso para cancelar esta solicitud', HttpStatus.FORBIDDEN);
-    }
-
-    request.deleted = true;
-    await this.vacationRequestRepository.save(request);
-
-    return { message: 'La solicitud fue cancelada/eliminada correctamente' };
+  if (!request) {
+    console.log('[softDeleteVacationRequest] Solicitud no encontrada:', id);
+    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
   }
+
+  console.log('[softDeleteVacationRequest] Solicitud encontrada:', {
+    id: request.id,
+    userId: request.user.id,
+    status: request.status,
+    deleted: request.deleted,
+    approvedByHR: request.approvedByHR,
+    approvedBySupervisor: request.approvedBySupervisor,
+  });
+
+  if (request.deleted) {
+    console.log('[softDeleteVacationRequest] La solicitud ya estaba eliminada:', request.id);
+    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+  }
+
+  if (request.approvedByHR && request.approvedBySupervisor) {
+    console.log('[softDeleteVacationRequest] La solicitud ya fue aprobada por HR y supervisor:', request.id);
+    throw new HttpException(
+      'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
+    console.log('[softDeleteVacationRequest] Solicitud con estado no eliminable:', request.status);
+    throw new HttpException(
+      `No se puede eliminar una solicitud con estado '${request.status}'`,
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  // 🔹 Verificar si el rol viene en el token; si no, cargar desde BD
+  const dbUser = user.role ? user : await this.userRepository.findOne({ where: { id: user.id } });
+  console.log('[softDeleteVacationRequest] Usuario verificado en DB o token:', dbUser);
+
+  const isAdmin = dbUser?.role?.toUpperCase() === 'ADMIN';
+  const isOwner = request.user.id === dbUser.id;
+
+  console.log('[softDeleteVacationRequest] isOwner:', isOwner, 'isAdmin:', isAdmin);
+
+  if (!isOwner && !isAdmin) {
+    console.log('[softDeleteVacationRequest] Permiso denegado para usuario:', dbUser.id);
+    throw new HttpException('No tienes permiso para cancelar esta solicitud', HttpStatus.FORBIDDEN);
+  }
+
+  // 🔹 Marcar como eliminada
+  request.deleted = true;
+  await this.vacationRequestRepository.save(request);
+
+  console.log('[softDeleteVacationRequest] Solicitud marcada como eliminada correctamente:', request.id);
+
+  return { message: 'La solicitud fue cancelada/eliminada correctamente' };
+}
+
+
+
+
   // Obtener Todas las solicitudes eliminadas
   async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -1460,34 +1488,42 @@ export class VacationRequestService {
     }
   }
   // Eliminar sin considerar estado ni aprobaciones
-  async forceSoftDeleteVacationRequest(id: number, userId: number): Promise<{ message: string }> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
+async forceSoftDeleteVacationRequest(
+  id: number,
+  user: { id: number; role?: string }
+): Promise<{ message: string }> {
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id },
+    relations: ['user'],
+  });
 
-    if (!request) {
-      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
-    }
+  console.log('[forceSoftDelete] request:', request);
 
-    if (request.deleted) {
-      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
-    }
-
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
-    }
-
-    if (request.user.id !== userId && user.role !== 'ADMIN') {
-      throw new HttpException('No tienes permiso para eliminar esta solicitud', HttpStatus.FORBIDDEN);
-    }
-
-    request.deleted = true;
-    await this.vacationRequestRepository.save(request);
-
-    return { message: 'La solicitud fue eliminada correctamente (forzado)' };
+  if (!request) {
+    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
   }
+
+  if (request.deleted) {
+    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+  }
+
+  console.log('[forceSoftDelete] user:', user);
+
+  // Permitir solo al dueño o admin
+  const isOwner = request.user.id === user.id;
+  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+
+  if (!isOwner && !isAdmin) {
+    console.log('[forceSoftDelete] Permiso denegado');
+    throw new HttpException('No tienes permiso para eliminar esta solicitud', HttpStatus.FORBIDDEN);
+  }
+
+  request.deleted = true;
+  await this.vacationRequestRepository.save(request);
+
+  console.log('[forceSoftDelete] Solicitud eliminada correctamente');
+
+  return { message: 'La solicitud fue eliminada correctamente (forzado)' };
+}
 
 }

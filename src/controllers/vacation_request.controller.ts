@@ -24,6 +24,8 @@ import { PostponeVacationRequestDTO } from 'src/dto/postponed-vacation-request.d
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -355,6 +357,7 @@ export class VacationRequestController {
   }
 
   @Patch(':id/soft-delete')
+  @Roles(RoleEnum.ADMIN)
   @ApiOperation({ summary: 'Marcar una solicitud de vacaciones como eliminada (soft delete)' })
   @ApiParam({ name: 'id', type: Number, description: 'ID de la solicitud de vacaciones' })
   @ApiResponse({ status: 200, description: 'Solicitud marcada como eliminada correctamente' })
@@ -362,9 +365,11 @@ export class VacationRequestController {
   @ApiResponse({ status: 400, description: 'La solicitud ya está eliminada o no se puede eliminar por su estado' })
   async softDeleteVacationRequest(
     @Param('id', ParseIntPipe) id: number,
-    @Body('userId') userId: number,
+    @Req() req: any, // 🔐 El usuario autenticado viene del token JWT
   ): Promise<{ message: string }> {
-    return this.vacationRequestService.softDeleteVacationRequest(id, userId);
+    // req.user contiene los datos del token (id, role, etc.)
+    const user = req.user;
+    return this.vacationRequestService.softDeleteVacationRequest(id, user);
   }
 
 
@@ -381,7 +386,7 @@ export class VacationRequestController {
   }
   // vacation-requests.controller.ts
 
-  @UseGuards(AuthGuard)
+  @Roles(RoleEnum.ADMIN)
   @Delete(':id/force')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Elimina lógicamente una solicitud de vacaciones sin validar aprobaciones ni estado' })
@@ -392,8 +397,13 @@ export class VacationRequestController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: any
   ) {
-    const userId = req.user?.sub; // ✅ Usa `sub` porque así viene del payload
-    return this.vacationRequestService.forceSoftDeleteVacationRequest(id, userId);
+    // ⚡ Enviar el objeto completo del usuario, no solo el ID
+    const user = {
+      id: req.user?.sub,
+      role: req.user?.role,
+    };
+
+    return this.vacationRequestService.forceSoftDeleteVacationRequest(id, user);
   }
 
 

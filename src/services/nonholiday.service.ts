@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { DateTime } from 'luxon';
 
@@ -9,7 +9,7 @@ export class NonHolidayService {
   constructor(
     @InjectRepository(NonHoliday)
     private readonly nonHolidayRepository: Repository<NonHoliday>,
-  ) {}
+  ) { }
 
   async getNonHolidayDays(year: number): Promise<NonHoliday[]> {
     return this.nonHolidayRepository.find({ where: { year } });
@@ -59,43 +59,56 @@ export class NonHolidayService {
     return this.nonHolidayRepository.save(nonHoliday);
   }
 
-  async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
-    const existing = await this.nonHolidayRepository.findOne({ where: { id } });
-    if (!existing) {
-      throw new BadRequestException(`No se encontró el día no hábil con ID ${id}.`);
-    }
-
-    if (nonHoliday.date) {
-      const date = DateTime.fromISO(nonHoliday.date);
-      if (!date.isValid) {
-        throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
-      }
-
-      const year = date.year;
-      if (year < 2000 || year > 2100) {
-        throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
-      }
-
-      nonHoliday.date = date.toISODate();
-      nonHoliday.year = year;
-
-      // Validar que no exista otro día no hábil en la nueva fecha
-      const duplicate = await this.getNonHolidayByDate(year, nonHoliday.date);
-      if (duplicate && duplicate.id !== id) {
-        throw new BadRequestException(`Ya existe un día no hábil registrado para la fecha ${nonHoliday.date}.`);
-      }
-    }
-
-    if (nonHoliday.description) {
-      if (nonHoliday.description.trim().length < 3) {
-        throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
-      }
-      nonHoliday.description = nonHoliday.description.toUpperCase();
-    }
-
-    await this.nonHolidayRepository.update(id, nonHoliday);
-    return this.nonHolidayRepository.findOne({ where: { id } });
+async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
+  const existing = await this.nonHolidayRepository.findOne({ where: { id } });
+  if (!existing) {
+    throw new BadRequestException(`No se encontró el día no hábil con ID ${id}.`);
   }
+
+  // Validar y normalizar la fecha si se envía una nueva
+  if (nonHoliday.date) {
+    const date = DateTime.fromISO(nonHoliday.date);
+    if (!date.isValid) {
+      throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
+    }
+
+    const normalizedDate = date.toISODate();
+    const year = date.year;
+
+    if (year < 2000 || year > 2100) {
+      throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
+    }
+
+    // 🔹 Buscar si existe otro registro con la misma fecha pero EXCLUYENDO el registro actual
+    const duplicate = await this.nonHolidayRepository.findOne({
+      where: { 
+        date: normalizedDate,
+        id: Not(id) // ← Esta es la clave: excluir el registro actual
+      },
+    });
+
+    if (duplicate) {
+      throw new BadRequestException(`Ya existe un día no hábil registrado para la fecha ${normalizedDate}.`);
+    }
+
+    nonHoliday.date = normalizedDate;
+    nonHoliday.year = year;
+  }
+
+  // Validar y limpiar descripción
+  if (nonHoliday.description !== undefined) {
+    const trimmed = nonHoliday.description.trim();
+    if (trimmed.length < 3) {
+      throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
+    }
+    nonHoliday.description = trimmed.toUpperCase();
+  }
+
+  await this.nonHolidayRepository.update(id, nonHoliday);
+
+  return this.nonHolidayRepository.findOne({ where: { id } });
+}
+
 
   async deleteNonHoliday(id: number): Promise<void> {
     await this.nonHolidayRepository.delete(id);
@@ -106,36 +119,36 @@ export class NonHolidayService {
     return this.nonHolidayRepository.findOne({ where: { year, date: normalizedDate } });
   }
 
-async getNonWorkingDaysInRange(startDate: string, endDate: string): Promise<string[]> {
-  const start = DateTime.fromISO(startDate).startOf('day');
-  const end = DateTime.fromISO(endDate).startOf('day');
+  async getNonWorkingDaysInRange(startDate: string, endDate: string): Promise<string[]> {
+    const start = DateTime.fromISO(startDate).startOf('day');
+    const end = DateTime.fromISO(endDate).startOf('day');
 
-  console.log('📅 Rango recibido:', { start: start.toISODate(), end: end.toISODate() });
+    console.log('📅 Rango recibido:', { start: start.toISODate(), end: end.toISODate() });
 
-  const allNonHolidays = await this.nonHolidayRepository.find();
+    const allNonHolidays = await this.nonHolidayRepository.find();
 
-  console.log('📋 Todos los días no hábiles registrados en la base de datos:');
-  allNonHolidays.forEach(nh => {
-    const isoDate = DateTime.fromISO(nh.date).toISODate();
-    console.log(` - ${isoDate}`);
-  });
+    console.log('📋 Todos los días no hábiles registrados en la base de datos:');
+    allNonHolidays.forEach(nh => {
+      const isoDate = DateTime.fromISO(nh.date).toISODate();
+      console.log(` - ${isoDate}`);
+    });
 
-  // Filtrar los días no hábiles que están dentro del rango
-  const filteredDates = allNonHolidays
-    .filter(nh => {
-      const nhDate = DateTime.fromISO(nh.date).startOf('day');
-      const isInRange = nhDate >= start && nhDate <= end;
-      if (isInRange) {
-        console.log(`✅ Día no hábil dentro del rango: ${nhDate.toISODate()}`);
-      }
-      return isInRange;
-    })
-    .map(nh => DateTime.fromISO(nh.date).toISODate());
+    // Filtrar los días no hábiles que están dentro del rango
+    const filteredDates = allNonHolidays
+      .filter(nh => {
+        const nhDate = DateTime.fromISO(nh.date).startOf('day');
+        const isInRange = nhDate >= start && nhDate <= end;
+        if (isInRange) {
+          console.log(`✅ Día no hábil dentro del rango: ${nhDate.toISODate()}`);
+        }
+        return isInRange;
+      })
+      .map(nh => DateTime.fromISO(nh.date).toISODate());
 
-  console.log('✅ Días no hábiles finales devueltos:', filteredDates);
+    console.log('✅ Días no hábiles finales devueltos:', filteredDates);
 
-  return filteredDates;
-}
+    return filteredDates;
+  }
 
 
 

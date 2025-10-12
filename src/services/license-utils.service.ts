@@ -59,28 +59,34 @@ export class LicenseUtilsService {
   }
 
   // 🔹 Calcula los días totales considerando medias jornadas
-  private calculateDaysConsideringHalfDays(
-    startDate: string,
-    endDate: string,
-    startHalfDay?: HalfDayType,
-    endHalfDay?: HalfDayType,
-  ): number {
-    const start = parseISO(startDate);
-    const end = parseISO(endDate);
+private calculateDaysConsideringHalfDays(
+  startDate: string,
+  endDate: string,
+  startHalfDay?: HalfDayType,
+  endHalfDay?: HalfDayType,
+): number {
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
 
-    const allDays = eachDayOfInterval({ start, end });
-    let totalDays = allDays.length;
-
-    if (startDate === endDate) {
-      if (startHalfDay === 'Media Mañana' || startHalfDay === 'Media Tarde') return 0.5;
-      return 1;
-    }
-
-    if (startHalfDay && startHalfDay !== 'Completo') totalDays -= 0.5;
-    if (endHalfDay && endHalfDay !== 'Completo') totalDays -= 0.5;
-
-    return totalDays;
+  // Caso: mismo día
+  if (startDate === endDate) {
+    return (startHalfDay === 'Media Mañana' || startHalfDay === 'Media Tarde') ? 0.5 : 1;
   }
+
+  // Calcular cantidad de días naturales
+  const allDays = eachDayOfInterval({ start, end });
+  const totalNaturalDays = allDays.length;
+
+  // Ajustar por medias jornadas
+  let adjustment = 0;
+  
+  if (startHalfDay && startHalfDay !== 'Completo') adjustment += 0.5;
+  if (endHalfDay && endHalfDay !== 'Completo') adjustment += 0.5;
+
+  const totalDays = totalNaturalDays - adjustment;
+  
+  return Math.max(totalDays, 0);
+}
 
   // 🔹 NUEVO: Mapea una licencia a LicenseResponseDto con totalDays dinámico y feriados
   async mapLicenseToDtoWithHolidays(license: License): Promise<LicenseResponseDto> {
