@@ -11,7 +11,7 @@ export class LicenseUtilsService {
   constructor(
     @InjectRepository(NonHoliday)
     private readonly nonHolidayRepository: Repository<NonHoliday>,
-  ) {}
+  ) { }
 
   // 🔹 Calcula los días hábiles reales y devuelve también los feriados detectados
   async calculateEffectiveDaysWithHolidays(
@@ -33,25 +33,27 @@ export class LicenseUtilsService {
     for (const holiday of holidays) {
       const holidayDate = parseISO(holiday.date);
 
-      if (startDate === endDate && (startHalfDay === 'Media Mañana' || startHalfDay === 'Media Tarde')) {
-        if (isSameDay(holidayDate, parseISO(startDate))) {
-          totalDays = 0;
-          continue;
-        }
-      }
-
       if (isSameDay(holidayDate, parseISO(startDate))) {
-        totalDays -= startHalfDay && startHalfDay !== 'Completo' ? 0.5 : 1;
+        if (startHalfDay === HalfDayType.MORNING || startHalfDay === HalfDayType.AFTERNOON) {
+          totalDays -= 0.5;
+        } else {
+          totalDays -= 1;
+        }
         continue;
       }
 
       if (isSameDay(holidayDate, parseISO(endDate))) {
-        totalDays -= endHalfDay && endHalfDay !== 'Completo' ? 0.5 : 1;
+        if (endHalfDay === HalfDayType.MORNING || endHalfDay === HalfDayType.AFTERNOON) {
+          totalDays -= 0.5;
+        } else {
+          totalDays -= 1;
+        }
         continue;
       }
 
-      totalDays -= 1;
+      totalDays -= 1; // feriados intermedios
     }
+
 
     totalDays = Math.max(totalDays, 0);
 
@@ -59,34 +61,33 @@ export class LicenseUtilsService {
   }
 
   // 🔹 Calcula los días totales considerando medias jornadas
-private calculateDaysConsideringHalfDays(
-  startDate: string,
-  endDate: string,
-  startHalfDay?: HalfDayType,
-  endHalfDay?: HalfDayType,
-): number {
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
+  private calculateDaysConsideringHalfDays(
+    startDate: string,
+    endDate: string,
+    startHalfDay?: HalfDayType,
+    endHalfDay?: HalfDayType,
+  ): number {
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
 
-  // Caso: mismo día
-  if (startDate === endDate) {
-    return (startHalfDay === 'Media Mañana' || startHalfDay === 'Media Tarde') ? 0.5 : 1;
+    // Caso mismo día
+    if (startDate === endDate) {
+      if (startHalfDay === HalfDayType.MORNING || startHalfDay === HalfDayType.AFTERNOON) return 0.5;
+      return 1;
+    }
+
+    const allDays = eachDayOfInterval({ start, end });
+    let totalDays = allDays.length;
+
+    // Ajuste por medios días
+    if (startHalfDay === HalfDayType.AFTERNOON) totalDays -= 0.5;
+    if (startHalfDay === HalfDayType.MORNING) totalDays -= 0; // inicio en media mañana → el día completo se cuenta
+    if (endHalfDay === HalfDayType.MORNING) totalDays -= 0.5;
+    if (endHalfDay === HalfDayType.AFTERNOON) totalDays -= 0; // final en media tarde → el día completo se cuenta
+
+    return Math.max(totalDays, 0.5);
   }
 
-  // Calcular cantidad de días naturales
-  const allDays = eachDayOfInterval({ start, end });
-  const totalNaturalDays = allDays.length;
-
-  // Ajustar por medias jornadas
-  let adjustment = 0;
-  
-  if (startHalfDay && startHalfDay !== 'Completo') adjustment += 0.5;
-  if (endHalfDay && endHalfDay !== 'Completo') adjustment += 0.5;
-
-  const totalDays = totalNaturalDays - adjustment;
-  
-  return Math.max(totalDays, 0);
-}
 
   // 🔹 NUEVO: Mapea una licencia a LicenseResponseDto con totalDays dinámico y feriados
   async mapLicenseToDtoWithHolidays(license: License): Promise<LicenseResponseDto> {

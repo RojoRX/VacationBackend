@@ -378,9 +378,10 @@ export class VacationService {
           diasDeVacacion: result.diasDeVacacion ?? 0,
           diasDeVacacionRestantes: result.diasDeVacacionRestantes ?? 0,
           deudaAcumulativaHastaEstaGestion: deudaAcumulativa,
-          deudaAcumulativaAnterior: deudaAcumulativa ?? 0,
+          deudaAcumulativaAnterior,  // ✅ usar el valor anterior, no el actualizado
           diasDisponibles: Math.max(0, (result.diasDeVacacionRestantes ?? 0) - deudaAcumulativaAnterior),
         });
+
 
       } catch (error) {
         console.error(`Error calculando deuda para el período ${currentStartDate.toISODate()} - ${adjustedEndDate.toISODate()}:`, error);

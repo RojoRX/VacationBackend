@@ -63,15 +63,6 @@ export class LicenseService {
     }
 
     // Validación de coherencia de medios días solo para rangos >1 día
-    if (
-      licenseData.startDate !== licenseData.endDate &&
-      licenseData.startHalfDay !== 'Completo' &&
-      licenseData.endHalfDay !== 'Completo'
-    ) {
-      throw new BadRequestException(
-        'No se pueden seleccionar medio día de inicio y medio día de fin en la misma fecha.'
-      );
-    }
 
     // Validar que no existan solicitudes pendientes
     const pendingLicense = await this.licenseRepository.findOne({
@@ -133,14 +124,29 @@ export class LicenseService {
     if (licenseData.licenseType === LicenseType.VACATION) {
       // 1. Obtener fecha de ingreso ajustada al año actual
       const fechaIngreso = parseISO(user.fecha_ingreso);
-      const currentYear = getYear(new Date());
-      const endDateForDebtCalculation = format(setYear(fechaIngreso, currentYear), 'yyyy-MM-dd');
+      const solicitudDate = parseISO(licenseData.startDate);
 
+      // Fecha del aniversario en el año de la solicitud
+      const gestionStart = setYear(fechaIngreso, solicitudDate.getFullYear());
+
+      // Si la solicitud es antes del aniversario, la gestión aún no se completó → usamos el año siguiente
+      let endDateForDebtCalculation: Date;
+      if (solicitudDate < gestionStart) {
+        endDateForDebtCalculation = setYear(fechaIngreso, solicitudDate.getFullYear() + 1);
+      } else {
+        endDateForDebtCalculation = setYear(fechaIngreso, solicitudDate.getFullYear() + 1);
+      }
+
+      const endDateForDebtCalculationStr = format(endDateForDebtCalculation, 'yyyy-MM-dd');
+
+
+      console.log(`Mandando esta fecha para licencias ${endDateForDebtCalculation}`)
       // 2. Calcular días disponibles
       const debtResult = await this.vacationService.calculateAccumulatedDebt(
         user.ci,
-        endDateForDebtCalculation
+        endDateForDebtCalculationStr
       );
+
 
       // 3. Obtener días disponibles de la última gestión (año actual)
       const lastGestion = debtResult.detalles[debtResult.detalles.length - 1];
@@ -164,79 +170,43 @@ export class LicenseService {
             `Solicitó ${totalRequestedDays} día(s) pero solo tiene ${diasDisponibles} día(s) disponibles`
           );
         }
+
       }
     }
 
     // Cálculo de días hábiles y feriados
+    // Cálculo de días hábiles y feriados
     const startStr = startDate.toISOString().split('T')[0];
     const endStr = endDate.toISOString().split('T')[0];
 
-    const holidays = await this.nonHolidayRepository.find({
-      where: { date: Between(startStr, endStr) }
-    });
+    // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
+    // ALTERNATIVA: Si quieres que cada "media jornada" cuente como 0.5 días completos
+let totalDays = 0;
+const startHalfDay = licenseData.startHalfDay ?? HalfDayType.NONE;
+const endHalfDay = licenseData.endHalfDay ?? HalfDayType.NONE;
 
-    const holidaysApplied: { date: string; year: number; description: string }[] = [];
-    const ignoredWeekendHolidays: { date: string; description: string }[] = [];
+const zone = 'America/La_Paz';
+let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
+const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
 
-    const holidayDatesMap = new Map<string, { date: string; description: string }>();
-    for (const h of holidays) {
-      const date = new Date(h.date);
-      const isoDate = date.toISOString().split('T')[0];
-      holidayDatesMap.set(date.toDateString(), { date: isoDate, description: h.description });
-    }
-    let totalDays = 0;
-    const zone = 'America/La_Paz';
-
-    let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
-    const end = DateTime.fromISO(licenseData.endDate, { zone });
-
-    while (dateCursor <= end) {
-      const dayOfWeek = dateCursor.weekday;
-
-      // Contar solo días hábiles (lunes a viernes)
-      if (dayOfWeek < 6) {
-        totalDays++;
-      }
-
-      // 🔹 Comentado: lógica que descontaba feriados
-      /*
-      const isoDateStr = dateCursor.toISODate();
-      const isHoliday = holidayDatesMap.has(isoDateStr);
-    
-      if (isHoliday) {
-        const holiday = holidayDatesMap.get(isoDateStr);
-        if (dayOfWeek >= 6) {
-          ignoredWeekendHolidays.push({ date: isoDateStr, description: holiday.description });
+while (cursor <= endDateLux) {
+    const weekday = cursor.weekday;
+    if (weekday >= 1 && weekday <= 5) {
+        if (cursor.hasSame(DateTime.fromISO(licenseData.startDate), 'day')) {
+            // Primer día
+            totalDays += (startHalfDay === HalfDayType.NONE) ? 1 : 0.5;
+        } else if (cursor.hasSame(DateTime.fromISO(licenseData.endDate), 'day')) {
+            // Último día
+            totalDays += (endHalfDay === HalfDayType.NONE) ? 1 : 0.5;
         } else {
-          holidaysApplied.push({
-            date: isoDateStr,
-            year: dateCursor.year,
-            description: holiday.description
-          });
+            // Días intermedios (siempre completos)
+            totalDays += 1;
         }
-      }
-      */
-
-      dateCursor = dateCursor.plus({ days: 1 });
-      // Ajuste por medios días de inicio/fin
-      if (licenseData.startHalfDay && licenseData.startHalfDay !== HalfDayType.NONE) totalDays -= 0.5;
-      if (licenseData.endHalfDay && licenseData.endHalfDay !== HalfDayType.NONE) totalDays -= 0.5;
-
-      if (totalDays < 0.5) totalDays = 0.5;
-      break;
     }
+    cursor = cursor.plus({ days: 1 });
+}
 
-    // 🔹 Ajuste por medios días de inicio/fin
-    if (licenseData.startHalfDay && licenseData.startHalfDay !== 'Completo') {
-      totalDays -= 0.5;
-    }
-
-    if (licenseData.endHalfDay && licenseData.endHalfDay !== 'Completo') {
-      totalDays -= 0.5;
-    }
-
-    // Evitar negativos en caso extremo
-    if (totalDays < 0.5) totalDays = Math.max(totalDays, 0.5);
+totalDays = Math.max(totalDays, 0.5);
 
     // Validación de máximo de días consecutivos
     const maxDays = 5;
@@ -248,13 +218,17 @@ export class LicenseService {
     await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
 
     // Crear y guardar la licencia
+    // 🔹 Asegurar que los valores de medios días se guarden correctamente
     const license = this.licenseRepository.create({
       ...licenseData,
       user,
       totalDays,
       issuedDate: new Date(),
       immediateSupervisorApproval: false,
-      personalDepartmentApproval: false
+      personalDepartmentApproval: false,
+      // 🔹 Forzar la asignación explícita
+      startHalfDay: licenseData.startHalfDay || HalfDayType.NONE,
+      endHalfDay: licenseData.endHalfDay || HalfDayType.NONE
     });
 
     const savedLicense = await this.licenseRepository.manager.transaction(
@@ -273,10 +247,9 @@ export class LicenseService {
 
     return {
       ...this.mapLicenseToDto(savedLicense),
-      message: `Licencia registrada del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`,
-      holidaysApplied: holidaysApplied.length > 0 ? holidaysApplied : undefined,
-      ignoredWeekendHolidays: ignoredWeekendHolidays.length > 0 ? ignoredWeekendHolidays : undefined
+      message: `Licencia registrada del ${licenseData.startDate} al ${licenseData.endDate} (${totalDays} días hábiles).`
     };
+
   }
 
   async findOneLicense(id: number): Promise<LicenseResponseDto> {
