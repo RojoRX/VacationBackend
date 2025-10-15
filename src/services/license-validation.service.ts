@@ -28,7 +28,7 @@ export class LicenseValidationService {
    * @returns Promise<{ canRequest: boolean; reason?: string }>
    */
 
-async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
+  async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
     console.log(`[LicenseValidationService] Iniciando verificación de permiso para CI: ${ci}`);
     try {
       const user = await this.userRepository.findOne({ where: { ci: ci } });
@@ -80,7 +80,7 @@ async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reaso
   }
 
 
-   private async checkAvailableVacationDays(ci: string, requestedDays: number): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
+  private async checkAvailableVacationDays(ci: string, requestedDays: number): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
     console.log(`[LicenseValidationService] Iniciando verificación de días de vacaciones para CI: ${ci}`);
     const user = await this.userRepository.findOne({ where: { ci: ci } });
     if (!user) {
@@ -90,10 +90,16 @@ async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reaso
 
     const fechaIngresoUser = parseISO(user.fecha_ingreso);
     const currentYear = getYear(new Date());
+    const today = new Date();
 
     try {
       // Crear la fecha ajustada al año actual
-      const endDateForDebtCalculation = setYear(fechaIngresoUser, currentYear);
+      let endDateForDebtCalculation = setYear(fechaIngresoUser, currentYear);
+
+      // Si ese aniversario ya pasó, usamos el próximo año
+      if (endDateForDebtCalculation < today) {
+        endDateForDebtCalculation = setYear(fechaIngresoUser, currentYear + 1);
+      }
       // Formatear la fecha a ISO string (YYYY-MM-DD)
       const formattedDate = format(endDateForDebtCalculation, 'yyyy-MM-dd');
 
