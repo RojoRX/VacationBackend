@@ -53,11 +53,12 @@ export class License {
   @CreateDateColumn()
   issuedDate: Date;
 
-  @Column({ type: 'boolean', default: false })
-  immediateSupervisorApproval: boolean;
+  @Column({ type: 'boolean', nullable: true, default: null })
+  immediateSupervisorApproval: boolean | null;
 
-  @Column({ type: 'boolean', default: false })
-  personalDepartmentApproval: boolean;
+  @Column({ type: 'boolean', nullable: true, default: null })
+  personalDepartmentApproval: boolean | null;
+
 
   @ManyToOne(() => User, (user) => user.licenses)
   user: User;

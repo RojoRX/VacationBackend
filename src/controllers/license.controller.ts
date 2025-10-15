@@ -86,7 +86,7 @@ export class LicenseController {
     return this.licenseService.updateLicense(id, updateData);
   }
 
-@Delete(':id')
+  @Delete(':id')
   @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Eliminar una licencia (borrado lógico)' })
   @ApiParam({ name: 'id', required: true, description: 'ID de la licencia a eliminar' })
@@ -146,19 +146,26 @@ export class LicenseController {
       type: 'object',
       properties: {
         approval: { type: 'boolean', description: 'Estado de aprobación' },
-        userId: { type: 'number', description: 'ID del usuario que realiza la acción' },
       },
-      required: ['approval', 'userId'],
+      required: ['approval'],
     },
   })
-  @ApiResponse({ status: 200, description: 'Licencia actualizada', type: License })
-  async updatePersonalDepartmentApproval(
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
+  async updatePersonalApproval(
     @Param('licenseId') licenseId: number,
     @Body('approval') approval: boolean,
-    @Body('userId') userId: number,
-  ): Promise<License> {
-    return this.licenseService.updatePersonalDepartmentApproval(licenseId, userId, approval);
+    @Req() req: any // aquí obtenemos el usuario autenticado
+  ) {
+    const userId = req.user.id; // sacamos el id directamente del token
+
+    return this.licenseService.updatePersonalDepartmentApproval(
+      licenseId,
+      userId,
+      approval
+    );
   }
+
 
 
   @Patch(':licenseId/approve')

@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Brackets, Repository } from 'typeorm';
+import { Between, Brackets, IsNull, Repository } from 'typeorm';
 import { HalfDayType, License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
@@ -68,12 +68,13 @@ export class LicenseService {
     const pendingLicense = await this.licenseRepository.findOne({
       where: {
         user: { id: userId },
-        immediateSupervisorApproval: false,
-        personalDepartmentApproval: false,
+        immediateSupervisorApproval: IsNull(),
+        personalDepartmentApproval: IsNull(),
         deleted: false
       },
       order: { issuedDate: 'DESC' }
     });
+
 
     if (pendingLicense) {
       throw new BadRequestException(
@@ -181,32 +182,32 @@ export class LicenseService {
 
     // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
     // ALTERNATIVA: Si quieres que cada "media jornada" cuente como 0.5 días completos
-let totalDays = 0;
-const startHalfDay = licenseData.startHalfDay ?? HalfDayType.NONE;
-const endHalfDay = licenseData.endHalfDay ?? HalfDayType.NONE;
+    let totalDays = 0;
+    const startHalfDay = licenseData.startHalfDay ?? HalfDayType.NONE;
+    const endHalfDay = licenseData.endHalfDay ?? HalfDayType.NONE;
 
-const zone = 'America/La_Paz';
-let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
-const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
+    const zone = 'America/La_Paz';
+    let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
+    const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
 
-while (cursor <= endDateLux) {
-    const weekday = cursor.weekday;
-    if (weekday >= 1 && weekday <= 5) {
+    while (cursor <= endDateLux) {
+      const weekday = cursor.weekday;
+      if (weekday >= 1 && weekday <= 5) {
         if (cursor.hasSame(DateTime.fromISO(licenseData.startDate), 'day')) {
-            // Primer día
-            totalDays += (startHalfDay === HalfDayType.NONE) ? 1 : 0.5;
+          // Primer día
+          totalDays += (startHalfDay === HalfDayType.NONE) ? 1 : 0.5;
         } else if (cursor.hasSame(DateTime.fromISO(licenseData.endDate), 'day')) {
-            // Último día
-            totalDays += (endHalfDay === HalfDayType.NONE) ? 1 : 0.5;
+          // Último día
+          totalDays += (endHalfDay === HalfDayType.NONE) ? 1 : 0.5;
         } else {
-            // Días intermedios (siempre completos)
-            totalDays += 1;
+          // Días intermedios (siempre completos)
+          totalDays += 1;
         }
+      }
+      cursor = cursor.plus({ days: 1 });
     }
-    cursor = cursor.plus({ days: 1 });
-}
 
-totalDays = Math.max(totalDays, 0.5);
+    totalDays = Math.max(totalDays, 0.5);
 
     // Validación de máximo de días consecutivos
     const maxDays = 5;
@@ -224,8 +225,7 @@ totalDays = Math.max(totalDays, 0.5);
       user,
       totalDays,
       issuedDate: new Date(),
-      immediateSupervisorApproval: false,
-      personalDepartmentApproval: false,
+
       // 🔹 Forzar la asignación explícita
       startHalfDay: licenseData.startHalfDay || HalfDayType.NONE,
       endHalfDay: licenseData.endHalfDay || HalfDayType.NONE
@@ -547,66 +547,59 @@ totalDays = Math.max(totalDays, 0.5);
   }
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-  async updatePersonalDepartmentApproval(
-    licenseId: number,
-    userId: number, // quien realiza la aprobación
-    approval: boolean
-  ): Promise<License> {
-    // Buscar la licencia por ID
-    const license = await this.licenseRepository.findOne({
-      where: { id: licenseId },
-      relations: ['user'],
-    });
+async updatePersonalDepartmentApproval(
+  licenseId: number,
+  userId: number, // este viene del backend, no del frontend
+  approval: boolean
+): Promise<License> {
+  const license = await this.licenseRepository.findOne({
+    where: { id: licenseId },
+    relations: ['user'],
+  });
 
-    if (!license || !license.user) {
-      throw new BadRequestException('Licencia o usuario asociado no encontrado');
-    }
-
-    // Buscar al usuario que intenta aprobar/rechazar
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado');
-    }
-
-    // Verificar si el usuario tiene el rol ADMIN
-    if (user.role !== 'ADMIN') {
-      throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-    }
-
-    // Verificar si ya fue aprobada o rechazada por el departamento de personal
-    if (license.personalDepartmentApproval === true) {
-      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-    }
-
-    // Verificar si ya fue aprobada o rechazada por el supervisor inmediato
-    if (license.immediateSupervisorApproval === true) {
-      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-    }
-
-
-    // Actualizar ambos campos de aprobación
-    license.personalDepartmentApproval = approval;
-    license.immediateSupervisorApproval = approval;
-
-    // Guardar y devolver la licencia actualizada
-    const updatedLicense = await this.licenseRepository.save(license);
-
-    // Notificar al usuario sobre la decisión
-    const message = approval
-      ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
-      : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
-
-    await this.notificationService.notifyUser({
-      recipientId: license.user.id,
-      message,
-      senderId: user.id,
-      resourceType: 'LICENSE',   // opcional
-      resourceId: license.id,    // opcional
-    });
-
-    return updatedLicense;
+  if (!license || !license.user) {
+    throw new BadRequestException('Licencia o usuario asociado no encontrado');
   }
+
+  const user = await this.userRepository.findOne({ where: { id: userId } });
+
+  if (!user) {
+    throw new BadRequestException('Usuario no encontrado');
+  }
+
+  // Con los guards y roles ya sabemos que es ADMIN, puedes omitir esta verificación si quieres
+  if (user.role !== 'ADMIN') {
+    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+  }
+
+  if (license.personalDepartmentApproval === true) {
+    throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+  }
+
+  if (license.immediateSupervisorApproval === true) {
+    throw new BadRequestException('La aprobación del supervisor inmediato ya fue realizada.');
+  }
+
+  license.personalDepartmentApproval = approval;
+  license.immediateSupervisorApproval = approval;
+
+  const updatedLicense = await this.licenseRepository.save(license);
+
+  const message = approval
+    ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
+    : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
+
+  await this.notificationService.notifyUser({
+    recipientId: license.user.id,
+    message,
+    senderId: user.id,
+    resourceType: 'LICENSE',
+    resourceId: license.id,
+  });
+
+  return updatedLicense;
+}
+
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
     // 1. Validación inicial - Usuario existe
     const user = await this.userRepository.findOne({ where: { id: userId } });
