@@ -22,6 +22,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { SystemConfig } from './config/system-config.entity';
 import { SystemConfigModule } from './config/system-config.module';
 import { UserConfigModule } from './modules/user-config.module';
+import { ExternalModule } from './modules/external.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { UserConfigModule } from './modules/user-config.module';
     ReportsModule,
     AcademicUnitModule,
     UserConfigModule,
+    ExternalModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
