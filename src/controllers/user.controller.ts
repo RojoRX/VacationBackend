@@ -1,5 +1,5 @@
 // src/controllers/user.controller.ts
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe, BadRequestException, NotFoundException, Delete } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
@@ -9,6 +9,7 @@ import { UpdateRoleDto } from 'src/dto/update-role.dto';
 import { CreateUserDto } from 'src/dto/create-user.dto';
 import { UpdateUserDto } from 'src/dto/update-user.dto';
 import { CredentialDto } from 'src/dto/credentials.dto';
+import { SoftDeleteUserDto } from 'src/dto/softDeleteUser.dto';
 
 @ApiTags('Usuarios')
 @Controller('users')
@@ -135,7 +136,21 @@ export class UserController {
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
     }
   }
-
+  @Get('deleted')
+  @ApiOperation({ summary: 'Obtener todos los usuarios eliminados lógicamente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de usuarios eliminados',
+    type: [User],
+  })
+  async getDeletedUsers(): Promise<Omit<User, 'password'>[]> {
+    return this.userService.findDeletedUsers();
+  }
+  @Get('deleted/search')
+  @ApiQuery({ name: 'term', required: false, description: 'CI o nombre para filtrar' })
+  async searchDeletedUsers(@Query('term') term?: string) {
+    return this.userService.searchDeletedUsers(term);
+  }
   @Get('search')
   @ApiOperation({ summary: 'Buscar usuarios por CI, nombre, username, email, celular o posición' })
   @ApiQuery({
@@ -149,8 +164,8 @@ export class UserController {
     @Query('term') term: string,
   ): Promise<Omit<User, 'password'>[]> {
     return this.userService.searchUsers(term);
-  }   
-   @Get('latest')
+  }
+  @Get('latest')
   @ApiOperation({ summary: 'Obtener los últimos 20 usuarios registrados' })
   @ApiResponse({ status: 200, description: 'Lista de los últimos usuarios', type: [User] })
   @ApiResponse({ status: 400, description: 'Error al obtener los últimos usuarios' })
@@ -331,4 +346,32 @@ export class UserController {
     return this.userService.updateUserPasswordByAdmin(ci, dto);
   }
 
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar usuario (soft delete o físico)' })
+  @ApiParam({ name: 'id', description: 'ID del usuario a eliminar', type: Number })
+  @ApiQuery({ name: 'actorId', description: 'ID del usuario que realiza la acción', required: false })
+  async softDelete(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('actorId') actorId?: number,
+  ) {
+    if (actorId && isNaN(Number(actorId))) {
+      throw new BadRequestException('actorId debe ser un número');
+    }
+
+    const deletedUser = await this.userService.softDeleteById(id, actorId ? Number(actorId) : undefined);
+    return {
+      message: deletedUser.deleted
+        ? deletedUser.physicallyDeleted
+          ? 'Usuario eliminado físicamente'
+          : 'Usuario eliminado (soft delete)'
+        : 'Usuario no modificado',
+      user: deletedUser,
+    };
+  }
+  @Patch('restore/:id')
+  @ApiOperation({ summary: 'Restaurar un usuario eliminado lógicamente' })
+  @ApiParam({ name: 'id', description: 'ID del usuario a restaurar', type: Number })
+  async restoreUser(@Param('id', ParseIntPipe) id: number): Promise<SoftDeleteUserDto> {
+    return this.userService.restoreUserById(id);
+  }
 }

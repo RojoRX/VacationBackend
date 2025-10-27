@@ -17,60 +17,98 @@ import { UpdateUserDto } from 'src/dto/update-user.dto';
 import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { CredentialDto } from 'src/dto/credentials.dto';
+import { License } from 'src/entities/license.entity';
+import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
+import { Notification } from 'src/entities/notification.entity';
+import { SoftDeleteUserDto } from 'src/dto/softDeleteUser.dto';
+type SoftDeleteResult = User & { physicallyDeleted?: boolean };
+// Tipo auxiliar para omitir password
+type SafeUser = Omit<User, 'password'>;
+
 @Injectable()
 export class UserService {
   constructor(
     private readonly httpService: HttpService,
-    @InjectRepository(Department)
-    private readonly departmentRepository: Repository<Department>,
+    @InjectRepository(Department) private readonly departmentRepository: Repository<Department>,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(Profession) private readonly profesionRepository: Repository<Profession>,
     @InjectRepository(AcademicUnit) private readonly academicUnitRepository: Repository<AcademicUnit>,
+    @InjectRepository(UserHolidayPeriod) private readonly userHolidayPeriodRepository: Repository<UserHolidayPeriod>,
+    @InjectRepository(VacationRequest) private readonly vacationRequestRepository: Repository<VacationRequest>,
+    @InjectRepository(License) private readonly licenseRepository: Repository<License>,
+    @InjectRepository(Notification) private readonly notificationRepository: Repository<Notification>,
   ) { }
 
   // Método para crear usuarios internamente con generación automática de credenciales
   async registerUserData(createUserDto: CreateUserDto): Promise<User> {
     const normalizedDto = normalizeUserData(createUserDto);
 
-    // 1. Validar CI único
+    // 1. Validar CI único considerando usuarios activos
     const existingUserByCi = await this.userRepository.findOne({
-      where: { ci: createUserDto.ci }
+      where: { ci: createUserDto.ci, deleted: false }
     });
     if (existingUserByCi) {
-      throw new BadRequestException('El CI ya está registrado');
+      throw new BadRequestException('El CI ya está registrado en un usuario activo.');
     }
 
-    // 2. Validar email único (si se proporciona)
+    // 2. Validar si existe un usuario eliminado con el mismo CI
+    const deletedUserByCi = await this.userRepository.findOne({
+      where: { ci: createUserDto.ci, deleted: true }
+    });
+    if (deletedUserByCi) {
+      throw new BadRequestException('El CI corresponde a un usuario eliminado. Use el método de restauración si desea recuperarlo.');
+    }
+
+    // 3. Validar email único si se proporciona
     if (createUserDto.email) {
       const existingUserByEmail = await this.userRepository.findOne({
-        where: { email: createUserDto.email }
+        where: { email: createUserDto.email, deleted: false }
       });
       if (existingUserByEmail) {
-        throw new BadRequestException('El email ya está registrado');
+        throw new BadRequestException('El email ya está registrado en un usuario activo.');
+      }
+
+      const deletedUserByEmail = await this.userRepository.findOne({
+        where: { email: createUserDto.email, deleted: true }
+      });
+      if (deletedUserByEmail) {
+        throw new BadRequestException('El email corresponde a un usuario eliminado. Use el método de restauración si desea recuperarlo.');
       }
     }
 
-    // 3. Validar fecha de ingreso
+    // 4. Validar fecha de ingreso
     const fechaIngreso = new Date(createUserDto.fecha_ingreso);
     if (isNaN(fechaIngreso.getTime())) {
-      throw new BadRequestException('Fecha de ingreso no válida');
+      throw new BadRequestException('Fecha de ingreso no válida.');
     }
     if (fechaIngreso > new Date()) {
-      throw new BadRequestException('La fecha de ingreso no puede ser futura');
+      throw new BadRequestException('La fecha de ingreso no puede ser futura.');
     }
 
-    // 4. Validar profesión y unidad académica
+    // 5. Validar profesión
     const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
     if (!profession) {
       throw new BadRequestException('Profesión no encontrada.');
     }
 
-    const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
-    if (!academicUnit) {
-      throw new BadRequestException('Unidad académica no encontrada.');
+    // 6. Validar unidad académica o departamento según tipoEmpleado
+    let academicUnit = null;
+    let department = null;
+
+    if (createUserDto.tipoEmpleado === 'DOCENTE') {
+      academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
+      if (!academicUnit) {
+        throw new BadRequestException('Unidad académica no encontrada para docente.');
+      }
+    } else if (createUserDto.tipoEmpleado === 'ADMINISTRATIVO' && normalizedDto.departmentId) {
+      department = await this.departmentRepository.findOne({ where: { id: normalizedDto.departmentId } });
+      if (!department) {
+        throw new BadRequestException('Departamento no encontrado para administrativo.');
+      }
     }
 
-    // 5. Crear usuario sin credenciales
+    // 7. Crear usuario
     const user = this.userRepository.create({
       ci: normalizedDto.ci,
       email: normalizedDto.email,
@@ -78,17 +116,17 @@ export class UserService {
       celular: normalizedDto.celular,
       profession,
       academicUnit,
+      department,
       fecha_ingreso: normalizedDto.fecha_ingreso,
       position: normalizedDto.position,
       tipoEmpleado: createUserDto.tipoEmpleado,
       role: normalizedDto.role || RoleEnum.USER,
-      department: normalizedDto.departmentId ? { id: normalizedDto.departmentId } : null,
     });
 
-    // 6. Guardar y retornar
-    const savedUser = await this.userRepository.save(user);
-    return savedUser;
+    // 8. Guardar y retornar
+    return await this.userRepository.save(user);
   }
+
   async createUserCredentials(ci: string, credentialsDto: CredentialDto): Promise<{ username: string, temporaryPassword?: string }> {
     const user = await this.userRepository.findOne({ where: { ci } });
 
@@ -162,26 +200,41 @@ export class UserService {
       temporaryPassword: credentialsDto.password ? undefined : newPassword,
     };
   }
-  async findByCarnet(ci: string): Promise<Omit<User, 'password'> | undefined> {
+  async findByCarnet(ci: string): Promise<SafeUser | undefined> {
     const user = await this.userRepository.findOne({
-      where: { ci },
+      where: { ci, deleted: false },
       relations: ['department', 'academicUnit', 'profession'],
     });
-    return this.transformUser(user);
-  }
 
-  async findByUsername(username: string): Promise<User | undefined> {
-    return this.userRepository.findOne({
-      where: { username },
+    if (!user) return undefined;
+
+    // Omitimos password antes de retornar
+    const { password, ...safeUser } = user;
+    return safeUser;
+  }
+  async findByUsername(username: string): Promise<SafeUser | undefined> {
+    const user = await this.userRepository.findOne({
+      where: { username, deleted: false },
       relations: ['department', 'academicUnit', 'profession'],
     });
+
+    if (!user) return undefined;
+
+    const { password, ...safeUser } = user;
+    return safeUser;
   }
 
   async validatePassword(username: string, password: string): Promise<boolean> {
-    const user = await this.findByUsername(username);
-    if (!user) return false;
+    // Traemos el usuario completo, incluyendo password
+    const user = await this.userRepository.findOne({
+      where: { username, deleted: false }
+    });
+
+    if (!user || !user.password) return false;
+
     return bcrypt.compare(password, user.password);
   }
+
 
   async updateDepartment(userId: number, departmentId: number): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -194,42 +247,51 @@ export class UserService {
 
   // Ajusta findById para aceptar relaciones opcionales
   // Ajusta findById para retornar siempre las relaciones específicas y aceptar otras opcionales
+  // findById con relaciones opcionales y usuarios no eliminados
   async findById(userId: number, options?: { relations?: string[] }): Promise<Omit<User, 'password'> | undefined> {
     const defaultRelations = ['department', 'academicUnit', 'profession'];
     const allRelations = options?.relations
-      ? [...new Set([...defaultRelations, ...options.relations])] // Combina y elimina duplicados
-      : defaultRelations; // Si no hay opciones, usa solo las por defecto
+      ? [...new Set([...defaultRelations, ...options.relations])]
+      : defaultRelations;
 
     const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: allRelations, // Siempre incluye las relaciones por defecto
+      where: { id: userId, deleted: false },
+      relations: allRelations,
     });
-    console.log(this.transformUser(user));
+
     return this.transformUser(user);
   }
 
-async searchUsers(term: string): Promise<Omit<User, 'password'>[]> {
-  return this.userRepository.find({
-    where: [
-      { ci: ILike(`%${term}%`) },
-      { username: ILike(`%${term}%`) },
-      { fullName: ILike(`%${term}%`) },
-      { email: ILike(`%${term}%`) },
-      { celular: ILike(`%${term}%`) },
-      { position: ILike(`%${term}%`) },
-    ],
-    relations: ['department', 'academicUnit', 'profession'],
-    take: 20, // límite para no traer demasiados resultados
-  });
-}
+  // searchUsers filtrando usuarios no eliminados
+  async searchUsers(term: string): Promise<Omit<User, 'password'>[]> {
+    const users = await this.userRepository.find({
+      where: [
+        { ci: ILike(`%${term}%`), deleted: false },
+        { username: ILike(`%${term}%`), deleted: false },
+        { fullName: ILike(`%${term}%`), deleted: false },
+        { email: ILike(`%${term}%`), deleted: false },
+        { celular: ILike(`%${term}%`), deleted: false },
+        { position: ILike(`%${term}%`), deleted: false },
+      ],
+      relations: ['department', 'academicUnit', 'profession'],
+      take: 20,
+    });
 
-async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
-  return this.userRepository.find({
-    order: { createdAt: 'DESC' }, // ordena por fecha de creación
-    take: 20, // solo los últimos 20
-    relations: ['department', 'academicUnit', 'profession'],
-  });
-}
+    return users.map(u => this.transformUser(u));
+  }
+
+  // findLatestUsers filtrando usuarios no eliminados
+  async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
+    const users = await this.userRepository.find({
+      where: { deleted: false },
+      order: { createdAt: 'DESC' },
+      take: 20,
+      relations: ['department', 'academicUnit', 'profession'],
+    });
+
+    return users.map(u => this.transformUser(u));
+  }
+
 
 
   async updateUserRole(userId: number, newRole: RoleEnum): Promise<void> {
@@ -248,9 +310,10 @@ async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
     return userData;
   }
 
+  // Buscar usuarios por CI, solo los no eliminados
   async searchUsersByCI(ci: string, skip = 0, take = 10): Promise<Omit<User, 'password'>[]> {
     const users = await this.userRepository.find({
-      where: { ci: Like(`%${ci}%`) },
+      where: { ci: Like(`%${ci}%`), deleted: false },
       skip,
       take,
       relations: ['department', 'academicUnit', 'profession'],
@@ -258,13 +321,18 @@ async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
     return users.map(user => this.transformUser(user));
   }
 
-
+  // Obtener información básica de usuario por ID, solo si no está eliminado
   async getUserBasicInfoById(userId: number): Promise<Omit<User, 'password'>> {
-    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['department', 'academicUnit', 'profession'], });
+    const user = await this.userRepository.findOne({
+      where: { id: userId, deleted: false },
+      relations: ['department', 'academicUnit', 'profession'],
+    });
+
     if (!user) throw new BadRequestException('Usuario no encontrado.');
-    console.log("Info Basica")
+    console.log("Info Basica");
     return this.transformUser(user) as Omit<User, 'password'>;
   }
+
   //User Interface
   async updateUserFields(
     userId: number,
@@ -397,23 +465,26 @@ async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
     const { password: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
-  //Autenticacion 
+  // Buscar un usuario por username (solo no eliminados)
   async findOne(username: string): Promise<User | undefined> {
     return this.userRepository.findOne({
-      where: { username },
-      relations: ['department', 'academicUnit', 'profession'], // agrega las relaciones que necesites
+      where: { username, deleted: false },
+      relations: ['department', 'academicUnit', 'profession'],
     });
   }
+
+  // Buscar un usuario por username o CI (solo no eliminados)
   async findByUsernameOrCi(identifier: string): Promise<User | undefined> {
     return this.userRepository.findOne({
       where: [
-        { username: identifier },
-        { ci: identifier }
+        { username: identifier, deleted: false },
+        { ci: identifier, deleted: false },
       ],
-      relations: ['department', 'academicUnit', 'profession']
+      relations: ['department', 'academicUnit', 'profession'],
     });
   }
- async getAllUsersWithDetails(): Promise<
+
+  async getAllUsersWithDetails(): Promise<
     Array<{
       id: number;
       ci: string;
@@ -523,9 +594,8 @@ async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
         if (existingSupervisor) {
           existingSupervisor.role = RoleEnum.USER; // Asignar el rol 'USER' al supervisor anterior
           await queryRunner.manager.save(existingSupervisor); // Guardar el cambio al supervisor anterior
-          console.log(`Supervisor anterior (ID: ${existingSupervisor.id}, Rol: ${oldRole}) desasignado del ${
-            userToUpdate.department ? 'Departamento' : 'Unidad Académica'
-          } y asignado a USER.`);
+          console.log(`Supervisor anterior (ID: ${existingSupervisor.id}, Rol: ${oldRole}) desasignado del ${userToUpdate.department ? 'Departamento' : 'Unidad Académica'
+            } y asignado a USER.`);
         }
 
         // 3.4. Si el usuario que estamos actualizando ya era supervisor de la misma unidad/dpto
@@ -568,6 +638,115 @@ async findLatestUsers(): Promise<Omit<User, 'password'>[]> {
       await queryRunner.release();
     }
   }
+  // Soft delete por id (o eliminación física si no tiene relaciones)
+
+  async softDeleteById(id: number, actorId?: number): Promise<SoftDeleteUserDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (user.deleted) {
+      return {
+        id: user.id,
+        ci: user.ci,
+        fullName: user.fullName,
+        deleted: true,
+        message: 'Usuario ya estaba eliminado'
+      };
+    }
+
+    const [licensesCount, holidayCount, vacationCount, notificationsCount] = await Promise.all([
+      this.licenseRepository.count({ where: { user: { id } } }),
+      this.userHolidayPeriodRepository.count({ where: { user: { id } } }),
+      this.vacationRequestRepository.count({ where: { user: { id } } }),
+      this.notificationRepository.count({ where: { recipient: { id } } }),
+    ]);
+
+    const hasRelations = licensesCount > 0 || holidayCount > 0 || vacationCount > 0 || notificationsCount > 0;
+
+    if (!hasRelations) {
+      await this.userRepository.delete(id);
+      return {
+        id: user.id,
+        ci: user.ci,
+        fullName: user.fullName,
+        deleted: true,
+        physicallyDeleted: true,
+        message: 'Usuario eliminado físicamente'
+      };
+    }
+
+    user.deleted = true;
+    user.deletedAt = new Date();
+    if (actorId) user.deletedBy = actorId;
+    await this.userRepository.save(user);
+
+    return {
+      id: user.id,
+      ci: user.ci,
+      fullName: user.fullName,
+      deleted: true,
+      message: 'Usuario eliminado (soft delete)'
+    };
+  }
+
+  async restoreUserById(id: number): Promise<SoftDeleteUserDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (!user.deleted) {
+      return {
+        id: user.id,
+        ci: user.ci,
+        fullName: user.fullName,
+        deleted: false,
+        message: 'Usuario no estaba eliminado'
+      };
+    }
+
+    user.deleted = false;
+    user.deletedAt = null;
+    user.deletedBy = null;
+
+    await this.userRepository.save(user);
+
+    return {
+      id: user.id,
+      ci: user.ci,
+      fullName: user.fullName,
+      deleted: false,
+      message: 'Usuario restaurado exitosamente'
+    };
+  }
+  // Obtener todos los usuarios eliminados lógicamente
+  async findDeletedUsers(): Promise<Omit<User, 'password'>[]> {
+    const deletedUsers = await this.userRepository.find({
+      where: { deleted: true },
+      relations: ['department', 'academicUnit', 'profession'],
+      order: { deletedAt: 'DESC' },
+    });
+
+    // Retornamos sin la contraseña
+    return deletedUsers.map(user => this.transformUser(user));
+  }
+  async searchDeletedUsers(term?: string): Promise<Omit<User, 'password'>[]> {
+  const queryBuilder = this.userRepository.createQueryBuilder('user')
+    .leftJoinAndSelect('user.department', 'department')
+    .leftJoinAndSelect('user.academicUnit', 'academicUnit')
+    .leftJoinAndSelect('user.profession', 'profession')
+    .where('user.deleted = :deleted', { deleted: true });
+
+  if (term) {
+    queryBuilder.andWhere(
+      '(user.ci ILIKE :term OR user.fullName ILIKE :term)',
+      { term: `%${term}%` }
+    );
+  }
+
+  const users = await queryBuilder.getMany();
+  return users.map(user => this.transformUser(user)); // evita enviar password
+}
+
 }
 
 

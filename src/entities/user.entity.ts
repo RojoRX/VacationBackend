@@ -85,6 +85,14 @@ export class User {
   // user.entity.ts
   @OneToOne(() => UserConfig, config => config.user, { cascade: true, eager: true })
   config: UserConfig;
+   // === SOFT DELETE ===
+  @Column({ type: 'boolean', default: false })
+  deleted: boolean;
 
+  @Column({ type: 'timestamp', nullable: true })
+  deletedAt?: Date;
+
+  @Column({ nullable: true })
+  deletedBy?: number; // referencia opcional a user.id que borró el registro
 
 }

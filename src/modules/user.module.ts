@@ -13,11 +13,14 @@ import { MockUserService } from 'src/mocks/user.service.mock';
 import { Department } from 'src/entities/department.entity';
 import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
+import { License } from 'src/entities/license.entity';
+import { Notification } from 'src/entities/notification.entity';
 @Module({
   imports: [
     HttpModule,
     ConfigModule,
-    TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod, Department, Profession, AcademicUnit]), // Asegúrate de incluir todas las entidades relacionadas
+    TypeOrmModule.forFeature([User, UserHolidayPeriod, HolidayPeriod, Department, Profession, AcademicUnit, VacationRequest, License, Notification]), // Asegúrate de incluir todas las entidades relacionadas
   ],
   controllers: [UserController],
   providers: [UserService],
