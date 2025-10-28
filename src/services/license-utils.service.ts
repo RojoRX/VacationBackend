@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Between, Repository } from 'typeorm';
-import { eachDayOfInterval, isSameDay, parseISO } from 'date-fns';
+import { eachDayOfInterval, isSameDay, isWeekend, parseISO } from 'date-fns';
 import { InjectRepository } from '@nestjs/typeorm';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { HalfDayType, License } from 'src/entities/license.entity';
@@ -61,32 +61,41 @@ export class LicenseUtilsService {
   }
 
   // 🔹 Calcula los días totales considerando medias jornadas
-  private calculateDaysConsideringHalfDays(
-    startDate: string,
-    endDate: string,
-    startHalfDay?: HalfDayType,
-    endHalfDay?: HalfDayType,
-  ): number {
-    const start = parseISO(startDate);
-    const end = parseISO(endDate);
+private calculateDaysConsideringHalfDays(
+  startDate: string,
+  endDate: string,
+  startHalfDay?: HalfDayType,
+  endHalfDay?: HalfDayType,
+): number {
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
 
-    // Caso mismo día
-    if (startDate === endDate) {
-      if (startHalfDay === HalfDayType.MORNING || startHalfDay === HalfDayType.AFTERNOON) return 0.5;
-      return 1;
-    }
+  // Caso mismo día
+  if (startDate === endDate) {
+    // Si el único día es sábado o domingo, no se cuenta
+    if (isWeekend(start)) return 0;
 
-    const allDays = eachDayOfInterval({ start, end });
-    let totalDays = allDays.length;
-
-    // Ajuste por medios días
-    if (startHalfDay === HalfDayType.AFTERNOON) totalDays -= 0.5;
-    if (startHalfDay === HalfDayType.MORNING) totalDays -= 0; // inicio en media mañana → el día completo se cuenta
-    if (endHalfDay === HalfDayType.MORNING) totalDays -= 0.5;
-    if (endHalfDay === HalfDayType.AFTERNOON) totalDays -= 0; // final en media tarde → el día completo se cuenta
-
-    return Math.max(totalDays, 0.5);
+    if (startHalfDay === HalfDayType.MORNING || startHalfDay === HalfDayType.AFTERNOON) return 0.5;
+    return 1;
   }
+
+  // 🔹 Obtener todos los días del rango
+  const allDays = eachDayOfInterval({ start, end });
+
+  // 🔹 Excluir sábados y domingos
+  const workingDays = allDays.filter(day => !isWeekend(day));
+
+  let totalDays = workingDays.length;
+
+  // Ajuste por medios días
+  if (startHalfDay === HalfDayType.AFTERNOON) totalDays -= 0.5;
+  if (startHalfDay === HalfDayType.MORNING) totalDays -= 0; // inicio en media mañana → el día completo se cuenta
+  if (endHalfDay === HalfDayType.MORNING) totalDays -= 0.5;
+  if (endHalfDay === HalfDayType.AFTERNOON) totalDays -= 0; // final en media tarde → el día completo se cuenta
+
+  return Math.max(totalDays, 0.5);
+}
+
 
 
   // 🔹 NUEVO: Mapea una licencia a LicenseResponseDto con totalDays dinámico y feriados

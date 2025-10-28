@@ -448,14 +448,6 @@ export class VacationRequestService {
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: actualDaysRequested };
   }
 
-
-
-
-
-
-
-
-
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(
     detalles: VacationDetail[],
@@ -495,7 +487,6 @@ export class VacationRequestService {
 
   // Método para obtener todas las solicitudes de vacaciones
   async getAllVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
-
     const requests = await this.vacationRequestRepository.find({
       where: { deleted: false }, // 👈 Excluir solicitudes eliminadas
       relations: ['user', 'user.department', 'user.academicUnit'],
@@ -1328,32 +1319,36 @@ async softDeleteVacationRequest(
     });
   }
   // En vacation-request.service.ts
-  async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
-    ci: string;
-    fullname: string;
-    department?: string;
-    academicUnit?: string;
-  })[]> {
-    const requests = await this.vacationRequestRepository.find({
-      where: {
-        approvedByHR: false,
-        status: 'PENDING',
-        deleted: false, // Asegura que solo se obtienen solicitudes no eliminadas
-      },
-      relations: ['user', 'user.department', 'user.academicUnit'],
-    });
+async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
+  ci: string;
+  fullname: string;
+  department?: string;
+  academicUnit?: string;
+})[]> {
+  const requests = await this.vacationRequestRepository.find({
+    where: [
+      { approvedByHR: false, deleted: false },
+      { approvedByHR: false, deleted: null },
+    ],
+    relations: ['user', 'user.department', 'user.academicUnit'],
+  });
 
-    return requests.map((request) => {
-      const { user, ...rest } = request;
-      return {
-        ...rest,
-        ci: user.ci,
-        fullname: user.fullName,
-        department: user.department?.name ?? null,
-        academicUnit: user.academicUnit?.name ?? null,
-      };
-    });
-  }
+  console.log('Solicitudes pendientes de RRHH:', requests.length);
+
+  return requests.map((request) => {
+    const { user, ...rest } = request;
+    return {
+      ...rest,
+      ci: user.ci,
+      fullname: user.fullName,
+      department: user.department?.name ?? null,
+      academicUnit: user.academicUnit?.name ?? null,
+    };
+  });
+}
+
+
+
   async createPastVacation(dto: CreatePastVacationDto) {
     const {
       userId,

@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Brackets, IsNull, Repository } from 'typeorm';
+import { Between, Brackets, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { HalfDayType, License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
@@ -13,6 +13,7 @@ import { NonHolidayService } from './nonholiday.service';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { parseISO, format, setYear, getYear, eachDayOfInterval } from 'date-fns';
 import { LicenseUtilsService } from './license-utils.service';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -23,6 +24,8 @@ export class LicenseService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(VacationRequest)
+    private readonly vacationRequestRepository: Repository<VacationRequest>,
 
     private userService: UserService,
     @Inject(forwardRef(() => VacationService))
@@ -30,6 +33,7 @@ export class LicenseService {
     private readonly notificationService: NotificationService,
     private readonly nonHolidayService: NonHolidayService,
     private readonly licenseUtilsService: LicenseUtilsService,
+
   ) { }
   async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
     // Validaciones básicas de usuario y datos requeridos
@@ -217,6 +221,25 @@ export class LicenseService {
 
     // Validar que no existan licencias solapadas
     await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
+    // Validar que no existan licencias solapadas
+    await this.validateNoExistingLicense(userId, licenseData.startDate, licenseData.endDate);
+
+    // 🚫 Validar que las fechas no coincidan con una solicitud de vacaciones existente
+    const overlappingVacation = await this.vacationRequestRepository.findOne({
+      where: {
+        user: { id: userId },
+        deleted: false,
+        status: In(['PENDING', 'AUTHORIZED']),
+        startDate: LessThanOrEqual(licenseData.endDate),
+        endDate: MoreThanOrEqual(licenseData.startDate),
+      },
+    });
+
+    if (overlappingVacation) {
+      throw new BadRequestException(
+        `Ya existe una solicitud de vacaciones que cubre parte o todo el rango del ${licenseData.startDate} al ${licenseData.endDate}.`
+      );
+    }
 
     // Crear y guardar la licencia
     // 🔹 Asegurar que los valores de medios días se guarden correctamente
@@ -547,58 +570,58 @@ export class LicenseService {
   }
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-async updatePersonalDepartmentApproval(
-  licenseId: number,
-  userId: number, // este viene del backend, no del frontend
-  approval: boolean
-): Promise<License> {
-  const license = await this.licenseRepository.findOne({
-    where: { id: licenseId },
-    relations: ['user'],
-  });
+  async updatePersonalDepartmentApproval(
+    licenseId: number,
+    userId: number, // este viene del backend, no del frontend
+    approval: boolean
+  ): Promise<License> {
+    const license = await this.licenseRepository.findOne({
+      where: { id: licenseId },
+      relations: ['user'],
+    });
 
-  if (!license || !license.user) {
-    throw new BadRequestException('Licencia o usuario asociado no encontrado');
+    if (!license || !license.user) {
+      throw new BadRequestException('Licencia o usuario asociado no encontrado');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    // Con los guards y roles ya sabemos que es ADMIN, puedes omitir esta verificación si quieres
+    if (user.role !== 'ADMIN') {
+      throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
+    }
+
+    if (license.personalDepartmentApproval === true) {
+      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
+    }
+
+    if (license.immediateSupervisorApproval === true) {
+      throw new BadRequestException('La aprobación del supervisor inmediato ya fue realizada.');
+    }
+
+    license.personalDepartmentApproval = approval;
+    license.immediateSupervisorApproval = approval;
+
+    const updatedLicense = await this.licenseRepository.save(license);
+
+    const message = approval
+      ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
+      : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
+
+    await this.notificationService.notifyUser({
+      recipientId: license.user.id,
+      message,
+      senderId: user.id,
+      resourceType: 'LICENSE',
+      resourceId: license.id,
+    });
+
+    return updatedLicense;
   }
-
-  const user = await this.userRepository.findOne({ where: { id: userId } });
-
-  if (!user) {
-    throw new BadRequestException('Usuario no encontrado');
-  }
-
-  // Con los guards y roles ya sabemos que es ADMIN, puedes omitir esta verificación si quieres
-  if (user.role !== 'ADMIN') {
-    throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-  }
-
-  if (license.personalDepartmentApproval === true) {
-    throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-  }
-
-  if (license.immediateSupervisorApproval === true) {
-    throw new BadRequestException('La aprobación del supervisor inmediato ya fue realizada.');
-  }
-
-  license.personalDepartmentApproval = approval;
-  license.immediateSupervisorApproval = approval;
-
-  const updatedLicense = await this.licenseRepository.save(license);
-
-  const message = approval
-    ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
-    : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
-
-  await this.notificationService.notifyUser({
-    recipientId: license.user.id,
-    message,
-    senderId: user.id,
-    resourceType: 'LICENSE',
-    resourceId: license.id,
-  });
-
-  return updatedLicense;
-}
 
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
     // 1. Validación inicial - Usuario existe
@@ -783,43 +806,43 @@ async updatePersonalDepartmentApproval(
     });
   }
   // Retorna licencias pendientes de aprobación por el departamento de personal (solo las no eliminadas)
-  async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
-    ci: string;
-    fullname: string;
-    department?: string;
-    academicUnit?: string;
-  })[]> {
-    const licenses = await this.licenseRepository.find({
-      where: {
-        personalDepartmentApproval: false,
-        deleted: false,
-      },
-      relations: ['user', 'user.department', 'user.academicUnit'],
-    });
+async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
+  ci: string;
+  fullname: string;
+  department?: string;
+  academicUnit?: string;
+})[]> {
+  const licenses = await this.licenseRepository.find({
+    where: [
+      // Pendientes de RRHH
+      { personalDepartmentApproval: IsNull(), deleted: false },
+    ],
+    relations: ['user', 'user.department', 'user.academicUnit'],
+  });
 
-    return Promise.all(
-      licenses.map(async (license) => {
-        // 🔹 Recalcular totalDays dinámico
-        const { totalDays } = await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
-          license.startDate,
-          license.endDate,
-          license.startHalfDay,
-          license.endHalfDay
-        );
+  return Promise.all(
+    licenses.map(async (license) => {
+      const { totalDays } = await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
+        license.startDate,
+        license.endDate,
+        license.startHalfDay,
+        license.endHalfDay
+      );
 
-        const { user, ...rest } = license;
+      const { user, ...rest } = license;
 
-        return {
-          ...rest,
-          totalDays, // valor recalculado
-          ci: user.ci,
-          fullname: user.fullName,
-          department: user.department?.name ?? null,
-          academicUnit: user.academicUnit?.name ?? null,
-        };
-      })
-    );
-  }
+      return {
+        ...rest,
+        totalDays,
+        ci: user.ci,
+        fullname: user.fullName,
+        department: user.department?.name ?? null,
+        academicUnit: user.academicUnit?.name ?? null,
+      };
+    })
+  );
+}
+
 
   //Obtener las licencias eliminadas
   async getDeletedLicenses(): Promise<LicenseResponseDto[]> {

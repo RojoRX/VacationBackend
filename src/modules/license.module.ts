@@ -12,10 +12,11 @@ import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { LicenseValidationService } from 'src/services/license-validation.service';
 import { LicensesValidationController } from 'src/controllers/licenseValidation.controller';
 import { LicenseUtilsService } from 'src/services/license-utils.service';
+import { VacationRequest } from 'src/entities/vacation_request.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([License, User, NonHoliday]),
+    TypeOrmModule.forFeature([License, User, NonHoliday, VacationRequest]),
     UserModule,
     forwardRef(() => VacationModule), // Aquí se usa forwardRef
     NotificationModule,
