@@ -806,42 +806,42 @@ export class LicenseService {
     });
   }
   // Retorna licencias pendientes de aprobación por el departamento de personal (solo las no eliminadas)
-async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
-  ci: string;
-  fullname: string;
-  department?: string;
-  academicUnit?: string;
-})[]> {
-  const licenses = await this.licenseRepository.find({
-    where: [
-      // Pendientes de RRHH
-      { personalDepartmentApproval: IsNull(), deleted: false },
-    ],
-    relations: ['user', 'user.department', 'user.academicUnit'],
-  });
+  async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
+    ci: string;
+    fullname: string;
+    department?: string;
+    academicUnit?: string;
+  })[]> {
+    const licenses = await this.licenseRepository.find({
+      where: [
+        // Pendientes de RRHH
+        { personalDepartmentApproval: IsNull(), deleted: false },
+      ],
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
 
-  return Promise.all(
-    licenses.map(async (license) => {
-      const { totalDays } = await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
-        license.startDate,
-        license.endDate,
-        license.startHalfDay,
-        license.endHalfDay
-      );
+    return Promise.all(
+      licenses.map(async (license) => {
+        const { totalDays } = await this.licenseUtilsService.calculateEffectiveDaysWithHolidays(
+          license.startDate,
+          license.endDate,
+          license.startHalfDay,
+          license.endHalfDay
+        );
 
-      const { user, ...rest } = license;
+        const { user, ...rest } = license;
 
-      return {
-        ...rest,
-        totalDays,
-        ci: user.ci,
-        fullname: user.fullName,
-        department: user.department?.name ?? null,
-        academicUnit: user.academicUnit?.name ?? null,
-      };
-    })
-  );
-}
+        return {
+          ...rest,
+          totalDays,
+          ci: user.ci,
+          fullname: user.fullName,
+          department: user.department?.name ?? null,
+          academicUnit: user.academicUnit?.name ?? null,
+        };
+      })
+    );
+  }
 
 
   //Obtener las licencias eliminadas
@@ -873,10 +873,6 @@ async getPendingLicensesForHR(): Promise<(Omit<License, 'user'> & {
     license.deleted = true;
     await this.licenseRepository.save(license);
   }
-
-
-
-
 
   // Métodos auxiliares
   private mapLicenseToDto(license: License): LicenseResponseDto {

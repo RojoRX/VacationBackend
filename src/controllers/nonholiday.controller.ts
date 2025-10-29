@@ -1,10 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { NonHolidayService } from 'src/services/nonholiday.service';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Feriados o días No Hábiles')
 @Controller('non-holidays')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(RoleEnum.ADMIN)
 export class NonHolidayController {
   constructor(private readonly nonHolidayService: NonHolidayService) {}
 

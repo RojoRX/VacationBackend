@@ -10,13 +10,20 @@ import {
   ParseIntPipe,
   BadRequestException,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AcademicUnitService } from 'src/services/academic-unit.service';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Roles } from 'src/auth/roles.decorator';
+import { RoleEnum } from 'src/enums/role.enum';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { RolesGuard } from 'src/auth/roles.guard';
 
 @ApiTags('Unidades Académicas')
 @Controller('academic-units')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(RoleEnum.ADMIN)
 export class AcademicUnitController {
   constructor(private readonly academicUnitService: AcademicUnitService) { }
 

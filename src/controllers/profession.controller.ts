@@ -8,14 +8,21 @@ import {
   Query,
   ParseIntPipe,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { ProfessionService } from 'src/services/profession.service';
 import { CreateProfessionDto } from 'src/dto/create-profession.dto';
 import { Profession } from 'src/entities/profession.entity';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Profession')
 @Controller('professions')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(RoleEnum.ADMIN)
 export class ProfessionController {
   constructor(private readonly professionService: ProfessionService) { }
 

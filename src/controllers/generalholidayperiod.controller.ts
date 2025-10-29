@@ -1,12 +1,18 @@
-import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put, Delete, HttpCode } from '@nestjs/common';
+import { Controller, Get, Param, Res, HttpStatus, Post, Body, Put, Delete, HttpCode, UseGuards } from '@nestjs/common';
 import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 import { GeneralHolidayPeriodService } from 'src/services/generalHolidayPeriod.service';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { CreateGeneralHolidayPeriodDto } from 'src/dto/create-general-holiday-period.dto';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Recesos Generales')
 @Controller('general-holiday-periods')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(RoleEnum.ADMIN)
 export class GeneralHolidayPeriodController {
   constructor(private readonly generalHolidayPeriodService: GeneralHolidayPeriodService) { }
 

@@ -1038,93 +1038,106 @@ export class VacationRequestService {
 
     return vacationRequestDTO;
   }
-
-  async suspendVacationRequest(
-    requestId: number,
-    updateData: {
-      startDate: string;
-      endDate: string;
-    }
-  ): Promise<VacationRequest> {
-    const request = await this.vacationRequestRepository.findOne({
-      where: { id: requestId },
-      relations: ['user'],
-    });
-
-    if (!request) {
-      throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
-    }
-
-    // Solo se puede suspender una solicitud autorizada y completamente aprobada
-    if (
-      request.status !== 'AUTHORIZED' ||
-      !request.approvedByHR ||
-      !request.approvedBySupervisor
-    ) {
-      throw new HttpException(
-        'Solo se pueden suspender solicitudes que estén autorizadas y completamente aprobadas.',
-        HttpStatus.BAD_REQUEST
-      );
-    }
-
-    const userId = request.user.id;
-    const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
-    const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
-
-    if (endDateObj <= startDateObj) {
-      throw new HttpException('La fecha de fin debe ser posterior a la fecha de inicio.', HttpStatus.BAD_REQUEST);
-    }
-
-    // Validar solapamiento con otras solicitudes (excluyendo esta)
-    try {
-      // Validar solapamiento con otras solicitudes (excluyendo esta)
-      await ensureNoOverlappingVacations(
-        this.vacationRequestRepository,
-        userId,
-        updateData.startDate,
-        updateData.endDate,
-        requestId
-      );
-    } catch (error) {
-      // Aquí capturamos el error lanzado desde ensureNoOverlappingVacations
-      console.error('Error de solapamiento:', error.message);
-      throw new BadRequestException(error.message);
-    }
-
-
-    // Calcular días hábiles entre startDate y endDate
-    let currentDate = new Date(startDateObj);
-    let workingDaysCount = 0;
-
-    while (currentDate <= endDateObj) {
-      const dayOfWeek = currentDate.getUTCDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        workingDaysCount++;
-      }
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-    }
-    // 🚫 Validar que no se exceda el total autorizado
-    if (workingDaysCount > request.totalDays) {
-      throw new HttpException(
-        `La suspensión no puede durar más días (${workingDaysCount}) que la solicitud original (${request.totalDays}).`,
-        HttpStatus.BAD_REQUEST
-      );
-    }
-    // Recalcular fecha de reincorporación
-    const returnDateISO = new Date(
-      await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
-    ).toISOString();
-
-    // Actualizar campos
-    request.startDate = startDateObj.toISOString();
-    request.endDate = endDateObj.toISOString();
-    request.totalDays = workingDaysCount;
-    request.returnDate = returnDateISO;
-    request.status = 'SUSPENDED';
-    request.reviewDate = new Date().toISOString();
-
-    return this.vacationRequestRepository.save(request);
+ // Suspender Solicitud de Vacaciones
+async suspendVacationRequest(
+  requestId: number,
+  updateData: {
+    startDate: string;
+    endDate: string;
+    postponedReason?: string; // NUEVO: observaciones opcionales
   }
+): Promise<VacationRequest> {
+  const request = await this.vacationRequestRepository.findOne({
+    where: { id: requestId },
+    relations: ['user'],
+  });
+
+  if (!request) {
+    throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
+  }
+
+  // Solo se puede suspender una solicitud autorizada y completamente aprobada
+  if (
+    request.status !== 'AUTHORIZED' ||
+    !request.approvedByHR ||
+    !request.approvedBySupervisor
+  ) {
+    throw new HttpException(
+      'Solo se pueden suspender solicitudes que estén autorizadas y completamente aprobadas.',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  const userId = request.user.id;
+  const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
+  const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
+
+  if (endDateObj <= startDateObj) {
+    throw new HttpException(
+      'La fecha de fin debe ser posterior a la fecha de inicio.',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Validar solapamiento con otras solicitudes (excluyendo esta)
+  try {
+    await ensureNoOverlappingVacations(
+      this.vacationRequestRepository,
+      userId,
+      updateData.startDate,
+      updateData.endDate,
+      requestId
+    );
+  } catch (error) {
+    console.error('Error de solapamiento:', error.message);
+    throw new BadRequestException(error.message);
+  }
+
+  // Calcular días hábiles entre startDate y endDate
+  let currentDate = new Date(startDateObj);
+  let workingDaysCount = 0;
+
+  while (currentDate <= endDateObj) {
+    const dayOfWeek = currentDate.getUTCDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      workingDaysCount++;
+    }
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+  }
+
+  // Validar que no se exceda el total autorizado
+  if (workingDaysCount > request.totalDays) {
+    throw new HttpException(
+      `La suspensión no puede durar más días (${workingDaysCount}) que la solicitud original (${request.totalDays}).`,
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Recalcular fecha de reincorporación
+  const returnDateISO = new Date(
+    await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
+  ).toISOString();
+
+  // Validar longitud de observación si se envía
+  if (updateData.postponedReason && updateData.postponedReason.length > 300) {
+    throw new HttpException(
+      'La observación no puede superar los 300 caracteres.',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Actualizar campos
+  request.startDate = startDateObj.toISOString();
+  request.endDate = endDateObj.toISOString();
+  request.totalDays = workingDaysCount;
+  request.returnDate = returnDateISO;
+  request.status = 'SUSPENDED';
+  request.reviewDate = new Date().toISOString();
+  request.postponedReason = updateData.postponedReason?.trim() || null; // NUEVO: guardamos observación opcional
+
+  return this.vacationRequestRepository.save(request);
+}
+
   async checkLastRequestStatus(ci: string): Promise<{
     canRequest: boolean;
     reason?: string;
@@ -1219,75 +1232,75 @@ export class VacationRequestService {
     return pendingCount;
   }
 
-async softDeleteVacationRequest(
-  id: number,
-  user: { id: number; role?: string },
-): Promise<{ message: string }> {
-  console.log('[softDeleteVacationRequest] Usuario que solicita la eliminación:', user);
+  async softDeleteVacationRequest(
+    id: number,
+    user: { id: number; role?: string },
+  ): Promise<{ message: string }> {
+    console.log('[softDeleteVacationRequest] Usuario que solicita la eliminación:', user);
 
-  // 🔹 Buscar la solicitud de vacaciones
-  const request = await this.vacationRequestRepository.findOne({
-    where: { id },
-    relations: ['user'],
-  });
+    // 🔹 Buscar la solicitud de vacaciones
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
 
-  if (!request) {
-    console.log('[softDeleteVacationRequest] Solicitud no encontrada:', id);
-    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    if (!request) {
+      console.log('[softDeleteVacationRequest] Solicitud no encontrada:', id);
+      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    console.log('[softDeleteVacationRequest] Solicitud encontrada:', {
+      id: request.id,
+      userId: request.user.id,
+      status: request.status,
+      deleted: request.deleted,
+      approvedByHR: request.approvedByHR,
+      approvedBySupervisor: request.approvedBySupervisor,
+    });
+
+    if (request.deleted) {
+      console.log('[softDeleteVacationRequest] La solicitud ya estaba eliminada:', request.id);
+      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+    }
+
+    if (request.approvedByHR && request.approvedBySupervisor) {
+      console.log('[softDeleteVacationRequest] La solicitud ya fue aprobada por HR y supervisor:', request.id);
+      throw new HttpException(
+        'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
+      console.log('[softDeleteVacationRequest] Solicitud con estado no eliminable:', request.status);
+      throw new HttpException(
+        `No se puede eliminar una solicitud con estado '${request.status}'`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // 🔹 Verificar si el rol viene en el token; si no, cargar desde BD
+    const dbUser = user.role ? user : await this.userRepository.findOne({ where: { id: user.id } });
+    console.log('[softDeleteVacationRequest] Usuario verificado en DB o token:', dbUser);
+
+    const isAdmin = dbUser?.role?.toUpperCase() === 'ADMIN';
+    const isOwner = request.user.id === dbUser.id;
+
+    console.log('[softDeleteVacationRequest] isOwner:', isOwner, 'isAdmin:', isAdmin);
+
+    if (!isOwner && !isAdmin) {
+      console.log('[softDeleteVacationRequest] Permiso denegado para usuario:', dbUser.id);
+      throw new HttpException('No tienes permiso para cancelar esta solicitud', HttpStatus.FORBIDDEN);
+    }
+
+    // 🔹 Marcar como eliminada
+    request.deleted = true;
+    await this.vacationRequestRepository.save(request);
+
+    console.log('[softDeleteVacationRequest] Solicitud marcada como eliminada correctamente:', request.id);
+
+    return { message: 'La solicitud fue cancelada/eliminada correctamente' };
   }
-
-  console.log('[softDeleteVacationRequest] Solicitud encontrada:', {
-    id: request.id,
-    userId: request.user.id,
-    status: request.status,
-    deleted: request.deleted,
-    approvedByHR: request.approvedByHR,
-    approvedBySupervisor: request.approvedBySupervisor,
-  });
-
-  if (request.deleted) {
-    console.log('[softDeleteVacationRequest] La solicitud ya estaba eliminada:', request.id);
-    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
-  }
-
-  if (request.approvedByHR && request.approvedBySupervisor) {
-    console.log('[softDeleteVacationRequest] La solicitud ya fue aprobada por HR y supervisor:', request.id);
-    throw new HttpException(
-      'No se puede eliminar una solicitud que ya fue aprobada por Recursos Humanos y el supervisor',
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-
-  if (['AUTHORIZED', 'SUSPENDED'].includes(request.status)) {
-    console.log('[softDeleteVacationRequest] Solicitud con estado no eliminable:', request.status);
-    throw new HttpException(
-      `No se puede eliminar una solicitud con estado '${request.status}'`,
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-
-  // 🔹 Verificar si el rol viene en el token; si no, cargar desde BD
-  const dbUser = user.role ? user : await this.userRepository.findOne({ where: { id: user.id } });
-  console.log('[softDeleteVacationRequest] Usuario verificado en DB o token:', dbUser);
-
-  const isAdmin = dbUser?.role?.toUpperCase() === 'ADMIN';
-  const isOwner = request.user.id === dbUser.id;
-
-  console.log('[softDeleteVacationRequest] isOwner:', isOwner, 'isAdmin:', isAdmin);
-
-  if (!isOwner && !isAdmin) {
-    console.log('[softDeleteVacationRequest] Permiso denegado para usuario:', dbUser.id);
-    throw new HttpException('No tienes permiso para cancelar esta solicitud', HttpStatus.FORBIDDEN);
-  }
-
-  // 🔹 Marcar como eliminada
-  request.deleted = true;
-  await this.vacationRequestRepository.save(request);
-
-  console.log('[softDeleteVacationRequest] Solicitud marcada como eliminada correctamente:', request.id);
-
-  return { message: 'La solicitud fue cancelada/eliminada correctamente' };
-}
 
 
 
@@ -1319,33 +1332,33 @@ async softDeleteVacationRequest(
     });
   }
   // En vacation-request.service.ts
-async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
-  ci: string;
-  fullname: string;
-  department?: string;
-  academicUnit?: string;
-})[]> {
-  const requests = await this.vacationRequestRepository.find({
-    where: [
-      { approvedByHR: false, deleted: false },
-      { approvedByHR: false, deleted: null },
-    ],
-    relations: ['user', 'user.department', 'user.academicUnit'],
-  });
+  async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> & {
+    ci: string;
+    fullname: string;
+    department?: string;
+    academicUnit?: string;
+  })[]> {
+    const requests = await this.vacationRequestRepository.find({
+      where: [
+        { approvedByHR: false, deleted: false },
+        { approvedByHR: false, deleted: null },
+      ],
+      relations: ['user', 'user.department', 'user.academicUnit'],
+    });
 
-  console.log('Solicitudes pendientes de RRHH:', requests.length);
+    console.log('Solicitudes pendientes de RRHH:', requests.length);
 
-  return requests.map((request) => {
-    const { user, ...rest } = request;
-    return {
-      ...rest,
-      ci: user.ci,
-      fullname: user.fullName,
-      department: user.department?.name ?? null,
-      academicUnit: user.academicUnit?.name ?? null,
-    };
-  });
-}
+    return requests.map((request) => {
+      const { user, ...rest } = request;
+      return {
+        ...rest,
+        ci: user.ci,
+        fullname: user.fullName,
+        department: user.department?.name ?? null,
+        academicUnit: user.academicUnit?.name ?? null,
+      };
+    });
+  }
 
 
 
@@ -1483,42 +1496,42 @@ async getPendingVacationRequestsForHR(): Promise<(Omit<VacationRequest, 'user'> 
     }
   }
   // Eliminar sin considerar estado ni aprobaciones
-async forceSoftDeleteVacationRequest(
-  id: number,
-  user: { id: number; role?: string }
-): Promise<{ message: string }> {
-  const request = await this.vacationRequestRepository.findOne({
-    where: { id },
-    relations: ['user'],
-  });
+  async forceSoftDeleteVacationRequest(
+    id: number,
+    user: { id: number; role?: string }
+  ): Promise<{ message: string }> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
 
-  console.log('[forceSoftDelete] request:', request);
+    console.log('[forceSoftDelete] request:', request);
 
-  if (!request) {
-    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    if (!request) {
+      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    if (request.deleted) {
+      throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
+    }
+
+    console.log('[forceSoftDelete] user:', user);
+
+    // Permitir solo al dueño o admin
+    const isOwner = request.user.id === user.id;
+    const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      console.log('[forceSoftDelete] Permiso denegado');
+      throw new HttpException('No tienes permiso para eliminar esta solicitud', HttpStatus.FORBIDDEN);
+    }
+
+    request.deleted = true;
+    await this.vacationRequestRepository.save(request);
+
+    console.log('[forceSoftDelete] Solicitud eliminada correctamente');
+
+    return { message: 'La solicitud fue eliminada correctamente (forzado)' };
   }
-
-  if (request.deleted) {
-    throw new HttpException('La solicitud ya fue eliminada previamente', HttpStatus.BAD_REQUEST);
-  }
-
-  console.log('[forceSoftDelete] user:', user);
-
-  // Permitir solo al dueño o admin
-  const isOwner = request.user.id === user.id;
-  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
-
-  if (!isOwner && !isAdmin) {
-    console.log('[forceSoftDelete] Permiso denegado');
-    throw new HttpException('No tienes permiso para eliminar esta solicitud', HttpStatus.FORBIDDEN);
-  }
-
-  request.deleted = true;
-  await this.vacationRequestRepository.save(request);
-
-  console.log('[forceSoftDelete] Solicitud eliminada correctamente');
-
-  return { message: 'La solicitud fue eliminada correctamente (forzado)' };
-}
 
 }

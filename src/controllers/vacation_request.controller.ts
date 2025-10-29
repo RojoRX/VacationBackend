@@ -26,6 +26,7 @@ import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { Roles } from 'src/auth/roles.decorator';
 import { RoleEnum } from 'src/enums/role.enum';
+import { RolesGuard } from 'src/auth/roles.guard';
 
 @ApiTags('Solicitar Vacaciones')
 @Controller('vacation-requests')
@@ -225,6 +226,8 @@ export class VacationRequestController {
 
 
   @Patch(':id/status')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.SUPERVISOR)
   @ApiOperation({ summary: 'Cambiar el estado de una Solicitud por el supervisor' })
   @ApiResponse({ status: 200, description: 'Estado modificado con éxito' })
   @ApiResponse({ status: 404, description: 'No se encontró la solicitud' })
@@ -234,6 +237,8 @@ export class VacationRequestController {
   }
 
   @Put(':id/toggle-approved-by-hr')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
   @ApiOperation({ summary: 'Alternar el estado de ApprovedByHR de una solicitud de vacaciones' })
   @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada con éxito' })
   async toggleApprovedByHR(
@@ -277,7 +282,7 @@ export class VacationRequestController {
   @ApiOperation({ summary: 'Suspender una solicitud de vacaciones autorizada y aprobada' })
   @ApiParam({ name: 'id', type: Number, description: 'ID de la solicitud de vacaciones' })
   @ApiBody({
-    description: 'Fechas para suspender la solicitud de vacaciones',
+    description: 'Fechas y observación opcional para suspender la solicitud de vacaciones',
     schema: {
       type: 'object',
       properties: {
@@ -291,10 +296,16 @@ export class VacationRequestController {
           format: 'date',
           example: '2025-01-14',
         },
+        postponedReason: {
+          type: 'string',
+          maxLength: 300,
+          example: 'Motivo de suspensión temporal',
+        },
       },
-      required: ['startDate', 'endDate'],
+      required: ['startDate', 'endDate'], // postponedReason sigue siendo opcional
     },
   })
+
   @ApiResponse({
     status: 200,
     description: 'Solicitud suspendida correctamente',
@@ -315,6 +326,7 @@ export class VacationRequestController {
     updateData: {
       startDate: string;
       endDate: string;
+      postponedReason?: string; // NUEVO campo opcional
     },
   ): Promise<VacationRequest> {
     return this.vacationRequestService.suspendVacationRequest(id, updateData);
