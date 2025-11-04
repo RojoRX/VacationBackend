@@ -25,12 +25,12 @@ services:
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: postgres
       DATABASE_NAME: vacaciones_db
-      BACKEND_PORT: 3001
+      BACKEND_PORT: 3010  # ✅ Cambiado a 3010
       FRONTEND_HOST: http://localhost:4001
     depends_on:
       - postgres
     ports:
-      - "3001:3001"
+      - "3010:3010"  # ✅ Cambiado a 3010
     networks:
       - vac-network
 
