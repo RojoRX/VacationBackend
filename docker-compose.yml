@@ -1,7 +1,5 @@
 version: '3.8'
-
 services:
-  # 🟣 PostgreSQL
   postgres:
     image: postgres:16
     container_name: vac-postgres
@@ -9,32 +7,30 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: vacaciones_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - vac-network
 
-  # 🔵 Backend NestJS
   backend:
     build:
-      context: .              # <-- usa la carpeta actual del proyecto NestJS
+      context: .
       dockerfile: Dockerfile
     container_name: vac-backend
     environment:
-      NODE_ENV: development
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: postgres
       DATABASE_NAME: vacaciones_db
-      FRONTEND_HOST: http://localhost:4001  # temporalmente mientras el frontend se ejecuta fuera
-      BACKEND_PORT: 3000
+      BACKEND_PORT: 3001
+      FRONTEND_HOST: http://localhost:4001
     depends_on:
       - postgres
     ports:
-      - "3001:3000"  # 3001 en host, 3000 dentro del contenedor
+      - "3001:3001"
     networks:
       - vac-network
 
