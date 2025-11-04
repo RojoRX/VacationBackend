@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   postgres:
     image: postgres:16
@@ -14,25 +15,26 @@ services:
     networks:
       - vac-network
 
-backend:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: vac-backend
-  environment:
-    DATABASE_HOST: postgres
-    DATABASE_PORT: 5432
-    DATABASE_USERNAME: postgres
-    DATABASE_PASSWORD: postgres
-    DATABASE_NAME: vacaciones_db
-    BACKEND_PORT: 3010  # ✅ CAMBIAR de 3001 a 3010
-    FRONTEND_HOST: http://localhost:4001
-  depends_on:
-    - postgres
-  ports:
-    - "3010:3010"  # ✅ CAMBIAR de "3001:3001" a "3010:3010"
-  networks:
-    - vac-network
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vac-backend
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: vacaciones_db
+      PORT: 3010
+      FRONTEND_HOST: http://localhost:4001
+    depends_on:
+      - postgres
+    ports:
+      - "3010:3010"
+    networks:
+      - vac-network
+
 volumes:
   postgres_data:
 
