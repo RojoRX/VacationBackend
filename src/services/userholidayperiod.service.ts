@@ -2,7 +2,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Not, Repository } from 'typeorm';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+// ✅ CORREGIR (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { User } from 'src/entities/user.entity';
 import { HolidayPeriodName } from 'src/entities/holydayperiod.entity'; // Asegúrate de importar el enum desde el archivo correcto
 import { UserHolidayPeriodDto } from 'src/dto/userholidayperiod.dto';

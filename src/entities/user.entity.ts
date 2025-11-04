@@ -1,6 +1,6 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, OneToOne } from 'typeorm';
 import { License } from './license.entity'; // Importa la entidad License
-import { UserHolidayPeriod } from './userholidayperiod.entity'; // Importa la entidad UserHolidayPeriod
+import { UserHolidayPeriod } from './userHolidayPeriod.entity';// Importa la entidad UserHolidayPeriod
 import { VacationRequest } from './vacation_request.entity'; // Importa la entidad VacationRequest
 import { Department } from './department.entity';
 import { RoleEnum } from 'src/enums/role.enum';

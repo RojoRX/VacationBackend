@@ -13,7 +13,8 @@ import { VacationCalculatorService } from 'src/services/vacation-calculator.serv
 import { RecesoService } from 'src/services/receso.service';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { UserHolidayPeriodModule } from './userholidayperiod.module';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+// ✅ CORREGIR (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { LicenseService } from 'src/services/license.service';
 import { License } from 'src/entities/license.entity';
 import { LicenseModule } from './license.module';

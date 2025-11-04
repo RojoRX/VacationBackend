@@ -2,7 +2,8 @@
 
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+// ✅ CORREGIR (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { User } from 'src/entities/user.entity'; // Importa la entidad User
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { UserHolidayPeriodController } from 'src/controllers/userholidayperiod.controller';

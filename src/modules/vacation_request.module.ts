@@ -17,7 +17,8 @@ import { RecesoService } from 'src/services/receso.service';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
 import { LicenseService } from 'src/services/license.service';
 import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+// ✅ CORRECTO (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { License } from 'src/entities/license.entity';
 import { VacationPolicyModule } from './vacationPolicyModule.module';
 import { Notification } from 'src/entities/notification.entity';

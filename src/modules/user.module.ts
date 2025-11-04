@@ -7,7 +7,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserController } from 'src/controllers/user.controller';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity'; // Importa la entidad relacionada
+// ✅ CORREGIR (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity'; // Importa la entidad relacionada
 import { HolidayPeriod } from 'src/entities/holydayperiod.entity'; // Importa la entidad HolidayPeriod si es usada en la relación
 import { MockUserService } from 'src/mocks/user.service.mock';
 import { Department } from 'src/entities/department.entity';

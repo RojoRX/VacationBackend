@@ -1,7 +1,7 @@
 // src/controllers/userholidayperiod.controller.ts
 import { Controller, Get, Post, Put, Delete, Param, Body, Res, HttpStatus, NotFoundException, BadRequestException, HttpException, ParseIntPipe } from '@nestjs/common';
 import { UserHolidayPeriodService } from 'src/services/userholidayperiod.service';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { Response } from 'express';
 import { HolidayPeriodName } from 'src/entities/holydayperiod.entity'; // Asegúrate de importar el enum desde el archivo correcto
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';

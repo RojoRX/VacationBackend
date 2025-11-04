@@ -18,7 +18,8 @@ import { Profession } from 'src/entities/profession.entity';
 import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { CredentialDto } from 'src/dto/credentials.dto';
 import { License } from 'src/entities/license.entity';
-import { UserHolidayPeriod } from 'src/entities/userholidayperiod.entity';
+// ✅ CORREGIR (nombre exacto)
+import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
 import { Notification } from 'src/entities/notification.entity';
 import { SoftDeleteUserDto } from 'src/dto/softDeleteUser.dto';
