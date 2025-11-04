@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Like, Repository } from 'typeorm';
 import { User } from 'src/entities/user.entity';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { Department } from 'src/entities/department.entity';
 import { RoleEnum } from 'src/enums/role.enum';
 import { lastValueFrom } from 'rxjs';

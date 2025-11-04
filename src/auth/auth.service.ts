@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { UserService } from 'src/services/user.service';
 import { JwtService } from '@nestjs/jwt';
 import { mapRole } from './role.mapper'; // Asegúrate de que la ruta sea correcta
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
