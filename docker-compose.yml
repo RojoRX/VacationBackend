@@ -1,5 +1,9 @@
 version: '3.8'
+
 services:
+  # ===========================
+  # Base de datos PostgreSQL
+  # ===========================
   postgres:
     image: postgres:16
     container_name: vac-postgres
@@ -8,57 +12,72 @@ services:
       POSTGRES_PASSWORD: root
       POSTGRES_DB: vacdatabase
     ports:
-      - "5432:5432"
+      - "5432:5432"  # Exponer puerto al host (opcional)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - vac-network
 
+  # ===========================
+  # Backend (NestJS)
+  # ===========================
   backend:
     build:
-      context: ./VacationBackend  # ✅ Cambiar contexto
+      context: ./VacationBackend
       dockerfile: Dockerfile
     container_name: vac-backend
     environment:
       DATABASE_TYPE: postgres
-      DATABASE_HOST: postgres
+      DATABASE_HOST: postgres          # Nombre del servicio de la BD dentro de Docker
       DATABASE_PORT: 5432
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: root
       DATABASE_NAME: vacdatabase
-      BACKEND_PORT: 3010
-      FRONTEND_HOST: http://192.168.1.16:4001
+      BACKEND_PORT: 3010               # Puerto interno del contenedor
+      FRONTEND_HOST: http://192.168.1.16:4001  
+      # 🔹 Cambia esta IP si usas otra IP en tu red o dominio público para CORS
       JWT_SECRET: tu_clave_super_secreta
       JWT_EXPIRES_IN: 2d
       USE_MOCK: false
-      API_BASE_URL: http://localhost:1337/api/personas
+      API_BASE_URL: http://personas:1337/api/personas  
+      # 🔹 Si tu backend necesita consumir otro servicio, reemplaza 'personas' por el nombre del servicio
     depends_on:
       - postgres
     ports:
-      - "3010:3010"
+      - "3010:3010"  # Exponer puerto al host
     networks:
       - vac-network
 
+  # ===========================
+  # Frontend (Next.js)
+  # ===========================
   frontend:
     build:
-      context: ./vacationsFrontend  # ✅ Agregar frontend
+      context: ./vacationsFrontend
       dockerfile: Dockerfile
     container_name: vac-frontend
     environment:
-      - PORT=4001
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:3010
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:3010  
+      # 🔹 Usa el nombre del servicio 'backend' dentro de la red de Docker
       - NODE_ENV=production
+      - PORT=4001
     depends_on:
       - backend
     ports:
-      - "4001:4001"
+      - "4001:4001"  # Exponer puerto al host
     networks:
       - vac-network
     restart: unless-stopped
 
+# ===========================
+# Volúmenes persistentes
+# ===========================
 volumes:
   postgres_data:
 
+# ===========================
+# Red de comunicación entre contenedores
+# ===========================
 networks:
   vac-network:
     driver: bridge
