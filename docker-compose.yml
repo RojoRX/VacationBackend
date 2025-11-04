@@ -29,7 +29,7 @@ services:
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
       DATABASE_NAME: vacaciones_db
-      FRONTEND_HOST: http://frontend:4001  # 👈 importante: nombre del servicio frontend
+      FRONTEND_HOST: http://frontend:4001
       BACKEND_PORT: 3001
     depends_on:
       - postgres
@@ -37,3 +37,9 @@ services:
       - "3001:3001"
     networks:
       - vac-network
+volumes:
+  postgres_data:
+
+networks:
+  vac-network:
+    driver: bridge
