@@ -62,23 +62,24 @@ services:
   # ===========================
   # Frontend (Next.js)
   # ===========================
-  frontend:
-    build:
-      context: ./vacationsFrontend
-      dockerfile: Dockerfile
-    container_name: vac-frontend
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://backend:3010  
-      # 🔹 Usa el nombre del servicio 'backend' dentro de la red de Docker
-      - NODE_ENV=production
-      - PORT=4001
-    depends_on:
-      - backend
-    ports:
-      - "4001:4001"  # Exponer puerto al host
-    networks:
-      - vac-network
-    restart: unless-stopped
+frontend:
+  build:
+    context: ./vacationsFrontend
+    dockerfile: Dockerfile
+    args:
+      NEXT_PUBLIC_API_BASE_URL: http://backend:3010   # 👈 se pasa como argumento al build
+  container_name: vac-frontend
+  environment:
+    - NODE_ENV=production
+    - PORT=4001
+  depends_on:
+    - backend
+  ports:
+    - "4001:4001"
+  networks:
+    - vac-network
+  restart: unless-stopped
+
 
 # ===========================
 # Volúmenes persistentes
