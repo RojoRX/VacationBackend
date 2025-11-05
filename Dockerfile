@@ -11,12 +11,9 @@ RUN npm ci
 
 COPY . .
 
-# ✅ SOLO usar nest build (ya compila todo incluido src/scripts/)
 RUN npx nest build
 
-# ❌ ELIMINAR esta línea - nest build ya compiló bootstrapAdmin.ts
-# RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs
-
+# ✅ Hacer el script ejecutable ANTES de cambiar de usuario
 COPY scripts/start.sh ./scripts/
 RUN chmod +x ./scripts/start.sh
 
@@ -32,8 +29,15 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
+# ✅ Crear usuario y grupo PRIMERO
+RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
+
+# ✅ Cambiar permisos del script ANTES de cambiar usuario
+RUN chmod +x ./scripts/start.sh
+
+# ✅ Cambiar propietario de los archivos
+RUN chown -R nestjs:nodejs /app
+
 USER nestjs
 
 EXPOSE 3010
