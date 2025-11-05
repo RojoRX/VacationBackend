@@ -13,7 +13,9 @@ COPY . .
 
 RUN npx nest build
 
-# ✅ Hacer el script ejecutable ANTES de cambiar de usuario
+# ✅ Compilar el script de bootstrap
+RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs --experimentalDecorators --emitDecoratorMetadata
+
 COPY scripts/start.sh ./scripts/
 RUN chmod +x ./scripts/start.sh
 
@@ -29,17 +31,7 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
-# ✅ Crear usuario y grupo PRIMERO
-RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
-
-# ✅ Cambiar permisos del script ANTES de cambiar usuario
-RUN chmod +x ./scripts/start.sh
-
-# ✅ Cambiar propietario de los archivos
-RUN chown -R nestjs:nodejs /app
-
-USER nestjs
-
 EXPOSE 3010
 
-CMD ["./scripts/start.sh"]
+# ✅ Usar shell para mejor logging
+CMD ["sh", "-c", "./scripts/start.sh"]
