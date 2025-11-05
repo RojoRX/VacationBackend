@@ -11,10 +11,11 @@ RUN npm ci
 
 COPY . .
 
+# ✅ SOLO usar nest build (ya compila todo incluido src/scripts/)
 RUN npx nest build
 
-# ✅ Compilar desde src/scripts/ (rutas relativas funcionarán)
-RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs
+# ❌ ELIMINAR esta línea - nest build ya compiló bootstrapAdmin.ts
+# RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs
 
 COPY scripts/start.sh ./scripts/
 RUN chmod +x ./scripts/start.sh
