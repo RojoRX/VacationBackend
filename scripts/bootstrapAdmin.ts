@@ -1,10 +1,11 @@
-// src/scripts/bootstrapAdmin.ts
+
+// scripts/bootstrapAdmin.ts (rutas absolutas desde src)
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module';
-import { User } from '../entities/user.entity';
+import { AppModule } from 'src/app.module';        // ✅ Cambiar ruta
+import { User } from 'src/entities/user.entity';      // ✅ Cambiar ruta  
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { RoleEnum } from 'src/enums/role.enum';
+import { RoleEnum } from 'src/enums/role.enum';       // ✅ Cambiar ruta
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
