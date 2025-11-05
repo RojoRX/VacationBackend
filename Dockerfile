@@ -13,12 +13,8 @@ COPY . .
 
 RUN npx nest build
 
-# ✅ Compilar desde la ubicación correcta
-RUN npx tsc scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs --esModuleInterop
-
-# ✅ VERIFICAR compilación
-RUN echo "=== Verificando bootstrap compilado ==="
-RUN ls -la dist/scripts/
+# ✅ Compilar desde src/scripts/ (rutas relativas funcionarán)
+RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs
 
 COPY scripts/start.sh ./scripts/
 RUN chmod +x ./scripts/start.sh
