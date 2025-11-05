@@ -11,10 +11,11 @@ RUN npm ci
 
 COPY . .
 
+# ✅ SOLO nest build - ya compila TODO incluido src/scripts/
 RUN npx nest build
 
-# ✅ Compilar el bootstrap
-RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs --experimentalDecorators --emitDecoratorMetadata
+# ❌ ELIMINAR esta línea - causa errores de rutas
+# RUN npx tsc src/scripts/bootstrapAdmin.ts --outDir dist/scripts --module commonjs --experimentalDecorators --emitDecoratorMetadata
 
 # Etapa 2: producción
 FROM node:20-alpine
@@ -27,5 +28,5 @@ RUN npm ci --omit=dev
 
 EXPOSE 3010
 
-# ✅ Comando directo sin script
+# ✅ Comando directo sin script por ahora
 CMD ["node", "dist/main.js"]
