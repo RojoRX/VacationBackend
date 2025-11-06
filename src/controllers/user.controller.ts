@@ -1,5 +1,5 @@
 // src/controllers/user.controller.ts
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe, BadRequestException, NotFoundException, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Res, HttpStatus, Patch, ParseIntPipe, Put, HttpException, Query, UsePipes, ValidationPipe, BadRequestException, NotFoundException, Delete, UseGuards, Req } from '@nestjs/common';
 import { Response } from 'express';
 import { UserService } from 'src/services/user.service';
 import { User } from 'src/entities/user.entity';
@@ -10,6 +10,8 @@ import { CreateUserDto } from 'src/dto/create-user.dto';
 import { UpdateUserDto } from 'src/dto/update-user.dto';
 import { CredentialDto } from 'src/dto/credentials.dto';
 import { SoftDeleteUserDto } from 'src/dto/softDeleteUser.dto';
+import { ChangePasswordDto } from 'src/dto/change-password.dto';
+import { AuthGuard } from 'src/auth/auth.guard';
 
 @ApiTags('Usuarios')
 @Controller('users')
@@ -373,5 +375,13 @@ export class UserController {
   @ApiParam({ name: 'id', description: 'ID del usuario a restaurar', type: Number })
   async restoreUser(@Param('id', ParseIntPipe) id: number): Promise<SoftDeleteUserDto> {
     return this.userService.restoreUserById(id);
+  }
+
+  @Patch('change-password')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Permite al usuario cambiar su propia contraseña' })
+  async changePassword(@Req() req, @Body() dto: ChangePasswordDto) {
+    const userId = req.user.id; // <-- viene del token JWT
+    return this.userService.changeOwnPassword(userId, dto.oldPassword, dto.newPassword);
   }
 }
