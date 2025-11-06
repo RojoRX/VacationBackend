@@ -731,26 +731,60 @@ export class UserService {
     return deletedUsers.map(user => this.transformUser(user));
   }
   async searchDeletedUsers(term?: string): Promise<Omit<User, 'password'>[]> {
-  const queryBuilder = this.userRepository.createQueryBuilder('user')
-    .leftJoinAndSelect('user.department', 'department')
-    .leftJoinAndSelect('user.academicUnit', 'academicUnit')
-    .leftJoinAndSelect('user.profession', 'profession')
-    .where('user.deleted = :deleted', { deleted: true });
+    const queryBuilder = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.department', 'department')
+      .leftJoinAndSelect('user.academicUnit', 'academicUnit')
+      .leftJoinAndSelect('user.profession', 'profession')
+      .where('user.deleted = :deleted', { deleted: true });
 
-  if (term) {
-    queryBuilder.andWhere(
-      '(user.ci ILIKE :term OR user.fullName ILIKE :term)',
-      { term: `%${term}%` }
-    );
+    if (term) {
+      queryBuilder.andWhere(
+        '(user.ci ILIKE :term OR user.fullName ILIKE :term)',
+        { term: `%${term}%` }
+      );
+    }
+
+    const users = await queryBuilder.getMany();
+    return users.map(user => this.transformUser(user)); // evita enviar password
   }
 
-  const users = await queryBuilder.getMany();
-  return users.map(user => this.transformUser(user)); // evita enviar password
+  async changeOwnPassword(userId: number, oldPassword: string, newPassword: string): Promise<string> {
+    const user = await this.userRepository.findOne({ where: { id: userId, deleted: false } });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado.');
+    }
+
+    if (!user.password) {
+      throw new BadRequestException('Este usuario aún no tiene contraseña establecida.');
+    }
+
+    // Validar contraseña anterior
+    const isOldPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    if (!isOldPasswordValid) {
+      throw new BadRequestException('La contraseña actual es incorrecta.');
+    }
+
+    // Validar que la nueva contraseña sea diferente
+    if (oldPassword === newPassword) {
+      throw new BadRequestException('La nueva contraseña no puede ser igual a la anterior.');
+    }
+
+    // Validar complejidad mínima
+    const regex = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{8,}$/;
+    if (!regex.test(newPassword)) {
+      throw new BadRequestException(
+        'La nueva contraseña debe tener mínimo 8 caracteres, incluir mayúsculas, minúsculas y números.'
+      );
+    }
+
+    // Guardar contraseña nueva
+    user.password = await bcrypt.hash(newPassword, 10);
+    await this.userRepository.save(user);
+
+    return 'Contraseña actualizada correctamente.';
+  }
 }
-
-}
-
-
 function parseDatePreservingLocal(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
   // OJO: month en Date constructor es 0-indexado
