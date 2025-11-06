@@ -191,6 +191,20 @@ export class UserController {
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({ message: error.message });
     }
   }
+  
+  @Patch('change-password')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Permite al usuario cambiar su propia contraseña' })
+  async changePassword(@Req() req, @Body() dto: ChangePasswordDto) {
+    const userId = req.user?.id;
+
+    if (!userId || isNaN(Number(userId))) {
+      throw new BadRequestException('ID de usuario inválido');
+    }
+
+    return this.userService.changeOwnPassword(Number(userId), dto.oldPassword, dto.newPassword);
+  }
+
 
   @Patch(':id/department')
   @ApiOperation({ summary: 'Actualizar el departamento del usuario' })
@@ -377,11 +391,8 @@ export class UserController {
     return this.userService.restoreUserById(id);
   }
 
-  @Patch('change-password')
-  @UseGuards(AuthGuard)
-  @ApiOperation({ summary: 'Permite al usuario cambiar su propia contraseña' })
-  async changePassword(@Req() req, @Body() dto: ChangePasswordDto) {
-    const userId = req.user.id; // <-- viene del token JWT
-    return this.userService.changeOwnPassword(userId, dto.oldPassword, dto.newPassword);
-  }
+
+
+
+
 }
