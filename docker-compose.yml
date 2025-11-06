@@ -67,23 +67,21 @@ services:
       context: ./vacationsFrontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL=http://192.168.1.16:3010
+        NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.16:3010"
     container_name: vac-frontend
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
-      - PORT=4001
-      - NEXT_PUBLIC_API_BASE_URL=http://192.168.1.16:3010
+      NODE_ENV: production
+      PORT: 4001
+      NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.16:3010"
     depends_on:
       - backend
     ports:
       - "4001:4001"
     networks:
       - vac-network
-
 volumes:
   postgres_data:
-
 networks:
   vac-network:
     driver: bridge
