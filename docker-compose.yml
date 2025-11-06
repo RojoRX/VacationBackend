@@ -7,6 +7,7 @@ services:
   postgres:
     image: postgres:16
     container_name: vac-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
@@ -17,12 +18,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - vac-network
-    healthcheck:  # ✅ AGREGAR HEALTHCHECK
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
+
   # ===========================
   # Backend (NestJS)
   # ===========================
@@ -31,34 +33,32 @@ services:
       context: ./VacationBackend
       dockerfile: Dockerfile
     container_name: vac-backend
+    restart: unless-stopped
     environment:
       DATABASE_TYPE: postgres
-      DATABASE_HOST: postgres          # Nombre del servicio de la BD dentro de Docker
+      DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: root
       DATABASE_NAME: vacdatabase
-      BACKEND_PORT: 3010               # Puerto interno del contenedor
-      FRONTEND_HOST: http://192.168.1.16:4001  
-      # 🔹 Cambia esta IP si usas otra IP en tu red o dominio público para CORS
+      BACKEND_PORT: 3010
+      FRONTEND_HOST: "*"
       JWT_SECRET: tu_clave_super_secreta
       JWT_EXPIRES_IN: 2d
-      USE_MOCK: false
-      API_BASE_URL: http://personas:1337/api/personas  
-      # 🔹 Si tu backend necesita consumir otro servicio, reemplaza 'personas' por el nombre del servicio
     depends_on:
-      postgres:  # ✅ MODIFICAR depends_on
+      postgres:
         condition: service_healthy
     ports:
-      - "3010:3010"  # Exponer puerto al host
+      - "3010:3010"
     networks:
       - vac-network
-    healthcheck:  # ✅ AGREGAR HEALTHCHECK AL BACKEND
-      test: ["CMD", "curl", "-f", "http://192.168.1.16:3010/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3010/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
   # ===========================
   # Frontend (Next.js)
   # ===========================
@@ -67,28 +67,23 @@ services:
       context: ./vacationsFrontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://192.168.1.16:3010  # 👈 visible fuera del contenedor
+        NEXT_PUBLIC_API_BASE_URL=http://192.168.1.16:3010
     container_name: vac-frontend
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - PORT=4001
-      - NEXT_PUBLIC_API_BASE_URL=http://192.168.1.16:3010   # 👈 visible en runtime
+      - NEXT_PUBLIC_API_BASE_URL=http://192.168.1.16:3010
     depends_on:
       - backend
     ports:
       - "4001:4001"
     networks:
       - vac-network
-    restart: unless-stopped
-# ===========================
-# Volúmenes persistentes
-# ===========================
+
 volumes:
   postgres_data:
 
-# ===========================
-# Red de comunicación entre contenedores
-# ===========================
 networks:
   vac-network:
     driver: bridge
