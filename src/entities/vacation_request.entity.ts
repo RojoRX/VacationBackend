@@ -1,5 +1,5 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
-import { User } from 'src/entities/user.entity'; // Asegúrate de tener la entidad User definida o ajusta según tu implementación.
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { User } from 'src/entities/user.entity';
 
 @Entity()
 export class VacationRequest {
@@ -40,8 +40,8 @@ export class VacationRequest {
   @Column({ type: 'date' })
   returnDate: string;
 
-  @Column({ type: 'boolean', default: false })
-  approvedByHR: boolean;
+  @Column({ type: 'boolean', nullable: true, default: null })
+  approvedByHR: boolean | null;
 
   @Column({ type: 'boolean', default: false })
   approvedBySupervisor: boolean;
@@ -60,7 +60,15 @@ export class VacationRequest {
   @Column({ type: 'date', nullable: true })
   reviewDate?: string;
 
+  // RELACIÓN CON SUPERVISOR - CORREGIDA
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'supervisorId' })
+  supervisor?: User;
+
+  // COLUMNA QUE FALTABA - Foreign Key para el supervisor
+  @Column({ nullable: true })
+  supervisorId: number;
+
   @Column({ default: false })
   deleted: boolean;
-
 }

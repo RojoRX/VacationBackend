@@ -141,26 +141,38 @@ export class VacationRequestController {
   async getVacationRequestsBySupervisor(@Param('supervisorId') supervisorId: number): Promise<VacationRequestDTO[]> {
     return await this.vacationRequestService.getVacationRequestsBySupervisor(supervisorId);
   }
+
+
   // Endpoint para actualizar el estado de una solicitud de vacaciones
   @Patch(':vacationRequestId/status')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.SUPERVISOR)
   @ApiOperation({ summary: 'Actualizar estado de una solicitud de vacaciones por el supervisor' })
   @ApiResponse({ status: 200, description: 'Estado de la solicitud actualizado exitosamente' })
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
   @ApiResponse({ status: 400, description: 'Error al actualizar el estado' })
   async updateVacationRequestStatus(
     @Param('vacationRequestId') vacationRequestId: number,
-    @Body() body: { status: string; supervisorId: number }, // Tipado correcto para el body
+    @Body() body: { status: string }, // Solo recibe status del body
+    @Req() req: any // Obtener el usuario autenticado
   ): Promise<VacationRequestDTO> {
     try {
+      const supervisorId = req.user.id; // ID del supervisor autenticado
+
+      console.log('Controlador - supervisorId desde token:', supervisorId);
+      console.log('Controlador - status desde body:', body.status);
+      console.log('Controlador - vacationRequestId:', vacationRequestId);
+
       return await this.vacationRequestService.updateVacationRequestStatus(
         vacationRequestId,
         body.status,
-        body.supervisorId, // Accede a supervisorId desde body
+        supervisorId,
       );
     } catch (error) {
       throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
   @Get('hr-pending')
   @ApiOperation({ summary: 'Obtener solicitudes pendientes para RRHH' })
   @ApiResponse({ status: 200, description: 'Lista de solicitudes pendientes para RRHH.' })
@@ -232,20 +244,26 @@ export class VacationRequestController {
   @ApiResponse({ status: 200, description: 'Estado modificado con éxito' })
   @ApiResponse({ status: 404, description: 'No se encontró la solicitud' })
   @ApiResponse({ status: 400, description: 'Estado inválido' }) // Agregar esta respuesta
-  async updateStatus(@Param('id') id: number, @Body() updateStatusDto: UpdateStatusDto) {
-    return this.vacationRequestService.updateStatus(id, updateStatusDto.status);
+  async updateStatus(
+    @Param('id') id: number,
+    @Body() updateStatusDto: UpdateStatusDto,
+    @Req() req
+  ) {
+    const supervisorId = req.user.id; // ← ID del supervisor autenticado
+    return this.vacationRequestService.updateStatus(id, updateStatusDto.status, supervisorId);
   }
 
-  @Put(':id/toggle-approved-by-hr')
+  @Post(':id/hr-decision')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(RoleEnum.ADMIN)
   @ApiOperation({ summary: 'Alternar el estado de ApprovedByHR de una solicitud de vacaciones' })
   @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada con éxito' })
-  async toggleApprovedByHR(
+  async hrDecision(
     @Param('id') id: number,
-    @Body('hrUserId') hrUserId: number,
+    @Body() { action }: { action: 'APPROVE' | 'REJECT' },
+    @Req() req
   ) {
-    return this.vacationRequestService.toggleApprovedByHR(id, hrUserId);
+    return this.vacationRequestService.setHRApproval(id, req.user.id, action);
   }
 
   @Patch(':id/postpone')

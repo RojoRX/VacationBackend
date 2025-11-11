@@ -30,4 +30,10 @@ export class VacationRequestDTO {
     departmentName?: string | null;
 
   };
+    supervisor?: {
+    id: number;
+    ci: string;
+    username: string;
+  };
+  supervisorId?: number;
 }

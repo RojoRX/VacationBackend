@@ -60,23 +60,21 @@ export class VacationRequestService {
     });
 
     if (allVacationRequests.length > 0) {
-      const hasPendingRequest = allVacationRequests.some(request => request.status === 'PENDING');
-      if (hasPendingRequest) {
-        throw new HttpException('No puedes crear una nueva solicitud. Hay una solicitud pendiente.', HttpStatus.BAD_REQUEST);
-      }
-      const lastVacationRequest = allVacationRequests[0];
-      const isAuthorizedOrSuspended =
-        (lastVacationRequest.status === 'AUTHORIZED' || lastVacationRequest.status === 'SUSPENDED') &&
-        lastVacationRequest.approvedByHR &&
-        lastVacationRequest.approvedBySupervisor;
+      const lastRequest = allVacationRequests[0];
 
-      if (!isAuthorizedOrSuspended) {
+      // Bloquear solo si la última está pendiente
+      if (lastRequest.status === 'PENDING') {
         throw new HttpException(
-          'No puedes crear una nueva solicitud. La última solicitud no está completamente autorizada, suspendida y aprobada.',
+          'No puedes crear una nueva solicitud. La última solicitud aún está pendiente.',
           HttpStatus.BAD_REQUEST
         );
       }
+
+      // Si está AUTHORIZED, DENIED o SUSPENDED → permitir nueva solicitud
+      // No importa approvedByHR ni approvedBySupervisor para permitir crear
+      // (solo importará para mostrar en frontend o cálculos de días).
     }
+
 
     // Crear fechas de período de gestión
     const startPeriodDate = new Date(Date.UTC(
@@ -558,6 +556,7 @@ export class VacationRequestService {
   }
 
   // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
+  // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   async updateVacationRequestStatus(
     id: number,
     status: string,
@@ -580,7 +579,7 @@ export class VacationRequestService {
       throw new HttpException('No se puede modificar una solicitud que ya ha sido revisada.', HttpStatus.BAD_REQUEST);
     }
 
-    // Después:
+    // Buscar al supervisor
     const supervisor = await this.userService.findById(supervisorId, {
       relations: ['department', 'academicUnit'],
     });
@@ -590,12 +589,6 @@ export class VacationRequestService {
     }
 
     const tipoSupervisor = supervisor.tipoEmpleado;
-
-    console.log('Supervisor tipoEmpleado:', tipoSupervisor);
-    console.log('Supervisor departamento:', supervisor.department);
-    console.log('Supervisor unidad académica:', supervisor.academicUnit);
-    console.log('Usuario departamento:', request.user.department);
-    console.log('Usuario unidad académica:', request.user.academicUnit);
 
     if (tipoSupervisor === 'ADMINISTRATIVO') {
       console.log('Validando por DEPARTAMENTO');
@@ -638,16 +631,21 @@ export class VacationRequestService {
       throw new HttpException('Tipo de supervisor no reconocido', HttpStatus.BAD_REQUEST);
     }
 
-
     const validStatuses = ['PENDING', 'AUTHORIZED', 'DENIED', 'SUSPENDED'];
     if (!validStatuses.includes(status)) {
       throw new HttpException('Estado inválido proporcionado', HttpStatus.BAD_REQUEST);
     }
 
+    request.supervisor = supervisor;        // Asignar la relación
+    request.supervisorId = supervisorId;    // Asignar el ID
     request.status = status;
     request.approvedBySupervisor = true;
     request.reviewDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
+    console.log('Antes de guardar - supervisorId asignado:', request.supervisorId);
+    console.log('Antes de guardar - supervisor asignado:', request.supervisor);
+
+    // Guardar los cambios
     await this.vacationRequestRepository.save(request);
 
     // Notificación
@@ -668,11 +666,11 @@ export class VacationRequestService {
         resourceId: request.id,
       });
 
-
     } catch (error) {
       console.error('Error al crear la notificación:', error);
     }
 
+    // 🔥 También incluir el supervisor en la respuesta
     return {
       id: request.id,
       position: request.position,
@@ -696,6 +694,12 @@ export class VacationRequestService {
       managementPeriodStart: request.managementPeriodStart,
       managementPeriodEnd: request.managementPeriodEnd,
       approvedBy: request.approvedBy ?? undefined,
+      supervisor: request.supervisor ? { // ← Incluir supervisor en el DTO
+        id: request.supervisor.id,
+        ci: request.supervisor.ci,
+        username: request.supervisor.fullName
+      } : undefined,
+      supervisorId: request.supervisorId, // ← Incluir supervisorId en el DTO
     };
   }
 
@@ -802,7 +806,7 @@ export class VacationRequestService {
           id: request.approvedBy.id,
           ci: request.approvedBy.ci,
           fecha_ingreso: request.approvedBy.fecha_ingreso,
-          username: request.approvedBy.username,
+          username: request.approvedBy.fullName,
         }
         : undefined,
     };
@@ -816,7 +820,8 @@ export class VacationRequestService {
   async getVacationRequestDetails(id: number): Promise<any> {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: ['user', 'user.department', 'user.academicUnit'], // Añadido academicUnit
+      relations: ['user', 'user.department', 'user.academicUnit', 'supervisor', 'approvedBy']
+
     });
 
     if (!request) {
@@ -875,42 +880,79 @@ export class VacationRequestService {
       recesos: vacationResponse.recesos,
       licenciasAutorizadas: vacationResponse.licenciasAutorizadas,
       solicitudesDeVacacionAutorizadas: vacationResponse.solicitudesDeVacacionAutorizadas,
-      deleted: request.deleted
+      deleted: request.deleted,
+      supervisor: request.supervisor ? {
+        id: request.supervisor.id,
+        username: request.supervisor.username,
+        ci: request.supervisor.ci,
+        fecha_ingreso: request.supervisor.fecha_ingreso
+      } : null,
+      approvedBy: request.approvedBy ? {
+        id: request.approvedBy.id,
+        username: request.approvedBy.username,
+        ci: request.approvedBy.ci,
+        fecha_ingreso: request.approvedBy.fecha_ingreso
+      } : null,
     };
   }
 
   // Actualizar el estado de una solicitud por el supervisor
-  async updateStatus(id: number, newStatus: string): Promise<VacationRequest> {
+  async updateStatus(
+    id: number,
+    newStatus: string,
+    supervisorId: number
+  ): Promise<VacationRequest> {
     const validStatuses = ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'];
     if (!validStatuses.includes(newStatus)) {
-      throw new BadRequestException('Invalid status');
+      throw new BadRequestException('Estado inválido');
     }
 
-    // Carga también el usuario relacionado
+    // Buscar la solicitud
     const entity = await this.vacationRequestRepository.findOne({
       where: { id },
-      relations: ['user'], // 👈 necesario para acceder a user.id
+      relations: ['user'],
     });
 
     if (!entity) {
-      throw new NotFoundException('Entity not found');
+      throw new NotFoundException('Solicitud no encontrada');
     }
 
-    console.log('Usuario relacionado con la solicitud:', entity.user);
+    // Verificar que el supervisor existe
+    const supervisor = await this.userRepository.findOne({
+      where: { id: supervisorId }
+    });
 
+    if (!supervisor) {
+      throw new NotFoundException('Supervisor no encontrado');
+    }
+
+    // 🔥 ACTUALIZAR AMBOS CAMPOS - Esto es clave
+    entity.supervisor = supervisor;  // ← La relación
+    entity.supervisorId = supervisorId; // ← El ID
     entity.status = newStatus;
+
     if (!entity.approvedBySupervisor) {
       entity.approvedBySupervisor = true;
     }
 
-    const today = new Date();
-    entity.reviewDate = today.toISOString().split('T')[0];
+    entity.reviewDate = new Date().toISOString().split('T')[0];
 
-    // Guarda primero
-    const updatedRequest = await this.vacationRequestRepository.save(entity);
-    console.log('Solicitud actualizada:', updatedRequest);
+    console.log('Antes de guardar - supervisorId:', entity.supervisorId); // Debug
+    console.log('Antes de guardar - supervisor:', entity.supervisor); // Debug
 
-    // Luego notifica
+    // Guardar
+    await this.vacationRequestRepository.save(entity);
+
+    // Recargar con relaciones
+    const updatedRequest = await this.vacationRequestRepository.findOne({
+      where: { id },
+      relations: ['user', 'supervisor'],
+    });
+
+    console.log('Después de guardar - supervisorId:', updatedRequest.supervisorId); // Debug
+    console.log('Después de guardar - supervisor:', updatedRequest.supervisor); // Debug
+
+    // Notificación
     const statusLabels: Record<string, string> = {
       PENDING: 'Pendiente',
       AUTHORIZED: 'Autorizada',
@@ -921,52 +963,62 @@ export class VacationRequestService {
 
     const statusLabel = statusLabels[newStatus] || newStatus;
 
-    console.log('Intentando notificar al usuario con ID:', updatedRequest.user.id);
-
     try {
-      const notification = await this.notificationService.notifyUser({
+      await this.notificationService.notifyUser({
         recipientId: updatedRequest.user.id,
-        message: `Tu solicitud de vacaciones fue revisada por el supervisor y se encuentra como "${statusLabel}".`,
+        message: `Tu solicitud de vacaciones fue revisada y se encuentra como "${statusLabel}".`,
       });
-
-      console.log('Notificación guardada correctamente:', notification);
     } catch (error) {
-      console.error('Error al guardar la notificación:', error);
+      console.error('Error al enviar notificación:', error);
     }
 
     return updatedRequest;
   }
-  async toggleApprovedByHR(
+
+
+
+  async setHRApproval(
     vacationRequestId: number,
-    hrUserId: number
+    hrUserId: number,
+    action: 'APPROVE' | 'REJECT'
   ): Promise<VacationRequest> {
     const vacationRequest = await this.vacationRequestRepository.findOne({
       where: { id: vacationRequestId },
-      relations: ['user'],
+      relations: ['user', 'approvedBy'], // Importante cargar relación
     });
 
     if (!vacationRequest) {
       throw new Error('Solicitud de vacaciones no encontrada');
     }
 
-    // Si ya fue aprobada por RRHH, no se puede volver a aprobar
-    if (vacationRequest.approvedByHR === true) {
-      throw new Error('La solicitud de vacaciones ya fue departamento de Personal.');
+    // Evitar doble decisión
+    if (vacationRequest.approvedByHR !== null) {
+      throw new Error('La solicitud ya fue revisada por el Departamento de Personal.');
     }
 
-    // Aprobar por primera vez
-    vacationRequest.approvedByHR = true;
+    // Buscar usuario (admin RRHH)
+    const hrUser = await this.userRepository.findOne({ where: { id: hrUserId } });
+
+    if (!hrUser) {
+      throw new Error('Usuario que aprueba no encontrado.');
+    }
+
+    // Guardar decisión
+    vacationRequest.approvedByHR = action === 'APPROVE';
+    vacationRequest.approvedBy = hrUser;                // ← Se asigna el usuario que aprobó/rechazó
+    vacationRequest.reviewDate = new Date().toISOString().split('T')[0]; // opcional y útil
 
     await this.vacationRequestRepository.save(vacationRequest);
 
+    // Notificar al solicitante
     await this.notificationService.notifyUser({
       recipientId: vacationRequest.user.id,
-      message: `Tu solicitud de vacaciones fue aprobada por el departamento de Personal.`,
+      message: `Tu solicitud de vacaciones fue ${action === 'APPROVE' ? 'aprobada' : 'rechazada'} por el Departamento de Personal.`,
     });
-
 
     return vacationRequest;
   }
+
   // Método para posponer una solicitud de vacaciones
   async postponeVacationRequest(
     id: number,
@@ -1038,105 +1090,105 @@ export class VacationRequestService {
 
     return vacationRequestDTO;
   }
- // Suspender Solicitud de Vacaciones
-async suspendVacationRequest(
-  requestId: number,
-  updateData: {
-    startDate: string;
-    endDate: string;
-    postponedReason?: string; // NUEVO: observaciones opcionales
-  }
-): Promise<VacationRequest> {
-  const request = await this.vacationRequestRepository.findOne({
-    where: { id: requestId },
-    relations: ['user'],
-  });
-
-  if (!request) {
-    throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
-  }
-
-  // Solo se puede suspender una solicitud autorizada y completamente aprobada
-  if (
-    request.status !== 'AUTHORIZED' ||
-    !request.approvedByHR ||
-    !request.approvedBySupervisor
-  ) {
-    throw new HttpException(
-      'Solo se pueden suspender solicitudes que estén autorizadas y completamente aprobadas.',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  const userId = request.user.id;
-  const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
-  const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
-
-  if (endDateObj <= startDateObj) {
-    throw new HttpException(
-      'La fecha de fin debe ser posterior a la fecha de inicio.',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Validar solapamiento con otras solicitudes (excluyendo esta)
-  try {
-    await ensureNoOverlappingVacations(
-      this.vacationRequestRepository,
-      userId,
-      updateData.startDate,
-      updateData.endDate,
-      requestId
-    );
-  } catch (error) {
-    console.error('Error de solapamiento:', error.message);
-    throw new BadRequestException(error.message);
-  }
-
-  // Calcular días hábiles entre startDate y endDate
-  let currentDate = new Date(startDateObj);
-  let workingDaysCount = 0;
-
-  while (currentDate <= endDateObj) {
-    const dayOfWeek = currentDate.getUTCDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      workingDaysCount++;
+  // Suspender Solicitud de Vacaciones
+  async suspendVacationRequest(
+    requestId: number,
+    updateData: {
+      startDate: string;
+      endDate: string;
+      postponedReason?: string; // NUEVO: observaciones opcionales
     }
-    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+  ): Promise<VacationRequest> {
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id: requestId },
+      relations: ['user'],
+    });
+
+    if (!request) {
+      throw new NotFoundException(`Solicitud con ID ${requestId} no encontrada.`);
+    }
+
+    // Solo se puede suspender una solicitud autorizada y completamente aprobada
+    if (
+      request.status !== 'AUTHORIZED' ||
+      !request.approvedByHR ||
+      !request.approvedBySupervisor
+    ) {
+      throw new HttpException(
+        'Solo se pueden suspender solicitudes que estén autorizadas y completamente aprobadas.',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    const userId = request.user.id;
+    const startDateObj = new Date(updateData.startDate + 'T00:00:00Z');
+    const endDateObj = new Date(updateData.endDate + 'T23:59:59Z');
+
+    if (endDateObj <= startDateObj) {
+      throw new HttpException(
+        'La fecha de fin debe ser posterior a la fecha de inicio.',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // Validar solapamiento con otras solicitudes (excluyendo esta)
+    try {
+      await ensureNoOverlappingVacations(
+        this.vacationRequestRepository,
+        userId,
+        updateData.startDate,
+        updateData.endDate,
+        requestId
+      );
+    } catch (error) {
+      console.error('Error de solapamiento:', error.message);
+      throw new BadRequestException(error.message);
+    }
+
+    // Calcular días hábiles entre startDate y endDate
+    let currentDate = new Date(startDateObj);
+    let workingDaysCount = 0;
+
+    while (currentDate <= endDateObj) {
+      const dayOfWeek = currentDate.getUTCDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        workingDaysCount++;
+      }
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+
+    // Validar que no se exceda el total autorizado
+    if (workingDaysCount > request.totalDays) {
+      throw new HttpException(
+        `La suspensión no puede durar más días (${workingDaysCount}) que la solicitud original (${request.totalDays}).`,
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // Recalcular fecha de reincorporación
+    const returnDateISO = new Date(
+      await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
+    ).toISOString();
+
+    // Validar longitud de observación si se envía
+    if (updateData.postponedReason && updateData.postponedReason.length > 300) {
+      throw new HttpException(
+        'La observación no puede superar los 300 caracteres.',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // Actualizar campos
+    request.startDate = startDateObj.toISOString();
+    request.endDate = endDateObj.toISOString();
+    request.totalDays = workingDaysCount;
+    request.returnDate = returnDateISO;
+    request.status = 'SUSPENDED';
+    request.reviewDate = new Date().toISOString();
+    request.postponedReason = updateData.postponedReason?.trim() || null; // NUEVO: guardamos observación opcional
+
+    return this.vacationRequestRepository.save(request);
   }
-
-  // Validar que no se exceda el total autorizado
-  if (workingDaysCount > request.totalDays) {
-    throw new HttpException(
-      `La suspensión no puede durar más días (${workingDaysCount}) que la solicitud original (${request.totalDays}).`,
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Recalcular fecha de reincorporación
-  const returnDateISO = new Date(
-    await calculateReturnDate(endDateObj.toISOString(), workingDaysCount, this.nonHolidayService)
-  ).toISOString();
-
-  // Validar longitud de observación si se envía
-  if (updateData.postponedReason && updateData.postponedReason.length > 300) {
-    throw new HttpException(
-      'La observación no puede superar los 300 caracteres.',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Actualizar campos
-  request.startDate = startDateObj.toISOString();
-  request.endDate = endDateObj.toISOString();
-  request.totalDays = workingDaysCount;
-  request.returnDate = returnDateISO;
-  request.status = 'SUSPENDED';
-  request.reviewDate = new Date().toISOString();
-  request.postponedReason = updateData.postponedReason?.trim() || null; // NUEVO: guardamos observación opcional
-
-  return this.vacationRequestRepository.save(request);
-}
 
   async checkLastRequestStatus(ci: string): Promise<{
     canRequest: boolean;
@@ -1171,22 +1223,29 @@ async suspendVacationRequest(
         };
       }
 
-      if (
-        lastRequest.status !== 'AUTHORIZED' &&
-        lastRequest.status !== 'SUSPENDED'
-      ) {
+      if (lastRequest.status === 'POSTPONED') {
         return {
           canRequest: false,
-          reason: 'La última solicitud no fue autorizada',
+          reason: 'La última solicitud está postergada',
         };
       }
 
-      if (!lastRequest.approvedByHR) {
-        return {
-          canRequest: false,
-          reason: 'La última solicitud no fue aprobada por el departamento de personal',
-        };
+      // Permitir nueva solicitud si la última fue DENIED o SUSPENDED
+      if (['DENIED', 'SUSPENDED'].includes(lastRequest.status)) {
+        return { canRequest: true };
       }
+
+      // Solo permitir si fue AUTORIZADA y aprobada por RRHH
+      if (lastRequest.status === 'AUTHORIZED' && lastRequest.approvedByHR) {
+        return { canRequest: true };
+      }
+
+      // Cualquier otro caso, bloquear
+      return {
+        canRequest: false,
+        reason: 'La última solicitud no fue autorizada o no cumple los requisitos',
+      };
+
 
       // Todas las validaciones pasaron
       return { canRequest: true };
