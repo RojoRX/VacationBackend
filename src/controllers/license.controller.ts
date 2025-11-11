@@ -155,16 +155,15 @@ export class LicenseController {
   async updatePersonalApproval(
     @Param('licenseId') licenseId: number,
     @Body('approval') approval: boolean,
-    @Req() req: any // aquí obtenemos el usuario autenticado
+    @Req() req: any // user ya viene del token
   ) {
-    const userId = req.user.id; // sacamos el id directamente del token
-
     return this.licenseService.updatePersonalDepartmentApproval(
       licenseId,
-      userId,
+      req.user,   // <-- aquí pasamos el user completo, NO el id
       approval
     );
   }
+
 
 
 

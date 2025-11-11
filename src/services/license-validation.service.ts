@@ -56,16 +56,23 @@ export class LicenseValidationService {
       console.log(`[LicenseValidationService] Última solicitud de VACACION encontrada (ID: ${lastVacationRequest.id}) para el usuario ${user.fullName}.`);
       console.log(`[LicenseValidationService] Aprobación supervisor: ${lastVacationRequest.immediateSupervisorApproval}, Aprobación RRHH: ${lastVacationRequest.personalDepartmentApproval}`);
 
-      if (!lastVacationRequest.immediateSupervisorApproval || !lastVacationRequest.personalDepartmentApproval) {
+      const supApproval = lastVacationRequest.immediateSupervisorApproval;
+      const deptApproval = lastVacationRequest.personalDepartmentApproval;
+
+      // Bloqueamos solo si alguna aprobación sigue pendiente (null)
+      if (supApproval === null || deptApproval === null) {
         console.log(`[LicenseValidationService] La última solicitud de VACACION del usuario ${user.fullName} (ID: ${lastVacationRequest.id}) NO ha sido completamente aprobada.`);
-        // Si no está aprobada, aún puedes querer mostrar los días disponibles para información
-        const { availableDays } = await this.checkAvailableVacationDays(user.ci, 1); // Obtén los días disponibles
+        const { availableDays } = await this.checkAvailableVacationDays(user.ci, 1);
         return {
           canRequest: false,
           reason: `Tienes una solicitud de vacaciones anterior (ID: ${lastVacationRequest.id}) que aún no ha sido completamente aprobada`,
-          availableDays: availableDays // Añade los días disponibles
+          availableDays
         };
       }
+
+      // Si están en otros estados como SUSPENDED, REJECTED, etc., ya no se bloquea
+      console.log(`[LicenseValidationService] Última solicitud de VACACION no está pendiente, estado sup: ${supApproval}, dept: ${deptApproval}`);
+
 
       console.log(`[LicenseValidationService] La última solicitud de VACACION del usuario ${user.fullName} (ID: ${lastVacationRequest.id}) está completamente aprobada.`);
       // Si está aprobada, llama a checkAvailableVacationDays y devuelve su resultado completo
@@ -191,18 +198,19 @@ export class LicenseValidationService {
       });
 
       if (lastVacationRequest) {
-        console.log(`[LicenseValidationService] Última solicitud de VACACION (ID: ${lastVacationRequest.id}) encontrada para validación de creación.`);
-        console.log(`[LicenseValidationService] Aprobación supervisor: ${lastVacationRequest.immediateSupervisorApproval}, Aprobación RRHH: ${lastVacationRequest.personalDepartmentApproval}`);
-        if (!lastVacationRequest.immediateSupervisorApproval || !lastVacationRequest.personalDepartmentApproval) {
-          console.log(`[LicenseValidationService] La última solicitud de VACACION NO está completamente aprobada. Lanzando BadRequestException.`);
+        const supApproval = lastVacationRequest.immediateSupervisorApproval;
+        const deptApproval = lastVacationRequest.personalDepartmentApproval;
+
+        // Bloqueamos solo si alguna aprobación sigue pendiente
+        if (supApproval === null || deptApproval === null) {
           throw new BadRequestException(
             `No puedes solicitar una nueva licencia de vacaciones. Tienes una solicitud anterior (ID: ${lastVacationRequest.id}) que aún no ha sido completamente aprobada.`,
           );
         }
-        console.log(`[LicenseValidationService] La última solicitud de VACACION está completamente aprobada.`);
-      } else {
-        console.log(`[LicenseValidationService] No hay solicitudes de VACACION previas para el usuario.`);
+
+        console.log(`[LicenseValidationService] Última solicitud de VACACION está en estado no pendiente (sup: ${supApproval}, dept: ${deptApproval}).`);
       }
+
 
       // 2. Validar días disponibles
       console.log(`[LicenseValidationService] Verificando días disponibles para el usuario ${user.fullName} para ${requestedDays} días.`);

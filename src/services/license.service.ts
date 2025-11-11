@@ -14,6 +14,7 @@ import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { parseISO, format, setYear, getYear, eachDayOfInterval } from 'date-fns';
 import { LicenseUtilsService } from './license-utils.service';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
+import { RoleEnum } from 'src/enums/role.enum';
 @Injectable()
 export class LicenseService {
   constructor(
@@ -572,7 +573,7 @@ export class LicenseService {
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   async updatePersonalDepartmentApproval(
     licenseId: number,
-    userId: number, // este viene del backend, no del frontend
+    user: { id: number; role: string },
     approval: boolean
   ): Promise<License> {
     const license = await this.licenseRepository.findOne({
@@ -580,37 +581,30 @@ export class LicenseService {
       relations: ['user'],
     });
 
-    if (!license || !license.user) {
-      throw new BadRequestException('Licencia o usuario asociado no encontrado');
+    if (!license) {
+      throw new BadRequestException('Licencia no encontrada.');
+    }
+    // Aunque viene validado por RolesGuard, esto sirve como doble seguridad:
+    if (user.role.toUpperCase() !== RoleEnum.ADMIN) {
+      throw new BadRequestException('Solo un ADMIN puede aprobar o rechazar esta licencia.');
+    }
+    // Solo permitir decisión si aún está pendiente
+    const isPending =
+      license.immediateSupervisorApproval === null &&
+      license.personalDepartmentApproval === null;
+
+    if (!isPending) {
+      throw new BadRequestException('La licencia ya tiene una decisión registrada.');
     }
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado');
-    }
-
-    // Con los guards y roles ya sabemos que es ADMIN, puedes omitir esta verificación si quieres
-    if (user.role !== 'ADMIN') {
-      throw new BadRequestException('No autorizado: solo usuarios con rol ADMIN pueden realizar esta acción.');
-    }
-
-    if (license.personalDepartmentApproval === true) {
-      throw new BadRequestException('La aprobación del departamento de personal ya fue realizada.');
-    }
-
-    if (license.immediateSupervisorApproval === true) {
-      throw new BadRequestException('La aprobación del supervisor inmediato ya fue realizada.');
-    }
-
-    license.personalDepartmentApproval = approval;
     license.immediateSupervisorApproval = approval;
+    license.personalDepartmentApproval = approval;
 
-    const updatedLicense = await this.licenseRepository.save(license);
+    const updated = await this.licenseRepository.save(license);
 
     const message = approval
-      ? `Tu licencia fue aprobada por el departamento de personal y tu supervisor.`
-      : `Tu licencia fue rechazada por el departamento de personal y tu supervisor.`;
+      ? 'Tu licencia fue aprobada por el Departamento de Personal.'
+      : 'Tu licencia fue rechazada por el Departamento de Personal.';
 
     await this.notificationService.notifyUser({
       recipientId: license.user.id,
@@ -620,8 +614,9 @@ export class LicenseService {
       resourceId: license.id,
     });
 
-    return updatedLicense;
+    return updated;
   }
+
 
   async createMultipleLicenses(userId: number, licensesData: Partial<License>[]): Promise<LicenseResponseDto[]> {
     // 1. Validación inicial - Usuario existe
