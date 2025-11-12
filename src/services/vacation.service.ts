@@ -61,16 +61,22 @@ export class VacationService {
     console.log(`[calculateVacationDays] Año para búsqueda de recesos y días no hábiles: ${year}`);
 
     // Obtener recesos generales y días no hábiles
-    const { holidayPeriods } = await this.recesoService.getHolidayPeriods(year);
+    const holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDate);
+
+
     console.log(`[calculateVacationDays] Recesos generales encontrados para el año ${year}:`, holidayPeriods.length);
     // Opcional: console.log(holidayPeriods);
 
-    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDays(year);
+    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDate);
     console.log(`[calculateVacationDays] Días no hábiles generales encontrados para el año ${year}:`, nonHolidayDays.length);
     // Opcional: console.log(nonHolidayDays);
 
     // Obtener recesos personalizados del usuario
-    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriods(userData.id, year);
+    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriodsForPersonalYear(
+      userData.id,
+      startDate,
+      endDate
+    );
     console.log(`[calculateVacationDays] Recesos personalizados para el usuario ${userData.id} en el año ${year}:`, personalizedRecesses.length);
     // Opcional: console.log(personalizedRecesses);
 
@@ -124,7 +130,7 @@ export class VacationService {
         if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
           nonHolidayDaysDetails.push({
             date: nonHoliday.date,
-            reason: `Dentro del receso ${receso.name}`
+            reason: `Dentro del receso ${nonHoliday.description}`
           });
           console.log(`[calculateVacationDays] - Día no hábil ${nonHoliday.date} incluido en receso ${receso.name}.`);
         }

@@ -1,7 +1,7 @@
 // src/services/userholidayperiod.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Not, Repository } from 'typeorm';
+import { Brackets, LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
 // ✅ CORREGIR (nombre exacto)
 import { UserHolidayPeriod } from '../entities/userHolidayPeriod.entity';
 import { User } from 'src/entities/user.entity';
@@ -252,5 +252,23 @@ async updateUserHolidayPeriod(
     }));
   }
 
+  
+async getUserHolidayPeriodsForPersonalYear(userId: number, userStartDate: Date, userEndDate: Date) {
+  const personalizedRecesses = await this.userHolidayPeriodRepository.find({
+    where: {
+      user: { id: userId } ,
+      startDate: LessThanOrEqual(userEndDate),
+      endDate: MoreThanOrEqual(userStartDate),
+    },
+    order: { startDate: 'ASC' },
+  });
+
+  // Ajustar las fechas al rango del año laboral personal
+  return personalizedRecesses.map(receso => ({
+    ...receso,
+    startDate: receso.startDate < userStartDate ? userStartDate : receso.startDate,
+    endDate: receso.endDate > userEndDate ? userEndDate : receso.endDate,
+  }));
+}
 
 }

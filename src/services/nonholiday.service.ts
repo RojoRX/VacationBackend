@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { Between, Not, Repository } from 'typeorm';
 import { NonHoliday } from 'src/entities/nonholiday.entity';
 import { DateTime } from 'luxon';
+import { format } from 'date-fns';
 
 @Injectable()
 export class NonHolidayService {
@@ -59,55 +60,55 @@ export class NonHolidayService {
     return this.nonHolidayRepository.save(nonHoliday);
   }
 
-async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
-  const existing = await this.nonHolidayRepository.findOne({ where: { id } });
-  if (!existing) {
-    throw new BadRequestException(`No se encontró el día no hábil con ID ${id}.`);
+  async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<NonHoliday> {
+    const existing = await this.nonHolidayRepository.findOne({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException(`No se encontró el día no hábil con ID ${id}.`);
+    }
+
+    // Validar y normalizar la fecha si se envía una nueva
+    if (nonHoliday.date) {
+      const date = DateTime.fromISO(nonHoliday.date);
+      if (!date.isValid) {
+        throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
+      }
+
+      const normalizedDate = date.toISODate();
+      const year = date.year;
+
+      if (year < 2000 || year > 2100) {
+        throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
+      }
+
+      // 🔹 Buscar si existe otro registro con la misma fecha pero EXCLUYENDO el registro actual
+      const duplicate = await this.nonHolidayRepository.findOne({
+        where: {
+          date: normalizedDate,
+          id: Not(id) // ← Esta es la clave: excluir el registro actual
+        },
+      });
+
+      if (duplicate) {
+        throw new BadRequestException(`Ya existe un día no hábil registrado para la fecha ${normalizedDate}.`);
+      }
+
+      nonHoliday.date = normalizedDate;
+      nonHoliday.year = year;
+    }
+
+    // Validar y limpiar descripción
+    if (nonHoliday.description !== undefined) {
+      const trimmed = nonHoliday.description.trim();
+      if (trimmed.length < 3) {
+        throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
+      }
+      nonHoliday.description = trimmed.toUpperCase();
+    }
+
+    await this.nonHolidayRepository.update(id, nonHoliday);
+
+    return this.nonHolidayRepository.findOne({ where: { id } });
   }
-
-  // Validar y normalizar la fecha si se envía una nueva
-  if (nonHoliday.date) {
-    const date = DateTime.fromISO(nonHoliday.date);
-    if (!date.isValid) {
-      throw new BadRequestException(`La fecha proporcionada (${nonHoliday.date}) no es válida.`);
-    }
-
-    const normalizedDate = date.toISODate();
-    const year = date.year;
-
-    if (year < 2000 || year > 2100) {
-      throw new BadRequestException(`El año ${year} está fuera del rango permitido (2000 - 2100).`);
-    }
-
-    // 🔹 Buscar si existe otro registro con la misma fecha pero EXCLUYENDO el registro actual
-    const duplicate = await this.nonHolidayRepository.findOne({
-      where: { 
-        date: normalizedDate,
-        id: Not(id) // ← Esta es la clave: excluir el registro actual
-      },
-    });
-
-    if (duplicate) {
-      throw new BadRequestException(`Ya existe un día no hábil registrado para la fecha ${normalizedDate}.`);
-    }
-
-    nonHoliday.date = normalizedDate;
-    nonHoliday.year = year;
-  }
-
-  // Validar y limpiar descripción
-  if (nonHoliday.description !== undefined) {
-    const trimmed = nonHoliday.description.trim();
-    if (trimmed.length < 3) {
-      throw new BadRequestException('La descripción debe tener al menos 3 caracteres.');
-    }
-    nonHoliday.description = trimmed.toUpperCase();
-  }
-
-  await this.nonHolidayRepository.update(id, nonHoliday);
-
-  return this.nonHolidayRepository.findOne({ where: { id } });
-}
 
 
   async deleteNonHoliday(id: number): Promise<void> {
@@ -149,6 +150,20 @@ async updateNonHoliday(id: number, nonHoliday: Partial<NonHoliday>): Promise<Non
 
     return filteredDates;
   }
+
+
+async getNonHolidayDaysForRange(startDate: Date, endDate: Date) {
+  // Convertir Date a string 'YYYY-MM-DD'
+  const startStr = format(startDate, 'yyyy-MM-dd');
+  const endStr = format(endDate, 'yyyy-MM-dd');
+
+  return this.nonHolidayRepository.find({
+    where: {
+      date: Between(startStr, endStr),
+    },
+    order: { date: 'ASC' },
+  });
+}
 
 
 
