@@ -378,6 +378,7 @@ export class UserService {
         correo_electronico: user.username,
         profession: user.profession,
         fecha_ingreso: user.fecha_ingreso,
+        tipoEmpleado:user.tipoEmpleado,
         position: user.position, // Incluir el campo position
         // Excluir la contraseña del retorno
       };

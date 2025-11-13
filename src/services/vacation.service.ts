@@ -13,6 +13,7 @@ import { formatToSimpleDate, parseToStartOfDay } from 'src/utils/dateUtils';
 import { adjustPeriodEnd, isValidPeriod } from 'src/utils/date.helpers';
 import { SystemConfigService } from 'src/config/system-config.service';
 import { UserConfigService } from './user-config.service';
+import { AdministrativeHolidayPeriodService } from './administrative-holiday-period.service';
 
 @Injectable()
 export class VacationService {
@@ -26,6 +27,7 @@ export class VacationService {
     private readonly vacationRequestService: VacationRequestService,
     private readonly systemConfigService: SystemConfigService,
     private readonly userConfigService: UserConfigService,
+    private readonly administrativeHolidayService: AdministrativeHolidayPeriodService
   ) { }
 
   async calculateVacationDays(
@@ -38,7 +40,7 @@ export class VacationService {
     if (!userData) {
       throw new BadRequestException('Usuario no encontrado.');
     }
-
+    console.log(userData);
     // Convertir fechas para cálculos
     const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
     const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
@@ -60,13 +62,19 @@ export class VacationService {
     const year = startDateTime.year;
     console.log(`[calculateVacationDays] Año para búsqueda de recesos y días no hábiles: ${year}`);
 
-    // Obtener recesos generales y días no hábiles
-    const holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDate);
-
-
-    console.log(`[calculateVacationDays] Recesos generales encontrados para el año ${year}:`, holidayPeriods.length);
-    // Opcional: console.log(holidayPeriods);
-
+    // 🏖️ Determinar recesos según tipo de empleado
+    let holidayPeriods = [];
+    if (userData.tipoEmpleado === 'DOCENTE') {
+      // 🔹 DOCENTE → Recesos Generales
+      holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDate);
+      console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
+    } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
+      // 🔹 ADMINISTRATIVO → Recesos Administrativos
+      holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDate);
+      console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
+    } else {
+      console.warn(`[calculateVacationDays] Tipo de empleado no reconocido (${userData.tipoEmpleado}), sin recesos aplicados.`);
+    }
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDate);
     console.log(`[calculateVacationDays] Días no hábiles generales encontrados para el año ${year}:`, nonHolidayDays.length);
     // Opcional: console.log(nonHolidayDays);
@@ -135,77 +143,61 @@ export class VacationService {
           console.log(`[calculateVacationDays] - Día no hábil ${nonHoliday.date} incluido en receso ${receso.name}.`);
         }
       });
-
       const daysCount = totalDays - nonHolidayDaysCount;
-      console.log(`[calculateVacationDays] Días efectivos contados del receso "${receso.name}": ${daysCount}`);
-
       recesos.push({
         name: receso.name,
         startDate: receso.startDate,
         endDate: receso.endDate,
         totalDays,
         nonHolidayDays: nonHolidayDaysCount,
-        daysCount: daysCount,
-        type: recessType
+        daysCount,
+        type: personalizedRecesses.some(p => p.name === receso.name) ? 'personalizado' :
+          (userData.tipoEmpleado === 'DOCENTE' ? 'general' : 'administrativo')
       });
     }
 
-    // Calcular los días usados por recesos
-    const totalVacationDaysUsedByRecess = recesos.reduce((total, receso) => total + receso.daysCount, 0);
-    console.log(`[calculateVacationDays] Total de días de vacaciones usados por recesos: ${totalVacationDaysUsedByRecess}`);
+    // 🧾 Total de días de receso usados
+  const totalVacationDaysUsedByRecess = recesos.reduce((sum, r) => sum + r.daysCount, 0);
 
-    // Consultar licencias autorizadas para el usuario
-    const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } = await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
-    console.log(`[calculateVacationDays] Total de días de licencia autorizados en el rango: ${totalAuthorizedLicenseDays}`);
+  // 📄 Licencias y vacaciones
+  const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } =
+    await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
 
-    // Consultar las solicitudes de vacaciones en el rango de fechas
-    const { totalAuthorizedVacationDays, requests: vacationRequests } = await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
-    console.log(`[calculateVacationDays] Total de días de vacaciones autorizados en el rango: ${totalAuthorizedVacationDays}`);
+  const { totalAuthorizedVacationDays, requests: vacationRequests } =
+    await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
 
+  const totalUsedDays = totalVacationDaysUsedByRecess + totalAuthorizedLicenseDays + totalAuthorizedVacationDays;
+  let remainingVacationDays = vacationDays - totalUsedDays;
+  let deuda = 0;
+  if (remainingVacationDays < 0) {
+    deuda = Math.abs(remainingVacationDays);
+    remainingVacationDays = 0;
+  }
 
-    // Calcular el total de días usados (recesos + licencias + vacaciones autorizadas)
-    const totalUsedDays = totalVacationDaysUsedByRecess + totalAuthorizedLicenseDays + totalAuthorizedVacationDays;
-    console.log(`[calculateVacationDays] Total de días usados (recesos + licencias + vacaciones autorizadas): ${totalUsedDays}`);
-
-
-    // Calcular los días de vacaciones restantes
-    let remainingVacationDays = vacationDays - totalUsedDays;
-    console.log(`[calculateVacationDays] Días restantes antes de ajustar la deuda: ${remainingVacationDays}`);
-
-    // Calcular la deuda si los días restantes son negativos
-    let deuda = 0;
-    if (remainingVacationDays < 0) {
-      deuda = Math.abs(remainingVacationDays);
-      remainingVacationDays = 0;  // Evitar que los días disponibles sean negativos
-      console.log(`[calculateVacationDays] Deuda calculada: ${deuda} (días restantes ajustados a 0)`);
-    } else {
-      console.log(`[calculateVacationDays] Días restantes después de ajustar la deuda: ${remainingVacationDays}`);
+  return {
+    carnetIdentidad: userData.carnetIdentidad,
+    name: userData.nombres,
+    email: userData.correo_electronico,
+    position: userData.profesion,
+    fechaIngreso: new Date(userData.fecha_ingreso),
+    antiguedadEnAnios: Math.floor(yearsOfService),
+    antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
+    antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
+    diasDeVacacion: vacationDays,
+    diasDeVacacionRestantes: remainingVacationDays,
+    deuda,
+    recesos,
+    diasNoHabiles: totalNonHolidayDays,
+    nonHolidayDaysDetails,
+    licenciasAutorizadas: {
+      totalAuthorizedDays: totalAuthorizedLicenseDays,
+      requests: licenseRequests
+    },
+    solicitudesDeVacacionAutorizadas: {
+      totalAuthorizedVacationDays,
+      requests: vacationRequests
     }
-
-    return {
-      carnetIdentidad: userData.carnetIdentidad,
-      name: userData.nombres,
-      email: userData.correo_electronico,
-      position: userData.profesion,
-      fechaIngreso: new Date(userData.fecha_ingreso),
-      antiguedadEnAnios: Math.floor(yearsOfService),
-      antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
-      antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
-      diasDeVacacion: vacationDays,
-      diasDeVacacionRestantes: remainingVacationDays,
-      deuda,
-      recesos,
-      diasNoHabiles: totalNonHolidayDays, // Este total incluye los días no hábiles que caen dentro de cualquier receso
-      nonHolidayDaysDetails,
-      licenciasAutorizadas: {
-        totalAuthorizedDays: totalAuthorizedLicenseDays,
-        requests: licenseRequests
-      },
-      solicitudesDeVacacionAutorizadas: {
-        totalAuthorizedVacationDays,
-        requests: vacationRequests
-      }
-    };
+  };
   }
   /**
    * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.

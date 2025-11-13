@@ -29,6 +29,7 @@ import { AcademicUnit } from 'src/entities/academic-unit.entity';
 import { SystemConfigModule } from 'src/config/system-config.module';
 import { UserConfigModule } from './user-config.module';
 import { LicenseUtilsService } from 'src/services/license-utils.service';
+import { AdministrativeHolidayPeriodModule } from './admin-holiday-period.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { LicenseUtilsService } from 'src/services/license-utils.service';
     ProfessionModule,
     SystemConfigModule,
     UserConfigModule,
+    AdministrativeHolidayPeriodModule,
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],

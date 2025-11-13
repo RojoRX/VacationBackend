@@ -23,6 +23,7 @@ import { VacationPolicyModule } from './vacationPolicyModule.module';
 import { ProfessionModule } from './profession.module';
 import { SystemConfigModule } from 'src/config/system-config.module';
 import { UserConfigModule } from './user-config.module';
+import { AdministrativeHolidayPeriodModule } from './admin-holiday-period.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UserConfigModule } from './user-config.module';
     ProfessionModule,
     SystemConfigModule,
     UserConfigModule,
+    AdministrativeHolidayPeriodModule,
     forwardRef(() => VacationRequestModule),
   ],
   controllers: [VacationController],

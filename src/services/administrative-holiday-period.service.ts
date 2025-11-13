@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, Brackets } from 'typeorm';
+import { Repository, Not, Brackets, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { AdministrativeHolidayPeriod, AdministrativeHolidayName } from 'src/entities/administrativeHolidayPeriod.entity';
 import { CreateAdministrativeHolidayPeriodDto } from 'src/dto/create-administrative-holiday-period.dto';
 import { normalizeToMidnight } from 'src/utils/dateMidnight.utils';
@@ -9,7 +9,7 @@ export class AdministrativeHolidayPeriodService {
   constructor(
     @InjectRepository(AdministrativeHolidayPeriod)
     private readonly administrativeHolidayRepository: Repository<AdministrativeHolidayPeriod>,
-  ) {}
+  ) { }
 
   // ✅ Crear un nuevo receso administrativo
   async createAdministrativeHolidayPeriod(dto: CreateAdministrativeHolidayPeriodDto): Promise<AdministrativeHolidayPeriod> {
@@ -196,5 +196,25 @@ export class AdministrativeHolidayPeriodService {
     }
 
     await this.administrativeHolidayRepository.delete(id);
+  }
+
+  async getHolidayPeriodsForPersonalYear(userStartDate: Date, userEndDate: Date) {
+    // Buscar recesos que intersecten con el rango personal
+    const holidayPeriods = await this.administrativeHolidayRepository.find({
+      where: [
+        {
+          startDate: LessThanOrEqual(userEndDate),
+          endDate: MoreThanOrEqual(userStartDate),
+        },
+      ],
+      order: { startDate: 'ASC' },
+    });
+
+    // Ajustar fechas dentro del rango solicitado
+    return holidayPeriods.map(receso => ({
+      ...receso,
+      startDate: receso.startDate < userStartDate ? userStartDate : receso.startDate,
+      endDate: receso.endDate > userEndDate ? userEndDate : receso.endDate,
+    }));
   }
 }
