@@ -4,6 +4,7 @@ import { Repository, Not, Brackets, LessThanOrEqual, MoreThanOrEqual } from 'typ
 import { AdministrativeHolidayPeriod, AdministrativeHolidayName } from 'src/entities/administrativeHolidayPeriod.entity';
 import { CreateAdministrativeHolidayPeriodDto } from 'src/dto/create-administrative-holiday-period.dto';
 import { normalizeToMidnight } from 'src/utils/dateMidnight.utils';
+import { eachDayOfInterval, isWeekend } from 'date-fns';
 @Injectable()
 export class AdministrativeHolidayPeriodService {
   constructor(
@@ -198,7 +199,7 @@ export class AdministrativeHolidayPeriodService {
     await this.administrativeHolidayRepository.delete(id);
   }
 
-  async getHolidayPeriodsForPersonalYear(userStartDate: Date, userEndDate: Date) {
+async getHolidayPeriodsForPersonalYear(userStartDate: Date, userEndDate: Date) {
     // Buscar recesos que intersecten con el rango personal
     const holidayPeriods = await this.administrativeHolidayRepository.find({
       where: [
@@ -210,11 +211,31 @@ export class AdministrativeHolidayPeriodService {
       order: { startDate: 'ASC' },
     });
 
-    // Ajustar fechas dentro del rango solicitado
-    return holidayPeriods.map(receso => ({
-      ...receso,
-      startDate: receso.startDate < userStartDate ? userStartDate : receso.startDate,
-      endDate: receso.endDate > userEndDate ? userEndDate : receso.endDate,
-    }));
-  }
+    // Filtrar solo recesos con superposición significativa
+    const relevantRecesses = holidayPeriods.filter(receso => {
+      const overlapStart = receso.startDate < userStartDate ? userStartDate : receso.startDate;
+      const overlapEnd = receso.endDate > userEndDate ? userEndDate : receso.endDate;
+      const overlapDays = Math.max(0, Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      
+      // Criterios de significancia
+      const minRequiredDays = receso.name.includes('INVIERNO') ? 5 : 10;
+      return overlapDays >= minRequiredDays;
+    });
+
+    // Ajustar fechas dentro del rango solicitado y calcular días hábiles
+    return relevantRecesses.map(receso => {
+      const adjustedStart = receso.startDate < userStartDate ? userStartDate : receso.startDate;
+      const adjustedEnd = receso.endDate > userEndDate ? userEndDate : receso.endDate;
+      
+      const allDays = eachDayOfInterval({ start: adjustedStart, end: adjustedEnd });
+      const businessDays = allDays.filter(date => !isWeekend(date)).length;
+
+      return {
+        ...receso,
+        startDate: adjustedStart,
+        endDate: adjustedEnd,
+        businessDays: businessDays
+      };
+    });
+}
 }
