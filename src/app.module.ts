@@ -23,6 +23,7 @@ import { SystemConfig } from './config/system-config.entity';
 import { SystemConfigModule } from './config/system-config.module';
 import { UserConfigModule } from './modules/user-config.module';
 import { ExternalModule } from './modules/external.module';
+import { AdministrativeHolidayPeriodModule } from './modules/admin-holiday-period.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { ExternalModule } from './modules/external.module';
     AcademicUnitModule,
     UserConfigModule,
     ExternalModule,
+    AdministrativeHolidayPeriodModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
