@@ -487,6 +487,118 @@ export class ReportsService {
 
     return await workbook.xlsx.writeBuffer();
   }
+  async generateGlobalVacationReport(params: {
+    from?: string;   // YYYY-MM-DD
+    to?: string;     // YYYY-MM-DD
+    year?: number;
+    month?: number;
+    employeeType?: string; // 'ADMINISTRATIVO' | 'DOCENTE' | 'ALL'
+    status?: string[];     // ['PENDING','AUTHORIZED',...], opcional
+  }) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Vacaciones Global');
+
+    // 🔹 Leyenda de filtros
+    let filterText = 'Reporte de vacaciones de todos los usuarios';
+    if (params.from && params.to) {
+      filterText = `Reporte generado desde ${params.from} hasta ${params.to}`;
+    } else if (params.year && params.month) {
+      const monthName = [
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ][params.month];
+      filterText = `Reporte generado para ${monthName} de ${params.year}`;
+    } else if (params.year) {
+      filterText = `Reporte generado para el año ${params.year}`;
+    }
+
+    if (params.employeeType && params.employeeType !== 'ALL') {
+      filterText += ` - Tipo de empleado: ${params.employeeType}`;
+    }
+    if (params.status && params.status.length > 0) {
+      filterText += ` - Status filtrados: ${params.status.join(', ')}`;
+    }
+
+    worksheet.addRow(['Reporte global de vacaciones']).font = { bold: true, size: 14 };
+    worksheet.addRow([filterText]).font = { italic: true, size: 12, color: { argb: 'FF0000FF' } };
+    worksheet.addRow([]);
+
+    // 🔹 Encabezado de columnas
+    worksheet.addRow([
+      'Usuario', 'CI', 'Tipo Empleado', 'Departamento', 'Unidad Académica',
+      'Fecha Solicitud', 'Inicio', 'Fin', 'Días', 'Estado',
+      'Reintegro', 'Aprob. RRHH', 'Aprob. Supervisor',
+      'Cargo', 'Período Gestión Inicio', 'Período Gestión Fin'
+    ]).eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCE5FF' } };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+
+    // 🔹 Query
+    const qb = this.vacationRepository.createQueryBuilder('vacation')
+      .leftJoinAndSelect('vacation.user', 'user')
+      .leftJoinAndSelect('user.department', 'department')
+      .leftJoinAndSelect('user.academicUnit', 'academicUnit')
+      .where('vacation.deleted = false');
+
+    if (params.from) qb.andWhere('vacation.startDate >= :from', { from: params.from });
+    if (params.to) qb.andWhere('vacation.endDate <= :to', { to: params.to });
+    if (params.year) qb.andWhere('EXTRACT(YEAR FROM vacation.startDate) = :year', { year: params.year });
+    if (params.month) qb.andWhere('EXTRACT(MONTH FROM vacation.startDate) = :month', { month: params.month });
+    if (params.employeeType && params.employeeType !== 'ALL') qb.andWhere('user.tipoEmpleado = :employeeType', { employeeType: params.employeeType });
+    if (params.status && params.status.length > 0) qb.andWhere('vacation.status IN (:...status)', { status: params.status });
+
+    const vacations = await qb.getMany();
+
+    // 🔹 Llenar datos
+    const statusTranslations: Record<string, string> = {
+      PENDING: 'Pendiente',
+      AUTHORIZED: 'Autorizada',
+      POSTPONED: 'Postergada',
+      DENIED: 'Denegada',
+      SUSPENDED: 'Suspendida',
+    };
+
+    for (const vac of vacations) {
+      worksheet.addRow([
+        vac.user.fullName,
+        vac.user.ci,
+        vac.user.tipoEmpleado,
+        vac.user.department?.name || '—',
+        vac.user.academicUnit?.name || '—',
+        vac.requestDate,
+        vac.startDate,
+        vac.endDate,
+        vac.totalDays,
+        statusTranslations[vac.status] || vac.status,
+        vac.returnDate || '—',
+        vac.approvedByHR ? 'Sí' : 'No',
+        vac.approvedBySupervisor ? 'Sí' : 'No',
+        vac.position || '—',
+        vac.managementPeriodStart,
+        vac.managementPeriodEnd
+      ]);
+    }
+
+    // 🔹 Ajuste de ancho de columnas
+    worksheet.columns.forEach(col => {
+      let max = 12;
+      col.eachCell?.({ includeEmpty: true }, cell => {
+        const len = cell.value?.toString().length || 0;
+        max = Math.max(max, len);
+      });
+      col.width = max + 2;
+    });
+
+    return await workbook.xlsx.writeBuffer();
+  }
+
 
 
 }
