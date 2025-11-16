@@ -71,7 +71,7 @@ export class User {
   department: Department;
 
   // En user.entity.ts
-  @ManyToOne(() => AcademicUnit, { nullable: true })
+  @ManyToOne(() => AcademicUnit, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'academicUnitId' })
   academicUnit: AcademicUnit;
 
@@ -85,7 +85,7 @@ export class User {
   // user.entity.ts
   @OneToOne(() => UserConfig, config => config.user, { cascade: true, eager: true })
   config: UserConfig;
-   // === SOFT DELETE ===
+  // === SOFT DELETE ===
   @Column({ type: 'boolean', default: false })
   deleted: boolean;
 

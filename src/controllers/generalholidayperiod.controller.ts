@@ -11,8 +11,6 @@ import { RoleEnum } from 'src/enums/role.enum';
 
 @ApiTags('Recesos Generales')
 @Controller('general-holiday-periods')
-@UseGuards(AuthGuard, RolesGuard)
-@Roles(RoleEnum.ADMIN)
 export class GeneralHolidayPeriodController {
   constructor(private readonly generalHolidayPeriodService: GeneralHolidayPeriodService) { }
 
@@ -43,8 +41,12 @@ export class GeneralHolidayPeriodController {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Error retrieving all general holiday periods', error });
     }
   }
-//Crear nuevo receso
+
+
+  //Crear nuevo receso
   @Post()
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear un nuevo periodo de vacaciones generales' })
   @ApiResponse({
@@ -65,10 +67,12 @@ export class GeneralHolidayPeriodController {
   ): Promise<GeneralHolidayPeriod> {
     return this.generalHolidayPeriodService.createGeneralHolidayPeriod(dto);
   }
-  
+
 
   // Actualizar un receso general existente
   @Put(':id')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
   @ApiOperation({ summary: 'Actualizar un periodo de vacaciones generales' })
   @ApiResponse({ status: 200, description: 'Periodo de vacaciones general actualizado exitosamente', type: GeneralHolidayPeriod })
   @ApiResponse({ status: 400, description: 'Error al actualizar el periodo de vacaciones generales' })
@@ -90,6 +94,8 @@ export class GeneralHolidayPeriodController {
 
   // Eliminar un receso general
   @Delete(':id')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
   @ApiOperation({ summary: 'Eliminar un periodo de vacaciones generales' })
   @ApiResponse({ status: 200, description: 'Periodo de vacaciones general eliminado exitosamente' })
   @ApiResponse({ status: 404, description: 'Periodo de vacaciones generales no encontrado' })

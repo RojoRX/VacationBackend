@@ -378,7 +378,7 @@ export class UserService {
         correo_electronico: user.username,
         profession: user.profession,
         fecha_ingreso: user.fecha_ingreso,
-        tipoEmpleado:user.tipoEmpleado,
+        tipoEmpleado: user.tipoEmpleado,
         position: user.position, // Incluir el campo position
         // Excluir la contraseña del retorno
       };
@@ -425,24 +425,34 @@ export class UserService {
       }
       user.fecha_ingreso = normalizedDto.fecha_ingreso;
     }
-
     // Relación: Departamento
-    if (normalizedDto.departmentId) {
-      const department = await this.departmentRepository.findOne({ where: { id: normalizedDto.departmentId } });
+    if (normalizedDto.departmentId === null) {
+      user.department = null;
+    } else if (normalizedDto.departmentId !== undefined) {
+      const department = await this.departmentRepository.findOne({
+        where: { id: normalizedDto.departmentId }
+      });
       if (!department) {
         throw new BadRequestException('Departamento no encontrado');
       }
       user.department = department;
     }
 
+
     // Relación: Unidad Académica
-    if (normalizedDto.academicUnitId) {
-      const academicUnit = await this.academicUnitRepository.findOne({ where: { id: normalizedDto.academicUnitId } });
+    // Relación: Unidad Académica
+    if (normalizedDto.academicUnitId === null) {
+      user.academicUnit = null;
+    } else if (normalizedDto.academicUnitId !== undefined) {
+      const academicUnit = await this.academicUnitRepository.findOne({
+        where: { id: normalizedDto.academicUnitId }
+      });
       if (!academicUnit) {
         throw new BadRequestException('Unidad académica no encontrada');
       }
       user.academicUnit = academicUnit;
     }
+
 
     // Relación: Profesión
     if (normalizedDto.professionId) {
@@ -467,6 +477,7 @@ export class UserService {
     const { password: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
+
   // Buscar un usuario por username (solo no eliminados)
   async findOne(username: string): Promise<User | undefined> {
     return this.userRepository.findOne({
