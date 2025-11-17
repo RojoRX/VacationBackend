@@ -40,26 +40,19 @@ export class RecesoService {
 
     console.log(`[RecesoService] Recesos que intersectan: ${holidayPeriods.length}`);
 
-    // 🔥 FILTRO MÁS ESTRICTO: Solo recesos cuyo período PRINCIPAL esté dentro del año
+    // Filtrar recesos que tengan al menos un día dentro del rango
     const relevantRecesses = holidayPeriods.filter(receso => {
       const overlapStart = receso.startDate < userStartDate ? userStartDate : receso.startDate;
       const overlapEnd = receso.endDate > userEndDate ? userEndDate : receso.endDate;
       const overlapDays = Math.max(0, Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
-      // Para recesos de invierno: deben tener al menos 5 días de superposición
-      // Para recesos de fin de gestión: deben tener al menos 10 días de superposición
-      const minRequiredDays = receso.name.includes('INVIERNO') ? 5 : 10;
-
-      const isSignificant = overlapDays >= minRequiredDays;
-
-      console.log(`[RecesoService] ${receso.name} - Días superposición: ${overlapDays}, Mínimo requerido: ${minRequiredDays}, Significativo: ${isSignificant}`);
-
-      return isSignificant;
+      console.log(`[RecesoService] ${receso.name} - Días superposición: ${overlapDays}`);
+      return overlapDays > 0; // incluir cualquier receso que tenga intersección con el año laboral
     });
 
     console.log(`[RecesoService] Recesos relevantes después de filtro: ${relevantRecesses.length}`);
 
-    // Ajustar fechas
+    // Ajustar fechas y calcular días hábiles
     const adjustedRecesses = relevantRecesses.map(receso => {
       const adjustedStart = receso.startDate < userStartDate ? userStartDate : receso.startDate;
       const adjustedEnd = receso.endDate > userEndDate ? userEndDate : receso.endDate;

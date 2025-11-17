@@ -438,8 +438,6 @@ export class UserService {
       user.department = department;
     }
 
-
-    // Relación: Unidad Académica
     // Relación: Unidad Académica
     if (normalizedDto.academicUnitId === null) {
       user.academicUnit = null;

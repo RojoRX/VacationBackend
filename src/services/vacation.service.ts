@@ -30,136 +30,131 @@ export class VacationService {
     private readonly administrativeHolidayService: AdministrativeHolidayPeriodService
   ) { }
 
-  async calculateVacationDays(
-    carnetIdentidad: string,
-    startDate: Date,
-    endDate: Date
-  ): Promise<VacationResponse> {
-    // Obtener datos del usuario
-    const userData = await this.userService.getUserData(carnetIdentidad);
-    if (!userData) {
-      throw new BadRequestException('Usuario no encontrado.');
-    }
-    console.log(userData);
-    // Convertir fechas para cálculos
-    const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
-    const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
-    const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
+async calculateVacationDays(
+  carnetIdentidad: string,
+  startDate: Date,
+  endDate: Date
+): Promise<VacationResponse> {
+  // Obtener datos del usuario
+  const userData = await this.userService.getUserData(carnetIdentidad);
+  if (!userData) {
+    throw new BadRequestException('Usuario no encontrado.');
+  }
 
-    // Depuración: Mostrar fechas clave del rango de cálculo
-    console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
-    console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
+  // Convertir fechas para cálculos
+  const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
+  const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
+  const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" }).minus({ days: 1 });
+  const endDateAnt = DateTime.fromJSDate(endDate, { zone: "utc" });
 
-    // Calcular antigüedad
-    const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
-    console.log(`[calculateVacationDays] Años de servicio para ${carnetIdentidad}: ${yearsOfService}`);
+  console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
+  console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
 
-    // Calcular días de vacaciones
-    const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService);
-    console.log(`[calculateVacationDays] Días de vacaciones base según antigüedad: ${vacationDays}`);
+  // Calcular antigüedad
+  const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateAnt);
+  const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService);
 
-    // Extraer el año de startDate
-    const year = startDateTime.year;
-    console.log(`[calculateVacationDays] Año para búsqueda de recesos y días no hábiles: ${year}`);
+  const year = startDateTime.year;
 
-    // 🏖️ Determinar recesos según tipo de empleado
-    let holidayPeriods = [];
-    if (userData.tipoEmpleado === 'DOCENTE') {
-      // 🔹 DOCENTE → Recesos Generales
-      holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDate);
-      console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
-    } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
-      // 🔹 ADMINISTRATIVO → Recesos Administrativos
-      holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDate);
-      console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
-    } else {
-      console.warn(`[calculateVacationDays] Tipo de empleado no reconocido (${userData.tipoEmpleado}), sin recesos aplicados.`);
-    }
-    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDate);
-    console.log(`[calculateVacationDays] Días no hábiles generales encontrados para el año ${year}:`, nonHolidayDays.length);
-    // Opcional: console.log(nonHolidayDays);
+  // 🏖️ Obtener recesos según tipo de empleado
+  let holidayPeriods = [];
+  if (userData.tipoEmpleado === 'DOCENTE') {
+    holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate,  endDateTime.toJSDate());
+    console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
+  } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
+    holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
+    console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
+  }
 
-    // Obtener recesos personalizados del usuario
-    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriodsForPersonalYear(
-      userData.id,
-      startDate,
-      endDate
-    );
-    console.log(`[calculateVacationDays] Recesos personalizados para el usuario ${userData.id} en el año ${year}:`, personalizedRecesses.length);
-    // Opcional: console.log(personalizedRecesses);
+  const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDateTime.toJSDate());
+  const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriodsForPersonalYear(
+    userData.id,
+    startDate,
+    endDateTime.toJSDate()
+  );
 
-    // Determinar los recesos a utilizar
-    const recesos = [];
-    let totalNonHolidayDays = 0;
-    const nonHolidayDaysDetails = [];
+  console.log(`[calculateVacationDays] Recesos personalizados: ${personalizedRecesses.length}`);
 
-    // Combinar recesos generales y personalizados
-    const allRecessesMap = new Map<string, any>();
-    for (const generalRecess of holidayPeriods) {
-      allRecessesMap.set(generalRecess.name.trim().toLowerCase(), generalRecess);
-    }
-    for (const personalizedRecess of personalizedRecesses) {
-      // Si un receso personalizado tiene el mismo nombre que uno general, el personalizado lo sobrescribe.
-      allRecessesMap.set(personalizedRecess.name.trim().toLowerCase(), personalizedRecess);
-    }
+  // 🔹 Combinar recesos sin eliminar parciales
+// 🔹 Construcción de finalRecesses con reemplazo estricto por año y tipo
+const finalRecesses: any[] = [];
 
-    // Procesar recesos
-    const finalRecesses = Array.from(allRecessesMap.values());
-    console.log(`[calculateVacationDays] Total de recesos (generales + personalizados únicos): ${finalRecesses.length}`);
+// Primero, agrupar recesos personalizados por tipo y año laboral
+const personalizedMap = new Map<string, any>();
+personalizedRecesses.forEach(p => {
+  const startYear = DateTime.fromJSDate(p.startDate).year;
+  const key = `${p.name.trim().toLowerCase()}_${startYear}`;
+  personalizedMap.set(key, p);
+});
 
-    for (const receso of finalRecesses) {
-      const isPersonalized = personalizedRecesses.some(p => p.name.trim().toLowerCase() === receso.name.trim().toLowerCase());
-      const recessType = isPersonalized ? 'personalizado' : 'general';
+// Iterar recesos generales/administrativos
+for (const generalRecess of holidayPeriods) {
+  const startYear = DateTime.fromJSDate(generalRecess.startDate).year;
+  const key = `${generalRecess.name.trim().toLowerCase()}_${startYear}`;
 
-      // Ajustar las fechas de inicio y fin para ignorar horas y zonas horarias
-      const startDateHol = DateTime.fromJSDate(receso.startDate, { zone: "utc" }).startOf('day');
-      const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).endOf('day'); // Usar endOf('day') para incluir todo el último día
+  if (personalizedMap.has(key)) {
+    // Existe un receso personalizado del mismo tipo y año → reemplazar
+    finalRecesses.push(personalizedMap.get(key));
+    // Eliminarlo del mapa para no agregarlo de nuevo más tarde
+    personalizedMap.delete(key);
+  } else {
+    // No hay receso personalizado que lo reemplace → mantener general
+    finalRecesses.push(generalRecess);
+  }
+}
 
-      console.log(`[calculateVacationDays] Procesando receso: "${receso.name}" (Tipo: ${recessType})`);
-      console.log(`[calculateVacationDays] Fechas del receso: ${startDateHol.toISODate()} a ${endDateHol.toISODate()}`);
-
-      // Calcular días hábiles en el rango (inclusive)
-      const totalDays = this.vacationCalculatorService.countWeekdays(
-        startDateHol,
-        endDateHol
-      );
-      console.log(`[calculateVacationDays] Días hábiles (lun-vie) en el receso: ${totalDays}`);
+// Agregar los recesos personalizados restantes (que no reemplazaron ningún general)
+personalizedMap.forEach(p => finalRecesses.push(p));
 
 
-      // Calcular días no hábiles dentro del receso
-      const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
-      totalNonHolidayDays += nonHolidayDaysCount;
-      console.log(`[calculateVacationDays] Días no hábiles (feriados) intersectados con el receso: ${nonHolidayDaysCount}`);
 
+  // Procesar recesos para calcular días
+  const recesos = [];
+  let totalNonHolidayDays = 0;
+  const nonHolidayDaysDetails = [];
 
-      // Verificar días no hábiles dentro del receso y añadirlos a los detalles
-      nonHolidayDays.forEach(nonHoliday => {
-        const nonHolidayDate = DateTime.fromISO(nonHoliday.date, { zone: "utc" }).startOf('day');
-        if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
-          nonHolidayDaysDetails.push({
-            date: nonHoliday.date,
-            reason: `Dentro del receso ${nonHoliday.description}`
-          });
-          console.log(`[calculateVacationDays] - Día no hábil ${nonHoliday.date} incluido en receso ${receso.name}.`);
-        }
-      });
-      const daysCount = totalDays - nonHolidayDaysCount;
-      recesos.push({
-        name: receso.name,
-        startDate: receso.startDate,
-        endDate: receso.endDate,
-        totalDays,
-        nonHolidayDays: nonHolidayDaysCount,
-        daysCount,
-        type: personalizedRecesses.some(p => p.name === receso.name) ? 'personalizado' :
-          (userData.tipoEmpleado === 'DOCENTE' ? 'general' : 'administrativo')
-      });
-    }
+  for (const receso of finalRecesses) {
+    const isPersonalized = personalizedRecesses.some(p => p === receso);
+    const recessType = isPersonalized ? 'personalizado' :
+      (userData.tipoEmpleado === 'DOCENTE' ? 'general' : 'administrativo');
 
-    // 🧾 Total de días de receso usados
+    const startDateHol = DateTime.fromJSDate(receso.startDate, { zone: "utc" }).startOf('day');
+    const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).endOf('day');
+
+    // Días hábiles
+    const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+
+    // Días no hábiles
+    const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
+    totalNonHolidayDays += nonHolidayDaysCount;
+
+    nonHolidayDays.forEach(nonHoliday => {
+      const nonHolidayDate = DateTime.fromISO(nonHoliday.date, { zone: "utc" }).startOf('day');
+      if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
+        nonHolidayDaysDetails.push({
+          date: nonHoliday.date,
+          reason: `Dentro del receso ${nonHoliday.description}`
+        });
+      }
+    });
+
+    const daysCount = totalDays - nonHolidayDaysCount;
+
+    recesos.push({
+      name: receso.name,
+      startDate: receso.startDate,
+      endDate: receso.endDate,
+      totalDays,
+      nonHolidayDays: nonHolidayDaysCount,
+      daysCount,
+      type: recessType
+    });
+  }
+
+  // 🧾 Total de días de receso
   const totalVacationDaysUsedByRecess = recesos.reduce((sum, r) => sum + r.daysCount, 0);
 
-  // 📄 Licencias y vacaciones
+  // 📄 Licencias y vacaciones autorizadas
   const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } =
     await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
 
@@ -198,7 +193,8 @@ export class VacationService {
       requests: vacationRequests
     }
   };
-  }
+}
+
   /**
    * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.
    * Solo requiere el CI del usuario.
