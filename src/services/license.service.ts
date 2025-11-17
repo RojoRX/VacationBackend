@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Brackets, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, Brackets, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { HalfDayType, License, LicenseType, TimeRequest } from 'src/entities/license.entity';
 import { DateTime } from 'luxon';
 import { User } from 'src/entities/user.entity';
@@ -302,11 +302,155 @@ export class LicenseService {
 
 
 
-  async updateLicense(id: number, updateData: Partial<License>): Promise<LicenseResponseDto> {
-    await this.licenseRepository.update(id, updateData);
-    const updatedLicense = await this.findOneLicense(id);
-    return updatedLicense;
+  async updateLicense(
+    id: number,
+    updateData: Partial<License>
+  ): Promise<LicenseResponseDto> {
+    // 1️⃣ Buscar la licencia existente
+    const existingLicense = await this.licenseRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+    if (!existingLicense) {
+      throw new NotFoundException('Licencia no encontrada');
+    }
+
+    const user = existingLicense.user;
+
+    // 2️⃣ Combinar datos existentes con los nuevos para validación
+    const licenseData: Partial<License> = {
+      ...existingLicense,
+      ...updateData,
+    };
+
+    // 3️⃣ Validaciones básicas
+    if (!licenseData.startDate || !licenseData.endDate || !licenseData.licenseType || !licenseData.timeRequested) {
+      throw new BadRequestException('Fechas, tipo de licencia y tiempo solicitado son requeridos');
+    }
+
+    // Validar enums
+    this.validateLicenseEnums(licenseData);
+
+    // Validación de fechas
+    const startDate = new Date(licenseData.startDate);
+    const endDate = new Date(licenseData.endDate);
+    if (startDate > endDate) {
+      throw new BadRequestException('La fecha de fin no puede ser anterior a la fecha de inicio');
+    }
+
+    // Validación de medios días
+    if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      licenseData.endDate = licenseData.startDate;
+      licenseData.endHalfDay = licenseData.startHalfDay;
+
+      if (![HalfDayType.MORNING, HalfDayType.AFTERNOON].includes(licenseData.startHalfDay)) {
+        throw new BadRequestException('Valor de startHalfDay inválido para medio día');
+      }
+    }
+
+    // Validación de solicitudes pendientes (si se está cambiando fecha/tipo)
+    const pendingLicense = await this.licenseRepository.findOne({
+      where: {
+        user: { id: user.id },
+        immediateSupervisorApproval: IsNull(),
+        personalDepartmentApproval: IsNull(),
+        deleted: false,
+        id: Not(id), // Ignorar la licencia actual
+      },
+    });
+
+    if (pendingLicense) {
+      throw new BadRequestException(
+        'No puede editar esta licencia porque existe otra pendiente de aprobación'
+      );
+    }
+
+    // Validación de días disponibles si es VACATION
+    if (licenseData.licenseType === LicenseType.VACATION) {
+      const solicitudDate = parseISO(licenseData.startDate);
+      const fechaIngreso = parseISO(user.fecha_ingreso);
+      const gestionStart = setYear(fechaIngreso, solicitudDate.getFullYear());
+      let endDateForDebtCalculation = solicitudDate < gestionStart
+        ? setYear(fechaIngreso, solicitudDate.getFullYear() + 1)
+        : setYear(fechaIngreso, solicitudDate.getFullYear() + 1);
+
+      const debtResult = await this.vacationService.calculateAccumulatedDebt(
+        user.ci,
+        format(endDateForDebtCalculation, 'yyyy-MM-dd')
+      );
+
+      const lastGestion = debtResult.detalles[debtResult.detalles.length - 1];
+      const diasDisponibles = lastGestion?.diasDisponibles ?? 0;
+
+      if (licenseData.timeRequested === TimeRequest.HALF_DAY && diasDisponibles < 0.5) {
+        throw new BadRequestException('No tiene suficientes días disponibles para medio día de vacaciones');
+      }
+    }
+
+    // Validar solapamiento con otras licencias y vacaciones
+    await this.validateNoExistingLicense(user.id, licenseData.startDate, licenseData.endDate, id);
+
+    const overlappingVacation = await this.vacationRequestRepository.findOne({
+      where: {
+        user: { id: user.id },
+        deleted: false,
+        status: In(['PENDING', 'AUTHORIZED']),
+        startDate: LessThanOrEqual(licenseData.endDate),
+        endDate: MoreThanOrEqual(licenseData.startDate),
+        id: Not(id), // Ignorar la licencia actual
+      },
+    });
+
+    if (overlappingVacation) {
+      throw new BadRequestException(
+        `Existe una solicitud de vacaciones que solapa el rango ${licenseData.startDate} - ${licenseData.endDate}`
+      );
+    }
+
+    // 4️⃣ Recalcular totalDays
+    const startHalfDay = licenseData.startHalfDay ?? HalfDayType.NONE;
+    const endHalfDay = licenseData.endHalfDay ?? HalfDayType.NONE;
+    const zone = 'America/La_Paz';
+    let totalDays = 0;
+
+    let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
+    const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
+
+    while (cursor <= endDateLux) {
+      const weekday = cursor.weekday;
+      if (weekday >= 1 && weekday <= 5) {
+        if (cursor.hasSame(DateTime.fromISO(licenseData.startDate), 'day')) {
+          totalDays += startHalfDay === HalfDayType.NONE ? 1 : 0.5;
+        } else if (cursor.hasSame(DateTime.fromISO(licenseData.endDate), 'day')) {
+          totalDays += endHalfDay === HalfDayType.NONE ? 1 : 0.5;
+        } else {
+          totalDays += 1;
+        }
+      }
+      cursor = cursor.plus({ days: 1 });
+    }
+
+    totalDays = Math.max(totalDays, 0.5);
+
+    // 5️⃣ Actualizar licencia
+    const updatedLicense = this.licenseRepository.create({
+      ...existingLicense,
+      ...licenseData,
+      totalDays, // recalculado
+    });
+
+    const savedLicense = await this.licenseRepository.manager.transaction(
+      async transactionalEntityManager => {
+        return await transactionalEntityManager.save(updatedLicense);
+      }
+    );
+
+    return {
+      ...this.mapLicenseToDto(savedLicense),
+      message: `Licencia actualizada del ${savedLicense.startDate} al ${savedLicense.endDate} (${savedLicense.totalDays} días hábiles).`
+    };
   }
+
   // Marca una licencia como eliminada (borrado lógico) si el usuario es ADMIN o el dueño de la licencia
   async removeLicense(licenseId: number, requestingUserId: number): Promise<void> {
     const license = await this.licenseRepository.findOne({
@@ -906,8 +1050,14 @@ export class LicenseService {
     if (license.immediateSupervisorApproval) return 'PENDIENTE_APROBACION_DPTO';
     return 'PENDIENTE_APROBACION_SUPERVISOR';
   }
+
   // Verificar si ya existe una licencia en el rango de fechas
-  private async validateNoExistingLicense(userId: number, startDateInput: string | Date, endDateInput: string | Date) {
+  private async validateNoExistingLicense(
+    userId: number,
+    startDateInput: string | Date,
+    endDateInput: string | Date,
+    ignoreLicenseId?: number // 🔹 nuevo parámetro opcional
+  ) {
     const startDate = new Date(startDateInput);
     const endDate = new Date(endDateInput);
 
@@ -918,7 +1068,7 @@ export class LicenseService {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
-    const existingLicense = await this.licenseRepository.createQueryBuilder('license')
+    const qb = this.licenseRepository.createQueryBuilder('license')
       .where('license.userId = :userId', { userId })
       .andWhere('license.deleted = false')
       .andWhere(new Brackets(qb => {
@@ -926,12 +1076,14 @@ export class LicenseService {
           .orWhere('license.startDate BETWEEN :startDate AND :endDate')
           .orWhere('license.endDate BETWEEN :startDate AND :endDate');
       }))
-      .setParameters({
-        startDate: startDateStr,
-        endDate: endDateStr
-      })
-      .getOne();
+      .setParameters({ startDate: startDateStr, endDate: endDateStr });
 
+    // 🔹 Ignorar la licencia actual si se pasa ignoreLicenseId
+    if (ignoreLicenseId) {
+      qb.andWhere('license.id != :ignoreId', { ignoreId: ignoreLicenseId });
+    }
+
+    const existingLicense = await qb.getOne();
 
     if (existingLicense) {
       throw new BadRequestException(
@@ -939,6 +1091,7 @@ export class LicenseService {
       );
     }
   }
+
 
   private async calculateTotalDaysImproved(
     startDateStr: string,

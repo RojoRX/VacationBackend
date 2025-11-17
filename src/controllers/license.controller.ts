@@ -73,18 +73,23 @@ export class LicenseController {
     return this.licenseService.findOneLicense(id);
   }
 
-  @Put(':id')
-  @ApiOperation({ summary: 'Actualizar una licencia' })
-  @ApiParam({ name: 'id', required: true, description: 'ID de la licencia a actualizar' })
-  @ApiBody({ type: License, description: 'Datos de la licencia a actualizar' })
-  @ApiResponse({ status: 200, description: 'Licencia actualizada exitosamente', type: LicenseResponseDto })
-  @ApiResponse({ status: 404, description: 'Licencia no encontrada' })
-  async update(
-    @Param('id') id: number,
-    @Body() updateData: Partial<License>,
-  ): Promise<LicenseResponseDto> {
-    return this.licenseService.updateLicense(id, updateData);
-  }
+@Put(':id')
+@ApiOperation({ summary: 'Actualizar una licencia' })
+@ApiParam({ name: 'id', required: true, description: 'ID de la licencia a actualizar' })
+@ApiBody({ type: License, description: 'Datos de la licencia a actualizar' })
+@ApiResponse({ status: 200, description: 'Licencia actualizada exitosamente', type: LicenseResponseDto })
+@ApiResponse({ status: 404, description: 'Licencia no encontrada' })
+async update(
+  @Param('id') id: number,
+  @Body() updateData: Partial<License>,
+): Promise<LicenseResponseDto> {
+  // 🔹 Eliminar campos automáticos que no deben actualizarse
+  delete updateData.totalDays;
+  delete updateData.issuedDate;
+
+  return this.licenseService.updateLicense(id, updateData);
+}
+
 
   @Delete(':id')
   @UseGuards(AuthGuard)
