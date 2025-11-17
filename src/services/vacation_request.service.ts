@@ -263,35 +263,71 @@ export class VacationRequestService {
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
   }
 
-  async updateVacationRequest(
-    requestId: number,
-    updateData: {
-      startDate?: string;
-      endDate?: string;
-    }
-  ): Promise<Omit<VacationRequest, 'user'> & { ci: string; totalWorkingDays: number }> {
+async updateVacationRequest(
+  requestId: number,
+  updateData: {
+    startDate?: string;
+    endDate?: string;
+    status?: 'PENDING' | 'AUTHORIZED' | 'POSTPONED' | 'DENIED' | 'SUSPENDED';
+    postponedReason?: string;
+    approvedByHR?: boolean | null;
+    deleted?: boolean;
+  }
+): Promise<Omit<VacationRequest, 'user'> & { ci: string; totalWorkingDays: number }> {
 
-    // Buscar la solicitud existente
-    const existingRequest = await this.vacationRequestRepository.findOne({
-      where: { id: requestId, deleted: false },
-      relations: ['user']
-    });
+  // Buscar la solicitud existente
+  const existingRequest = await this.vacationRequestRepository.findOne({
+    where: { id: requestId, deleted: false },
+    relations: ['user']
+  });
 
-    if (!existingRequest) {
-      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
-    }
+  if (!existingRequest) {
+    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+  }
 
-    const user = existingRequest.user;
-    console.log('Editando solicitud para usuario:', user.fullName, user.ci);
+  const user = existingRequest.user;
+  console.log('Editando solicitud para usuario:', user.fullName, user.ci);
 
+  // Validar que al menos un campo fue proporcionado para edición
+  const hasDateUpdates = updateData.startDate || updateData.endDate;
+  const hasStatusUpdates = updateData.status || updateData.postponedReason || updateData.approvedByHR !== undefined || updateData.deleted !== undefined;
+  
+  if (!hasDateUpdates && !hasStatusUpdates) {
+    throw new HttpException(
+      'Debe proporcionar al menos un campo para editar (startDate, endDate, status, postponedReason, approvedByHR o deleted)',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Validaciones específicas para campos de estado
+  if (updateData.status && !['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'].includes(updateData.status)) {
+    throw new HttpException(
+      'Estado inválido. Los valores permitidos son: PENDING, AUTHORIZED, POSTPONED, DENIED, SUSPENDED',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Validación para postponedReason: requerido cuando el status es POSTPONED
+  if (updateData.status === 'POSTPONED' && (!updateData.postponedReason || updateData.postponedReason.trim() === '')) {
+    throw new HttpException(
+      'La razón de postergación es obligatoria cuando el estado es POSTPONED',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // Validación para approvedByHR: no puede ser true si el status no es AUTHORIZED
+  if (updateData.approvedByHR === true && updateData.status && updateData.status !== 'AUTHORIZED') {
+    throw new HttpException(
+      'No se puede aprobar por RRHH si el estado no es AUTHORIZED',
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  // LÓGICA PARA ACTUALIZACIÓN DE FECHAS (existente)
+  if (hasDateUpdates) {
     // Usar las fechas nuevas o las existentes
     const newStartDate = updateData.startDate || existingRequest.startDate.split('T')[0];
     const newEndDate = updateData.endDate || existingRequest.endDate.split('T')[0];
-
-    // Validar que al menos una fecha fue proporcionada para edición
-    if (!updateData.startDate && !updateData.endDate) {
-      throw new HttpException('Debe proporcionar al menos una fecha para editar (startDate o endDate)', HttpStatus.BAD_REQUEST);
-    }
 
     // Obtener las gestiones acumuladas usando la fecha de fin del período de gestión existente
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(
@@ -311,6 +347,7 @@ export class VacationRequestService {
         HttpStatus.BAD_REQUEST,
       );
     }
+
     // Calcular días totales permitidos para la edición
     const originalTotalDays = Math.round(existingRequest.totalDays * 100) / 100;
     let maxAllowedDays: number;
@@ -413,7 +450,6 @@ export class VacationRequestService {
       existingRequest.id   // 👈 excluimos la misma solicitud
     );
 
-
     // Calcular fecha de reincorporación
     let returnDateISO: string;
     if (hasHalfDayInAvailable || hasHalfDayInOriginal) {
@@ -431,20 +467,41 @@ export class VacationRequestService {
       ).toISOString();
     }
 
-    // Actualizar la solicitud
+    // Actualizar campos de fechas
     existingRequest.startDate = new Date(newStartDate + "T00:00:00Z").toISOString();
     existingRequest.endDate = new Date(newEndDate + "T23:59:59Z").toISOString();
     existingRequest.totalDays = actualDaysRequested;
     existingRequest.returnDate = returnDateISO;
-
-    const updatedRequest = await this.vacationRequestRepository.save(existingRequest);
-    console.log('Solicitud actualizada:', updatedRequest);
-
-
-    // Retornar sin datos sensibles
-    const { user: _user, ...requestWithoutSensitiveData } = updatedRequest;
-    return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: actualDaysRequested };
   }
+
+  // ACTUALIZAR CAMPOS DE ESTADO (nuevos)
+  if (updateData.status !== undefined) {
+    existingRequest.status = updateData.status;
+  }
+
+  if (updateData.postponedReason !== undefined) {
+    existingRequest.postponedReason = updateData.postponedReason;
+  }
+
+  if (updateData.approvedByHR !== undefined) {
+    existingRequest.approvedByHR = updateData.approvedByHR;
+  }
+
+  if (updateData.deleted !== undefined) {
+    // Validación adicional para eliminación
+    if (updateData.deleted === true) {
+      console.log(`Marcando solicitud ${requestId} como eliminada`);
+    }
+    existingRequest.deleted = updateData.deleted;
+  }
+
+  const updatedRequest = await this.vacationRequestRepository.save(existingRequest);
+  console.log('Solicitud actualizada:', updatedRequest);
+
+  // Retornar sin datos sensibles
+  const { user: _user, ...requestWithoutSensitiveData } = updatedRequest;
+  return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: existingRequest.totalDays };
+}
 
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(
@@ -555,7 +612,6 @@ export class VacationRequestService {
     };
   }
 
-  // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   // Método para actualizar el estado de la solicitud de vacaciones METODO USADO Supervisores
   async updateVacationRequestStatus(
     id: number,
@@ -813,10 +869,6 @@ export class VacationRequestService {
 
     return vacationRequestDTO;
   }
-
-
-
-
   async getVacationRequestDetails(id: number): Promise<any> {
     const request = await this.vacationRequestRepository.findOne({
       where: { id },
@@ -974,8 +1026,6 @@ export class VacationRequestService {
 
     return updatedRequest;
   }
-
-
 
   async setHRApproval(
     vacationRequestId: number,
@@ -1360,10 +1410,6 @@ export class VacationRequestService {
 
     return { message: 'La solicitud fue cancelada/eliminada correctamente' };
   }
-
-
-
-
   // Obtener Todas las solicitudes eliminadas
   async getDeletedVacationRequests(): Promise<(Omit<VacationRequest, 'user'> & { ci: string, username: string, fullname: string, department?: string, academicUnit?: string })[]> {
     const requests = await this.vacationRequestRepository.find({
@@ -1418,9 +1464,6 @@ export class VacationRequestService {
       };
     });
   }
-
-
-
   async createPastVacation(dto: CreatePastVacationDto) {
     const {
       userId,
@@ -1592,5 +1635,4 @@ export class VacationRequestService {
 
     return { message: 'La solicitud fue eliminada correctamente (forzado)' };
   }
-
 }
