@@ -44,14 +44,13 @@ async calculateVacationDays(
   // Convertir fechas para cálculos
   const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
   const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
-  const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" }).minus({ days: 1 });
-  const endDateAnt = DateTime.fromJSDate(endDate, { zone: "utc" });
+  const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
 
   console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
   console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
 
   // Calcular antigüedad
-  const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateAnt);
+  const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
   const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService);
 
   const year = startDateTime.year;
