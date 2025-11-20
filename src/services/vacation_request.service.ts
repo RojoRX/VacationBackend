@@ -48,7 +48,6 @@ export class VacationRequestService {
     if (!user) {
       throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
-    console.log('Usuario encontrado:', user.fullName, user.ci);
 
     // Verificar TODAS las solicitudes de vacaciones para el usuario
     const allVacationRequests = await this.vacationRequestRepository.find({
@@ -124,37 +123,46 @@ export class VacationRequestService {
     // ---------------------------
     const isNonWorkingDate = async (date: Date): Promise<boolean> => {
       const dow = date.getUTCDay();
-      // weekend
-      if (dow === 0 || dow === 6) return true;
-
-      // chequeo con nonHolidayService (si existe): intentamos métodos comunes
       const isoDate = date.toISOString().split('T')[0];
+
+      // Fin de semana
+      if (dow === 0 || dow === 6) {
+
+        return true;
+      }
+
+      // Feriados
       try {
         if (this.nonHolidayService) {
-          // método típico: isNonWorkingDay(dateString)
           if (typeof (this.nonHolidayService as any).isNonWorkingDay === 'function') {
-            const r = (this.nonHolidayService as any).isNonWorkingDay(isoDate);
-            return r instanceof Promise ? await r : r;
+            const r = await (this.nonHolidayService as any).isNonWorkingDay(isoDate);
+            if (r) {
+
+              return true;
+            }
           }
-          // otro método común: isHoliday(dateString) -> true si es feriado
           if (typeof (this.nonHolidayService as any).isHoliday === 'function') {
-            const r = (this.nonHolidayService as any).isHoliday(isoDate);
-            return r instanceof Promise ? await r : r;
+            const r = await (this.nonHolidayService as any).isHoliday(isoDate);
+            if (r) {
+
+              return true;
+            }
           }
-          // método inverso: isNonHoliday(dateString) -> true si NO es feriado
           if (typeof (this.nonHolidayService as any).isNonHoliday === 'function') {
-            const r = (this.nonHolidayService as any).isNonHoliday(isoDate);
-            const val = r instanceof Promise ? await r : r;
-            return !val; // si isNonHoliday = false => es feriado => no laborable
+            const r = await (this.nonHolidayService as any).isNonHoliday(isoDate);
+            if (!r) {
+
+              return true;
+            }
           }
         }
       } catch (e) {
-        // Si falla el servicio, ignoramos y usamos solo fin de semana
-        console.warn('nonHolidayService check failed, fallback a solo weekend check', e);
+        console.warn(`⚠️ Error al verificar feriado para ${isoDate}:`, e);
       }
 
-      return false; // por defecto es laborable (no feriado detectado)
+      return false;
     };
+
 
     // ---------------------------
     // Calcular endDate tomando en cuenta medios días (.5)
@@ -169,19 +177,18 @@ export class VacationRequestService {
 
     // Avanzar por los días completos (solo contar días hábiles)
     while (workingDaysCount < fullDays) {
-      const dayOfWeek = currentDate.getUTCDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        // además, si tenemos nonHolidayService, podríamos comprobar feriados cuando contemos
-        // (opcional) si date es feriado, no incrementar
-        const isNonWorking = await isNonWorkingDate(currentDate);
-        if (!isNonWorking) {
-          workingDaysCount++;
-        }
+      const isNonWorking = await isNonWorkingDate(currentDate);
+      if (!isNonWorking) {
+        workingDaysCount++;
+      } else {
+        console.log(`⏭️ Saltando ${currentDate.toISOString().split('T')[0]} (no laborable)`);
       }
+
       if (workingDaysCount < fullDays) {
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
       }
     }
+
 
     // currentDate ahora apunta al último día completo consumido (o al startDate si fullDays === 0 y ese día es laborable)
     // Si hay medio día, el medio día se toma en el SIGUIENTE día hábil:
@@ -263,245 +270,245 @@ export class VacationRequestService {
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: daysRequested };
   }
 
-async updateVacationRequest(
-  requestId: number,
-  updateData: {
-    startDate?: string;
-    endDate?: string;
-    status?: 'PENDING' | 'AUTHORIZED' | 'POSTPONED' | 'DENIED' | 'SUSPENDED';
-    postponedReason?: string;
-    approvedByHR?: boolean | null;
-    deleted?: boolean;
-  }
-): Promise<Omit<VacationRequest, 'user'> & { ci: string; totalWorkingDays: number }> {
+  async updateVacationRequest(
+    requestId: number,
+    updateData: {
+      startDate?: string;
+      endDate?: string;
+      status?: 'PENDING' | 'AUTHORIZED' | 'POSTPONED' | 'DENIED' | 'SUSPENDED';
+      postponedReason?: string;
+      approvedByHR?: boolean | null;
+      deleted?: boolean;
+    }
+  ): Promise<Omit<VacationRequest, 'user'> & { ci: string; totalWorkingDays: number }> {
 
-  // Buscar la solicitud existente
-  const existingRequest = await this.vacationRequestRepository.findOne({
-    where: { id: requestId, deleted: false },
-    relations: ['user']
-  });
-
-  if (!existingRequest) {
-    throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
-  }
-
-  const user = existingRequest.user;
-  console.log('Editando solicitud para usuario:', user.fullName, user.ci);
-
-  // Validar que al menos un campo fue proporcionado para edición
-  const hasDateUpdates = updateData.startDate || updateData.endDate;
-  const hasStatusUpdates = updateData.status || updateData.postponedReason || updateData.approvedByHR !== undefined || updateData.deleted !== undefined;
-  
-  if (!hasDateUpdates && !hasStatusUpdates) {
-    throw new HttpException(
-      'Debe proporcionar al menos un campo para editar (startDate, endDate, status, postponedReason, approvedByHR o deleted)',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Validaciones específicas para campos de estado
-  if (updateData.status && !['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'].includes(updateData.status)) {
-    throw new HttpException(
-      'Estado inválido. Los valores permitidos son: PENDING, AUTHORIZED, POSTPONED, DENIED, SUSPENDED',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Validación para postponedReason: requerido cuando el status es POSTPONED
-  if (updateData.status === 'POSTPONED' && (!updateData.postponedReason || updateData.postponedReason.trim() === '')) {
-    throw new HttpException(
-      'La razón de postergación es obligatoria cuando el estado es POSTPONED',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // Validación para approvedByHR: no puede ser true si el status no es AUTHORIZED
-  if (updateData.approvedByHR === true && updateData.status && updateData.status !== 'AUTHORIZED') {
-    throw new HttpException(
-      'No se puede aprobar por RRHH si el estado no es AUTHORIZED',
-      HttpStatus.BAD_REQUEST
-    );
-  }
-
-  // LÓGICA PARA ACTUALIZACIÓN DE FECHAS (existente)
-  if (hasDateUpdates) {
-    // Usar las fechas nuevas o las existentes
-    const newStartDate = updateData.startDate || existingRequest.startDate.split('T')[0];
-    const newEndDate = updateData.endDate || existingRequest.endDate.split('T')[0];
-
-    // Obtener las gestiones acumuladas usando la fecha de fin del período de gestión existente
-    const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(
-      user.ci,
-      existingRequest.managementPeriodEnd
-    );
-
-    // Encontrar la gestión correspondiente
-    const endPeriodDate = new Date(existingRequest.managementPeriodEnd);
-    const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
-      return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
+    // Buscar la solicitud existente
+    const existingRequest = await this.vacationRequestRepository.findOne({
+      where: { id: requestId, deleted: false },
+      relations: ['user']
     });
 
-    if (!gestionCorrespondiente) {
+    if (!existingRequest) {
+      throw new HttpException('Solicitud de vacaciones no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    const user = existingRequest.user;
+    console.log('Editando solicitud para usuario:', user.fullName, user.ci);
+
+    // Validar que al menos un campo fue proporcionado para edición
+    const hasDateUpdates = updateData.startDate || updateData.endDate;
+    const hasStatusUpdates = updateData.status || updateData.postponedReason || updateData.approvedByHR !== undefined || updateData.deleted !== undefined;
+
+    if (!hasDateUpdates && !hasStatusUpdates) {
       throw new HttpException(
-        `No se encontró una gestión válida para la fecha de fin del período de gestión.`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    // Calcular días totales permitidos para la edición
-    const originalTotalDays = Math.round(existingRequest.totalDays * 100) / 100;
-    let maxAllowedDays: number;
-
-    const diasDisponibles = Math.round(gestionCorrespondiente.diasDisponibles * 100) / 100;
-
-    if (diasDisponibles > 0) {
-      // Si hay días disponibles, podemos usar los días originales + días disponibles
-      maxAllowedDays = originalTotalDays + diasDisponibles;
-      console.log(`Días disponibles encontrados: ${diasDisponibles}. Máximo permitido: ${maxAllowedDays}`);
-    } else {
-      // Si no hay días disponibles, solo podemos usar los días originales
-      maxAllowedDays = originalTotalDays;
-      console.log(`Sin días disponibles. Máximo permitido: ${maxAllowedDays}`);
-    }
-
-    // ---------------------------
-    // Helper local: detectar día no laborable (mismo que en create)
-    // ---------------------------
-    const isNonWorkingDate = async (date: Date): Promise<boolean> => {
-      const dow = date.getUTCDay();
-      if (dow === 0 || dow === 6) return true;
-
-      const isoDate = date.toISOString().split('T')[0];
-      try {
-        if (this.nonHolidayService) {
-          if (typeof (this.nonHolidayService as any).isNonWorkingDay === 'function') {
-            const r = (this.nonHolidayService as any).isNonWorkingDay(isoDate);
-            return r instanceof Promise ? await r : r;
-          }
-          if (typeof (this.nonHolidayService as any).isHoliday === 'function') {
-            const r = (this.nonHolidayService as any).isHoliday(isoDate);
-            return r instanceof Promise ? await r : r;
-          }
-          if (typeof (this.nonHolidayService as any).isNonHoliday === 'function') {
-            const r = (this.nonHolidayService as any).isNonHoliday(isoDate);
-            const val = r instanceof Promise ? await r : r;
-            return !val;
-          }
-        }
-      } catch (e) {
-        console.warn('nonHolidayService check failed, fallback a solo weekend check', e);
-      }
-      return false;
-    };
-
-    // ---------------------------
-    // Calcular días solicitados basado en las nuevas fechas
-    // ---------------------------
-    const startDateObj = new Date(newStartDate + "T00:00:00Z");
-    const endDateObj = new Date(newEndDate + "T00:00:00Z");
-
-    // Validar que la fecha de inicio no sea posterior a la fecha de fin
-    if (startDateObj > endDateObj) {
-      throw new HttpException('La fecha de inicio no puede ser posterior a la fecha de fin', HttpStatus.BAD_REQUEST);
-    }
-
-    // Calcular días laborables entre las fechas
-    let workingDaysCount = 0;
-    let currentDate = new Date(startDateObj);
-    const finalEndDate = new Date(endDateObj);
-
-    while (currentDate <= finalEndDate) {
-      const isNonWorking = await isNonWorkingDate(currentDate);
-      if (!isNonWorking) {
-        workingDaysCount++;
-      }
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-    }
-
-    // Verificar si hay medio día en los días disponibles o en los días originales
-    const hasHalfDayInAvailable = gestionCorrespondiente.diasDisponibles % 1 !== 0;
-    const hasHalfDayInOriginal = originalTotalDays % 1 !== 0;
-    const calculatedDays = workingDaysCount;
-
-    // Aplicar lógica de medio día si corresponde
-    let actualDaysRequested = calculatedDays;
-    if (hasHalfDayInAvailable || hasHalfDayInOriginal) {
-      // Si hay medio día en cualquiera de los dos, tratamos como medio día
-      actualDaysRequested = calculatedDays - 0.5;
-      console.log('⚠️ Aplicando lógica de medio día. Días calculados:', actualDaysRequested);
-    }
-
-    // Validar que no exceda el máximo permitido
-    if (actualDaysRequested > maxAllowedDays) {
-      throw new HttpException(
-        `Los días solicitados (${actualDaysRequested}) exceden el máximo permitido (${maxAllowedDays})`,
+        'Debe proporcionar al menos un campo para editar (startDate, endDate, status, postponedReason, approvedByHR o deleted)',
         HttpStatus.BAD_REQUEST
       );
     }
 
-    console.log('Días calculados para la edición:', actualDaysRequested);
-
-    // Verificar solapamiento con otras solicitudes (excluyendo la actual)
-    await ensureNoOverlappingVacations(
-      this.vacationRequestRepository,
-      user.id,
-      newStartDate,
-      newEndDate,
-      existingRequest.id   // 👈 excluimos la misma solicitud
-    );
-
-    // Calcular fecha de reincorporación
-    let returnDateISO: string;
-    if (hasHalfDayInAvailable || hasHalfDayInOriginal) {
-      // Si hay medio día, la reincorporación es el mismo día de la fecha fin
-      returnDateISO = new Date(newEndDate + "T00:00:00Z").toISOString();
-      console.log('Reincorporación el mismo día (medio día)');
-    } else {
-      // Lógica normal de reincorporación (usando el mismo helper que en create)
-      returnDateISO = new Date(
-        await calculateReturnDate(
-          new Date(newEndDate + "T23:59:59Z").toISOString(),
-          actualDaysRequested,
-          this.nonHolidayService
-        )
-      ).toISOString();
+    // Validaciones específicas para campos de estado
+    if (updateData.status && !['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'].includes(updateData.status)) {
+      throw new HttpException(
+        'Estado inválido. Los valores permitidos son: PENDING, AUTHORIZED, POSTPONED, DENIED, SUSPENDED',
+        HttpStatus.BAD_REQUEST
+      );
     }
 
-    // Actualizar campos de fechas
-    existingRequest.startDate = new Date(newStartDate + "T00:00:00Z").toISOString();
-    existingRequest.endDate = new Date(newEndDate + "T23:59:59Z").toISOString();
-    existingRequest.totalDays = actualDaysRequested;
-    existingRequest.returnDate = returnDateISO;
-  }
-
-  // ACTUALIZAR CAMPOS DE ESTADO (nuevos)
-  if (updateData.status !== undefined) {
-    existingRequest.status = updateData.status;
-  }
-
-  if (updateData.postponedReason !== undefined) {
-    existingRequest.postponedReason = updateData.postponedReason;
-  }
-
-  if (updateData.approvedByHR !== undefined) {
-    existingRequest.approvedByHR = updateData.approvedByHR;
-  }
-
-  if (updateData.deleted !== undefined) {
-    // Validación adicional para eliminación
-    if (updateData.deleted === true) {
-      console.log(`Marcando solicitud ${requestId} como eliminada`);
+    // Validación para postponedReason: requerido cuando el status es POSTPONED
+    if (updateData.status === 'POSTPONED' && (!updateData.postponedReason || updateData.postponedReason.trim() === '')) {
+      throw new HttpException(
+        'La razón de postergación es obligatoria cuando el estado es POSTPONED',
+        HttpStatus.BAD_REQUEST
+      );
     }
-    existingRequest.deleted = updateData.deleted;
+
+    // Validación para approvedByHR: no puede ser true si el status no es AUTHORIZED
+    if (updateData.approvedByHR === true && updateData.status && updateData.status !== 'AUTHORIZED') {
+      throw new HttpException(
+        'No se puede aprobar por RRHH si el estado no es AUTHORIZED',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // LÓGICA PARA ACTUALIZACIÓN DE FECHAS (existente)
+    if (hasDateUpdates) {
+      // Usar las fechas nuevas o las existentes
+      const newStartDate = updateData.startDate || existingRequest.startDate.split('T')[0];
+      const newEndDate = updateData.endDate || existingRequest.endDate.split('T')[0];
+
+      // Obtener las gestiones acumuladas usando la fecha de fin del período de gestión existente
+      const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(
+        user.ci,
+        existingRequest.managementPeriodEnd
+      );
+
+      // Encontrar la gestión correspondiente
+      const endPeriodDate = new Date(existingRequest.managementPeriodEnd);
+      const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
+        return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
+      });
+
+      if (!gestionCorrespondiente) {
+        throw new HttpException(
+          `No se encontró una gestión válida para la fecha de fin del período de gestión.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Calcular días totales permitidos para la edición
+      const originalTotalDays = Math.round(existingRequest.totalDays * 100) / 100;
+      let maxAllowedDays: number;
+
+      const diasDisponibles = Math.round(gestionCorrespondiente.diasDisponibles * 100) / 100;
+
+      if (diasDisponibles > 0) {
+        // Si hay días disponibles, podemos usar los días originales + días disponibles
+        maxAllowedDays = originalTotalDays + diasDisponibles;
+        console.log(`Días disponibles encontrados: ${diasDisponibles}. Máximo permitido: ${maxAllowedDays}`);
+      } else {
+        // Si no hay días disponibles, solo podemos usar los días originales
+        maxAllowedDays = originalTotalDays;
+        console.log(`Sin días disponibles. Máximo permitido: ${maxAllowedDays}`);
+      }
+
+      // ---------------------------
+      // Helper local: detectar día no laborable (mismo que en create)
+      // ---------------------------
+      const isNonWorkingDate = async (date: Date): Promise<boolean> => {
+        const dow = date.getUTCDay();
+        if (dow === 0 || dow === 6) return true;
+
+        const isoDate = date.toISOString().split('T')[0];
+        try {
+          if (this.nonHolidayService) {
+            if (typeof (this.nonHolidayService as any).isNonWorkingDay === 'function') {
+              const r = (this.nonHolidayService as any).isNonWorkingDay(isoDate);
+              return r instanceof Promise ? await r : r;
+            }
+            if (typeof (this.nonHolidayService as any).isHoliday === 'function') {
+              const r = (this.nonHolidayService as any).isHoliday(isoDate);
+              return r instanceof Promise ? await r : r;
+            }
+            if (typeof (this.nonHolidayService as any).isNonHoliday === 'function') {
+              const r = (this.nonHolidayService as any).isNonHoliday(isoDate);
+              const val = r instanceof Promise ? await r : r;
+              return !val;
+            }
+          }
+        } catch (e) {
+          console.warn('nonHolidayService check failed, fallback a solo weekend check', e);
+        }
+        return false;
+      };
+
+      // ---------------------------
+      // Calcular días solicitados basado en las nuevas fechas
+      // ---------------------------
+      const startDateObj = new Date(newStartDate + "T00:00:00Z");
+      const endDateObj = new Date(newEndDate + "T00:00:00Z");
+
+      // Validar que la fecha de inicio no sea posterior a la fecha de fin
+      if (startDateObj > endDateObj) {
+        throw new HttpException('La fecha de inicio no puede ser posterior a la fecha de fin', HttpStatus.BAD_REQUEST);
+      }
+
+      // Calcular días laborables entre las fechas
+      let workingDaysCount = 0;
+      let currentDate = new Date(startDateObj);
+      const finalEndDate = new Date(endDateObj);
+
+      while (currentDate <= finalEndDate) {
+        const isNonWorking = await isNonWorkingDate(currentDate);
+        if (!isNonWorking) {
+          workingDaysCount++;
+        }
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      }
+
+      // Verificar si hay medio día en los días disponibles o en los días originales
+      const hasHalfDayInAvailable = gestionCorrespondiente.diasDisponibles % 1 !== 0;
+      const hasHalfDayInOriginal = originalTotalDays % 1 !== 0;
+      const calculatedDays = workingDaysCount;
+
+      // Aplicar lógica de medio día si corresponde
+      let actualDaysRequested = calculatedDays;
+      if (hasHalfDayInAvailable || hasHalfDayInOriginal) {
+        // Si hay medio día en cualquiera de los dos, tratamos como medio día
+        actualDaysRequested = calculatedDays - 0.5;
+        console.log('⚠️ Aplicando lógica de medio día. Días calculados:', actualDaysRequested);
+      }
+
+      // Validar que no exceda el máximo permitido
+      if (actualDaysRequested > maxAllowedDays) {
+        throw new HttpException(
+          `Los días solicitados (${actualDaysRequested}) exceden el máximo permitido (${maxAllowedDays})`,
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      console.log('Días calculados para la edición:', actualDaysRequested);
+
+      // Verificar solapamiento con otras solicitudes (excluyendo la actual)
+      await ensureNoOverlappingVacations(
+        this.vacationRequestRepository,
+        user.id,
+        newStartDate,
+        newEndDate,
+        existingRequest.id   // 👈 excluimos la misma solicitud
+      );
+
+      // Calcular fecha de reincorporación
+      let returnDateISO: string;
+      if (hasHalfDayInAvailable || hasHalfDayInOriginal) {
+        // Si hay medio día, la reincorporación es el mismo día de la fecha fin
+        returnDateISO = new Date(newEndDate + "T00:00:00Z").toISOString();
+        console.log('Reincorporación el mismo día (medio día)');
+      } else {
+        // Lógica normal de reincorporación (usando el mismo helper que en create)
+        returnDateISO = new Date(
+          await calculateReturnDate(
+            new Date(newEndDate + "T23:59:59Z").toISOString(),
+            actualDaysRequested,
+            this.nonHolidayService
+          )
+        ).toISOString();
+      }
+
+      // Actualizar campos de fechas
+      existingRequest.startDate = new Date(newStartDate + "T00:00:00Z").toISOString();
+      existingRequest.endDate = new Date(newEndDate + "T23:59:59Z").toISOString();
+      existingRequest.totalDays = actualDaysRequested;
+      existingRequest.returnDate = returnDateISO;
+    }
+
+    // ACTUALIZAR CAMPOS DE ESTADO (nuevos)
+    if (updateData.status !== undefined) {
+      existingRequest.status = updateData.status;
+    }
+
+    if (updateData.postponedReason !== undefined) {
+      existingRequest.postponedReason = updateData.postponedReason;
+    }
+
+    if (updateData.approvedByHR !== undefined) {
+      existingRequest.approvedByHR = updateData.approvedByHR;
+    }
+
+    if (updateData.deleted !== undefined) {
+      // Validación adicional para eliminación
+      if (updateData.deleted === true) {
+        console.log(`Marcando solicitud ${requestId} como eliminada`);
+      }
+      existingRequest.deleted = updateData.deleted;
+    }
+
+    const updatedRequest = await this.vacationRequestRepository.save(existingRequest);
+    console.log('Solicitud actualizada:', updatedRequest);
+
+    // Retornar sin datos sensibles
+    const { user: _user, ...requestWithoutSensitiveData } = updatedRequest;
+    return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: existingRequest.totalDays };
   }
-
-  const updatedRequest = await this.vacationRequestRepository.save(existingRequest);
-  console.log('Solicitud actualizada:', updatedRequest);
-
-  // Retornar sin datos sensibles
-  const { user: _user, ...requestWithoutSensitiveData } = updatedRequest;
-  return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: existingRequest.totalDays };
-}
 
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(

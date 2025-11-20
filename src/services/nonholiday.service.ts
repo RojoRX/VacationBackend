@@ -152,18 +152,27 @@ export class NonHolidayService {
   }
 
 
-async getNonHolidayDaysForRange(startDate: Date, endDate: Date) {
-  // Convertir Date a string 'YYYY-MM-DD'
-  const startStr = format(startDate, 'yyyy-MM-dd');
-  const endStr = format(endDate, 'yyyy-MM-dd');
+  async getNonHolidayDaysForRange(startDate: Date, endDate: Date) {
+    // Convertir Date a string 'YYYY-MM-DD'
+    const startStr = format(startDate, 'yyyy-MM-dd');
+    const endStr = format(endDate, 'yyyy-MM-dd');
 
-  return this.nonHolidayRepository.find({
-    where: {
-      date: Between(startStr, endStr),
-    },
-    order: { date: 'ASC' },
-  });
-}
+    return this.nonHolidayRepository.find({
+      where: {
+        date: Between(startStr, endStr),
+      },
+      order: { date: 'ASC' },
+    });
+  }
+  async getAllNonHolidays(): Promise<NonHoliday[]> {
+    return this.nonHolidayRepository.find({
+      order: { date: 'ASC' }
+    });
+  }
+  async isNonWorkingDay(dateStr: string): Promise<boolean> {
+    const nonHolidays = await this.getAllNonHolidays();
+    return nonHolidays.some(d => d.date === dateStr);
+  }
 
 
 
