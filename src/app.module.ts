@@ -24,6 +24,7 @@ import { SystemConfigModule } from './config/system-config.module';
 import { UserConfigModule } from './modules/user-config.module';
 import { ExternalModule } from './modules/external.module';
 import { AdministrativeHolidayPeriodModule } from './modules/admin-holiday-period.module';
+import { EmployeeContractHistoryModule } from './modules/employee-contract-history.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { AdministrativeHolidayPeriodModule } from './modules/admin-holiday-perio
     UserConfigModule,
     ExternalModule,
     AdministrativeHolidayPeriodModule,
+    EmployeeContractHistoryModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,

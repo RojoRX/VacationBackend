@@ -48,5 +48,6 @@ export interface VacationResponse {
     totalAuthorizedVacationDays: number,
     requests: VacationRequest[];
   }
-
+  contractTypeApplied?:{
+  }
 }

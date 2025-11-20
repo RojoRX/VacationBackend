@@ -14,6 +14,7 @@ import { adjustPeriodEnd, isValidPeriod } from 'src/utils/date.helpers';
 import { SystemConfigService } from 'src/config/system-config.service';
 import { UserConfigService } from './user-config.service';
 import { AdministrativeHolidayPeriodService } from './administrative-holiday-period.service';
+import { EmployeeContractHistoryService } from './employee-contract-history.service';
 
 @Injectable()
 export class VacationService {
@@ -27,177 +28,333 @@ export class VacationService {
     private readonly vacationRequestService: VacationRequestService,
     private readonly systemConfigService: SystemConfigService,
     private readonly userConfigService: UserConfigService,
-    private readonly administrativeHolidayService: AdministrativeHolidayPeriodService
+    private readonly administrativeHolidayService: AdministrativeHolidayPeriodService,
+    private readonly contractHistoryService: EmployeeContractHistoryService,
   ) { }
 
-async calculateVacationDays(
-  carnetIdentidad: string,
-  startDate: Date,
-  endDate: Date
-): Promise<VacationResponse> {
-  // Obtener datos del usuario
-  const userData = await this.userService.getUserData(carnetIdentidad);
-  if (!userData) {
-    throw new BadRequestException('Usuario no encontrado.');
+  async calculateVacationDays(
+    carnetIdentidad: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<VacationResponse> {
+    // Obtener datos del usuario
+    const userData = await this.userService.getUserData(carnetIdentidad);
+    if (!userData) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+    // Convertir fechas para cálculos
+    const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
+    const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
+    const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
+
+    console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
+    console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
+
+    // Calcular antigüedad
+    const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
+    const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService);
+
+    const year = startDateTime.year;
+
+    // 🏖️ Obtener recesos según tipo de empleado
+    let holidayPeriods = [];
+    if (userData.tipoEmpleado === 'DOCENTE') {
+      holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
+      console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
+    } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
+      holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
+      console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
+    }
+
+    const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDateTime.toJSDate());
+    const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriodsForPersonalYear(
+      userData.id,
+      startDate,
+      endDateTime.toJSDate()
+    );
+
+    console.log(`[calculateVacationDays] Recesos personalizados: ${personalizedRecesses.length}`);
+
+    // 🔹 Combinar recesos sin eliminar parciales
+    // 🔹 Construcción de finalRecesses con reemplazo estricto por año y tipo
+    const finalRecesses: any[] = [];
+
+    // Primero, agrupar recesos personalizados por tipo y año laboral
+    const personalizedMap = new Map<string, any>();
+    personalizedRecesses.forEach(p => {
+      const startYear = DateTime.fromJSDate(p.startDate).year;
+      const key = `${p.name.trim().toLowerCase()}_${startYear}`;
+      personalizedMap.set(key, p);
+    });
+
+    // Iterar recesos generales/administrativos
+    for (const generalRecess of holidayPeriods) {
+      const startYear = DateTime.fromJSDate(generalRecess.startDate).year;
+      const key = `${generalRecess.name.trim().toLowerCase()}_${startYear}`;
+
+      if (personalizedMap.has(key)) {
+        // Existe un receso personalizado del mismo tipo y año → reemplazar
+        finalRecesses.push(personalizedMap.get(key));
+        // Eliminarlo del mapa para no agregarlo de nuevo más tarde
+        personalizedMap.delete(key);
+      } else {
+        // No hay receso personalizado que lo reemplace → mantener general
+        finalRecesses.push(generalRecess);
+      }
+    }
+
+    // Agregar los recesos personalizados restantes (que no reemplazaron ningún general)
+    personalizedMap.forEach(p => finalRecesses.push(p));
+
+
+
+    // Procesar recesos para calcular días
+    const recesos = [];
+    let totalNonHolidayDays = 0;
+    const nonHolidayDaysDetails = [];
+
+    for (const receso of finalRecesses) {
+      const isPersonalized = personalizedRecesses.some(p => p === receso);
+      const recessType = isPersonalized ? 'personalizado' :
+        (userData.tipoEmpleado === 'DOCENTE' ? 'general' : 'administrativo');
+
+      const startDateHol = DateTime.fromJSDate(receso.startDate, { zone: "utc" }).startOf('day');
+      const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).endOf('day');
+
+      // Días hábiles
+      const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+
+      // Días no hábiles
+      const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
+      totalNonHolidayDays += nonHolidayDaysCount;
+
+      nonHolidayDays.forEach(nonHoliday => {
+        const nonHolidayDate = DateTime.fromISO(nonHoliday.date, { zone: "utc" }).startOf('day');
+        if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
+          nonHolidayDaysDetails.push({
+            date: nonHoliday.date,
+            reason: `Dentro del receso ${nonHoliday.description}`
+          });
+        }
+      });
+
+      const daysCount = totalDays - nonHolidayDaysCount;
+
+      recesos.push({
+        name: receso.name,
+        startDate: receso.startDate,
+        endDate: receso.endDate,
+        totalDays,
+        nonHolidayDays: nonHolidayDaysCount,
+        daysCount,
+        type: recessType
+      });
+    }
+
+    // 🧾 Total de días de receso
+    const totalVacationDaysUsedByRecess = recesos.reduce((sum, r) => sum + r.daysCount, 0);
+
+    // 📄 Licencias y vacaciones autorizadas
+    const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } =
+      await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
+
+    const { totalAuthorizedVacationDays, requests: vacationRequests } =
+      await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
+
+    const totalUsedDays = totalVacationDaysUsedByRecess + totalAuthorizedLicenseDays + totalAuthorizedVacationDays;
+    let remainingVacationDays = vacationDays - totalUsedDays;
+    let deuda = 0;
+    if (remainingVacationDays < 0) {
+      deuda = Math.abs(remainingVacationDays);
+      remainingVacationDays = 0;
+    }
+
+    return {
+      carnetIdentidad: userData.carnetIdentidad,
+      name: userData.nombres,
+      email: userData.correo_electronico,
+      position: userData.profesion,
+      fechaIngreso: new Date(userData.fecha_ingreso),
+      antiguedadEnAnios: Math.floor(yearsOfService),
+      antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
+      antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
+      diasDeVacacion: vacationDays,
+      diasDeVacacionRestantes: remainingVacationDays,
+      deuda,
+      recesos,
+      diasNoHabiles: totalNonHolidayDays,
+      nonHolidayDaysDetails,
+      licenciasAutorizadas: {
+        totalAuthorizedDays: totalAuthorizedLicenseDays,
+        requests: licenseRequests
+      },
+      solicitudesDeVacacionAutorizadas: {
+        totalAuthorizedVacationDays,
+        requests: vacationRequests
+      }
+    };
   }
+  async calculateAccumulatedDebt(
+    carnetIdentidad: string,
+    endDate: Date | string
+  ): Promise<{
+    deudaAcumulativa: number;
+    detalles: any[];
+    resumenGeneral: ResumenGeneral;
+  }> {
+    const userData = await this.userService.getUserData(carnetIdentidad);
+    if (!userData) throw new BadRequestException("Usuario no encontrado.");
 
-  // Convertir fechas para cálculos
-  const userDate = DateTime.fromISO(userData.fecha_ingreso, { zone: "utc" });
-  const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
-  const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
+    const normalizeDate = (dateInput: Date | string): DateTime => {
+      if (typeof dateInput === 'string') {
+        const isoDate = DateTime.fromISO(dateInput, { zone: 'utc' });
+        if (isoDate.isValid) return isoDate.startOf('day');
+        const formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'MM/dd/yyyy', 'dd-MM-yyyy', 'yyyy.MM.dd'];
+        for (const f of formats) {
+          const parsed = DateTime.fromFormat(dateInput, f, { zone: 'utc' });
+          if (parsed.isValid) return parsed.startOf('day');
+        }
+      }
+      return DateTime.fromJSDate(new Date(dateInput), { zone: 'utc' }).startOf('day');
+    };
 
-  console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
-  console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
+    const parsedEndDate = normalizeDate(endDate);
+    const fechaIngreso = normalizeDate(userData.fecha_ingreso);
 
-  // Calcular antigüedad
-  const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
-  const vacationDays = await this.vacationCalculatorService.calculateVacationDays(yearsOfService);
+    let deudaAcumulativa = 0;
+    let detalles: any[] = [];
 
-  const year = startDateTime.year;
+    const contracts = await this.contractHistoryService.getContractsForUser(userData.id);
+    const systemConfig = await this.systemConfigService.getStartCountingYear();
+    const userConfig = await this.userConfigService.findByUserId(userData.id).catch(() => null);
 
-  // 🏖️ Obtener recesos según tipo de empleado
-  let holidayPeriods = [];
-  if (userData.tipoEmpleado === 'DOCENTE') {
-    holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate,  endDateTime.toJSDate());
-    console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
-  } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
-    holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
-    console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
-  }
+    // -------------------------------------------------------
+    // 🟦 DETERMINAR FECHA DE INICIO DE CONTABILIZACIÓN
+    // -------------------------------------------------------
+    let currentStartDate: DateTime;
 
-  const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDateTime.toJSDate());
-  const personalizedRecesses = await this.userHolidayPeriodService.getUserHolidayPeriodsForPersonalYear(
-    userData.id,
-    startDate,
-    endDateTime.toJSDate()
-  );
+    if (userConfig?.customStartYear) {
+      currentStartDate = DateTime.fromObject({
+        year: userConfig.customStartYear,
+        month: fechaIngreso.month,
+        day: fechaIngreso.day
+      }, { zone: 'utc' });
+    } else if (systemConfig?.year) {
+      currentStartDate = DateTime.fromObject({
+        year: systemConfig.year,
+        month: fechaIngreso.month,
+        day: fechaIngreso.day
+      }, { zone: 'utc' });
+    } else {
+      currentStartDate = fechaIngreso;
+    }
 
-  console.log(`[calculateVacationDays] Recesos personalizados: ${personalizedRecesses.length}`);
+    // -------------------------------------------------------
+    // 🟥 APLICAR DEUDA INICIAL COMO DEUDA ACUMULATIVA REAL
+    // -------------------------------------------------------
+    let deudaInicial = userConfig?.initialVacationBalance ?? 0;
 
-  // 🔹 Combinar recesos sin eliminar parciales
-// 🔹 Construcción de finalRecesses con reemplazo estricto por año y tipo
-const finalRecesses: any[] = [];
+    deudaAcumulativa = deudaInicial;
 
-// Primero, agrupar recesos personalizados por tipo y año laboral
-const personalizedMap = new Map<string, any>();
-personalizedRecesses.forEach(p => {
-  const startYear = DateTime.fromJSDate(p.startDate).year;
-  const key = `${p.name.trim().toLowerCase()}_${startYear}`;
-  personalizedMap.set(key, p);
-});
+    let isFirstGestion = true;
 
-// Iterar recesos generales/administrativos
-for (const generalRecess of holidayPeriods) {
-  const startYear = DateTime.fromJSDate(generalRecess.startDate).year;
-  const key = `${generalRecess.name.trim().toLowerCase()}_${startYear}`;
+    // -------------------------------------------------------
+    // 🔄 ITERAR GESTIONES AÑO LABORAL
+    // -------------------------------------------------------
+    while (currentStartDate < parsedEndDate) {
 
-  if (personalizedMap.has(key)) {
-    // Existe un receso personalizado del mismo tipo y año → reemplazar
-    finalRecesses.push(personalizedMap.get(key));
-    // Eliminarlo del mapa para no agregarlo de nuevo más tarde
-    personalizedMap.delete(key);
-  } else {
-    // No hay receso personalizado que lo reemplace → mantener general
-    finalRecesses.push(generalRecess);
-  }
-}
+      const currentEndDate = currentStartDate.plus({ years: 1 });
+      const adjustedEndDate = currentEndDate > parsedEndDate ? parsedEndDate : currentEndDate;
 
-// Agregar los recesos personalizados restantes (que no reemplazaron ningún general)
-personalizedMap.forEach(p => finalRecesses.push(p));
+      // 🟦 AQUÍ SE CORRIGE — ANTES SE USABA 0 FORZADO
+      const deudaAnterior = deudaAcumulativa;
 
+      // ---------------------------
+      // Verificar contrato OTRO
+      // ---------------------------
+      const contractInPeriod = contracts.find(c => {
+        if (c.contractType?.trim().toLowerCase() !== 'otro') return false;
 
+        const cStart = DateTime.fromISO(c.startDate, { zone: 'utc' });
+        const cEnd = DateTime.fromISO(c.endDate, { zone: 'utc' });
 
-  // Procesar recesos para calcular días
-  const recesos = [];
-  let totalNonHolidayDays = 0;
-  const nonHolidayDaysDetails = [];
+        return currentStartDate >= cStart && adjustedEndDate <= cEnd;
+      });
 
-  for (const receso of finalRecesses) {
-    const isPersonalized = personalizedRecesses.some(p => p === receso);
-    const recessType = isPersonalized ? 'personalizado' :
-      (userData.tipoEmpleado === 'DOCENTE' ? 'general' : 'administrativo');
+      const isOtherContract = !!contractInPeriod;
 
-    const startDateHol = DateTime.fromJSDate(receso.startDate, { zone: "utc" }).startOf('day');
-    const endDateHol = DateTime.fromJSDate(receso.endDate, { zone: "utc" }).endOf('day');
+      if (isOtherContract) {
 
-    // Días hábiles
-    const totalDays = this.vacationCalculatorService.countWeekdays(startDateHol, endDateHol);
+        detalles.push({
+          startDate: currentStartDate.toJSDate(),
+          endDate: adjustedEndDate.toJSDate(),
+          deuda: 0,
+          diasDeVacacion: 0,
+          diasDeVacacionRestantes: 0,
+          deudaAcumulativaHastaEstaGestion: 0,
+          deudaAcumulativaAnterior: 0,
+          diasDisponibles: 0,
+          contratoTipo: 'OTRO'
+        });
 
-    // Días no hábiles
-    const nonHolidayDaysCount = this.vacationCalculatorService.getIntersectionDays(startDateHol, endDateHol, nonHolidayDays);
-    totalNonHolidayDays += nonHolidayDaysCount;
+      } else {
+        // Normal
+        const result = await this.calculateVacationDays(
+          carnetIdentidad,
+          currentStartDate.toJSDate(),
+          adjustedEndDate.toJSDate()
+        );
 
-    nonHolidayDays.forEach(nonHoliday => {
-      const nonHolidayDate = DateTime.fromISO(nonHoliday.date, { zone: "utc" }).startOf('day');
-      if (nonHolidayDate >= startDateHol && nonHolidayDate <= endDateHol) {
-        nonHolidayDaysDetails.push({
-          date: nonHoliday.date,
-          reason: `Dentro del receso ${nonHoliday.description}`
+        // Aplicar deuda adicional
+        deudaAcumulativa += result.deuda ?? 0;
+
+        // Restar días disponibles si corresponde
+        const resto = result.diasDeVacacionRestantes ?? 0;
+        if (resto > 0) deudaAcumulativa = Math.max(0, deudaAcumulativa - resto);
+
+        const diasDisponibles = Math.max(0, resto - deudaAnterior);
+
+        detalles.push({
+          startDate: currentStartDate.toJSDate(),
+          endDate: adjustedEndDate.toJSDate(),
+          deuda: result.deuda ?? 0,
+          diasDeVacacion: result.diasDeVacacion ?? 0,
+          diasDeVacacionRestantes: resto,
+          deudaAcumulativaHastaEstaGestion: deudaAcumulativa,
+          deudaAcumulativaAnterior: deudaAnterior,
+          diasDisponibles,
+          contratoTipo: 'NORMAL'
         });
       }
-    });
 
-    const daysCount = totalDays - nonHolidayDaysCount;
-
-    recesos.push({
-      name: receso.name,
-      startDate: receso.startDate,
-      endDate: receso.endDate,
-      totalDays,
-      nonHolidayDays: nonHolidayDaysCount,
-      daysCount,
-      type: recessType
-    });
-  }
-
-  // 🧾 Total de días de receso
-  const totalVacationDaysUsedByRecess = recesos.reduce((sum, r) => sum + r.daysCount, 0);
-
-  // 📄 Licencias y vacaciones autorizadas
-  const { totalAuthorizedDays: totalAuthorizedLicenseDays, requests: licenseRequests } =
-    await this.licenseService.getTotalAuthorizedLicensesForUser(userData.id, startDate, endDate);
-
-  const { totalAuthorizedVacationDays, requests: vacationRequests } =
-    await this.vacationRequestService.countAuthorizedVacationDaysInRange(carnetIdentidad, startDate.toISOString(), endDate.toISOString());
-
-  const totalUsedDays = totalVacationDaysUsedByRecess + totalAuthorizedLicenseDays + totalAuthorizedVacationDays;
-  let remainingVacationDays = vacationDays - totalUsedDays;
-  let deuda = 0;
-  if (remainingVacationDays < 0) {
-    deuda = Math.abs(remainingVacationDays);
-    remainingVacationDays = 0;
-  }
-
-  return {
-    carnetIdentidad: userData.carnetIdentidad,
-    name: userData.nombres,
-    email: userData.correo_electronico,
-    position: userData.profesion,
-    fechaIngreso: new Date(userData.fecha_ingreso),
-    antiguedadEnAnios: Math.floor(yearsOfService),
-    antiguedadEnMeses: Math.floor(this.vacationCalculatorService.calculateMonthsOfService(userDate, endDateTime)),
-    antiguedadEnDias: Math.floor(this.vacationCalculatorService.calculateDaysOfService(userDate, endDateTime)),
-    diasDeVacacion: vacationDays,
-    diasDeVacacionRestantes: remainingVacationDays,
-    deuda,
-    recesos,
-    diasNoHabiles: totalNonHolidayDays,
-    nonHolidayDaysDetails,
-    licenciasAutorizadas: {
-      totalAuthorizedDays: totalAuthorizedLicenseDays,
-      requests: licenseRequests
-    },
-    solicitudesDeVacacionAutorizadas: {
-      totalAuthorizedVacationDays,
-      requests: vacationRequests
+      currentStartDate = currentStartDate.plus({ years: 1 });
+      isFirstGestion = false;
     }
-  };
-}
 
-  /**
-   * Método para calcular el período de vacaciones usando la fecha de ingreso del usuario ajustada al año actual.
-   * Solo requiere el CI del usuario.
-   */
+    // -------------------------------------------------------
+    // RESUMEN
+    // -------------------------------------------------------
+    const gestionesConDeuda = detalles.filter(d => d.deuda > 0).length;
+    const gestionesSinDeuda = detalles.length - gestionesConDeuda;
+
+    const resumenGeneral: ResumenGeneral = {
+      deudaTotal: deudaAcumulativa,
+      diasDisponiblesActuales: detalles.reduce((s, d) => s + (d.diasDisponibles || 0), 0),
+      gestionesConDeuda,
+      gestionesSinDeuda,
+      promedioDeudaPorGestion: detalles.length > 0 ?
+        detalles.reduce((s, d) => s + d.deuda, 0) / detalles.length : 0,
+      primeraGestion: detalles[0]?.startDate || null,
+      ultimaGestion: detalles[detalles.length - 1]?.endDate || null
+    };
+
+    return { deudaAcumulativa, detalles, resumenGeneral };
+  }
+
+
+
+
+
   async calculateVacationPeriodByCI(ci: string): Promise<VacationResponse> {
     // Buscar el usuario por CI
     const user = await this.userService.findByCarnet(ci);
@@ -217,196 +374,6 @@ personalizedMap.forEach(p => finalRecesses.push(p));
     // Reusar el método calculateVacationDays
     return this.calculateVacationDays(ci, startDate.toJSDate(), endDate.toJSDate());
   }
-  async calculateAccumulatedDebt(
-    carnetIdentidad: string,
-    endDate: Date | string
-  ): Promise<{
-    deudaAcumulativa: number;
-    detalles: any[];
-    resumenGeneral: ResumenGeneral;
-  }> {
-    console.log("Fecha Recibida" + endDate)
-    const userData = await this.userService.getUserData(carnetIdentidad);
-    if (!userData) {
-      throw new BadRequestException("Usuario no encontrado.");
-    }
-    // Función de normalización robusta
-    const normalizeDate = (dateInput: Date | string): DateTime => {
-      try {
-        // Si es string, intentar parsear en varios formatos
-        if (typeof dateInput === 'string') {
-          // Intento 1: Formato ISO (YYYY-MM-DD)
-          if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-            return DateTime.fromFormat(dateInput, 'yyyy-MM-dd', { zone: 'utc' }).startOf('day');
-          }
-
-          // Intento 2: Formato ISO con tiempo
-          const isoDate = DateTime.fromISO(dateInput, { zone: 'utc' });
-          if (isoDate.isValid) {
-            return isoDate.startOf('day');
-          }
-
-          // Intento 3: Otros formatos comunes
-          const formats = [
-            'yyyy/MM/dd',
-            'MM/dd/yyyy',
-            'dd-MM-yyyy',
-            'yyyy.MM.dd'
-          ];
-
-          for (const format of formats) {
-            const parsed = DateTime.fromFormat(dateInput, format, { zone: 'utc' });
-            if (parsed.isValid) {
-              return parsed.startOf('day');
-            }
-          }
-        }
-
-        // Si es objeto Date o los intentos anteriores fallaron
-        const dateObj = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-        const dateTime = DateTime.fromJSDate(dateObj, { zone: 'utc' }).startOf('day');
-
-        if (!dateTime.isValid) {
-          throw new Error('Fecha inválida');
-        }
-
-        return dateTime;
-      } catch (error) {
-        throw new BadRequestException(`Formato de fecha inválido: ${dateInput}`);
-      }
-    };
-
-    // Normalizar fechas
-    const parsedEndDate = normalizeDate(endDate);
-    const fechaIngreso = normalizeDate(userData.fecha_ingreso);
-
-    console.log("Fecha Final Normalizada:", parsedEndDate.toISODate());
-    console.log("Fecha de Ingreso Normalizada:", fechaIngreso.toISODate());
-
-
-    let deudaAcumulativa = 0;
-    const detalles = [];
-
-
-    // Obtener configuración general del sistema (si existe)
-    // Obtener configuración general del sistema (si existe)
-    const systemConfig = await this.systemConfigService.getStartCountingYear(); // Ej: { year: 2015 } o null
-
-    // Determinar fecha de inicio del cálculo
-    let currentStartDate: DateTime;
-
-    // Obtener configuración personalizada del usuario (si existe)
-    const userConfig = await this.userConfigService.findByUserId(userData.id).catch((err) => {
-      console.error("❌ Error al obtener configuración personalizada:", err);
-      return null;
-    });
-
-    console.log("🔍 Configuración personalizada del usuario:", userConfig);
-
-    // 1. Fecha personalizada del usuario
-    if (userConfig?.customStartYear) {
-      currentStartDate = DateTime.fromObject({
-        year: userConfig.customStartYear,
-        month: fechaIngreso.month,
-        day: fechaIngreso.day
-      }, { zone: 'utc' });
-
-      console.log(`📆 Inicio de conteo desde configuración personalizada del usuario: ${currentStartDate.toISODate()}`);
-    }
-    // 2. Fecha desde configuración global del sistema
-    else if (systemConfig?.year) {
-      currentStartDate = DateTime.fromObject({
-        year: systemConfig.year,
-        month: fechaIngreso.month,
-        day: fechaIngreso.day
-      }, { zone: 'utc' });
-
-      console.log(`📆 Inicio de conteo desde configuración global: ${currentStartDate.toISODate()}`);
-    }
-    // 3. Fecha de ingreso del usuario
-    else {
-      currentStartDate = fechaIngreso;
-      console.log(`📆 Inicio de conteo usando fecha de ingreso del usuario: ${currentStartDate.toISODate()}`);
-    }
-
-    // Incluir deuda inicial si existe en la configuración personalizada
-    if (userConfig?.initialVacationBalance !== undefined) {
-      console.log(`💼 Saldo inicial recibido desde configuración: ${userConfig.initialVacationBalance}`);
-      deudaAcumulativa = userConfig.initialVacationBalance;
-    } else {
-      console.log("⚠️ No se recibió saldo inicial (initialVacationBalance) en la configuración.");
-    }
-
-
-
-    while (currentStartDate < parsedEndDate) {
-      const currentEndDate = currentStartDate.plus({ years: 1 });
-      const adjustedEndDate = currentEndDate > parsedEndDate ? parsedEndDate : currentEndDate;
-
-      const diffInMonths = adjustedEndDate.diff(currentStartDate, 'months').months;
-      if (diffInMonths < 12) break;
-
-      try {
-        const deudaAcumulativaAnterior = deudaAcumulativa ?? 0;
-
-
-        const result = await this.calculateVacationDays(
-          carnetIdentidad,
-          currentStartDate.toJSDate(),
-          adjustedEndDate.toJSDate()
-        );
-
-        deudaAcumulativa += result.deuda || 0;
-
-        if (result.diasDeVacacionRestantes > 0) {
-          deudaAcumulativa = Math.max(0, deudaAcumulativa - result.diasDeVacacionRestantes);
-        }
-
-        const diasDisponibles = Math.max(0, result.diasDeVacacionRestantes - deudaAcumulativaAnterior);
-
-        detalles.push({
-          startDate: currentStartDate.toJSDate(),
-          endDate: adjustedEndDate.toJSDate(),
-          deuda: result.deuda ?? 0,
-          diasDeVacacion: result.diasDeVacacion ?? 0,
-          diasDeVacacionRestantes: result.diasDeVacacionRestantes ?? 0,
-          deudaAcumulativaHastaEstaGestion: deudaAcumulativa,
-          deudaAcumulativaAnterior,  // ✅ usar el valor anterior, no el actualizado
-          diasDisponibles: Math.max(0, (result.diasDeVacacionRestantes ?? 0) - deudaAcumulativaAnterior),
-        });
-
-
-      } catch (error) {
-        console.error(`Error calculando deuda para el período ${currentStartDate.toISODate()} - ${adjustedEndDate.toISODate()}:`, error);
-      }
-
-      currentStartDate = currentStartDate.plus({ years: 1 });
-    }
-
-    const gestionesConDeuda = detalles.filter(d => d.deuda > 0).length;
-    const gestionesSinDeuda = detalles.length - gestionesConDeuda;
-    const promedioDeuda = detalles.length > 0 ?
-      detalles.reduce((sum, d) => sum + d.deuda, 0) / detalles.length : 0;
-
-    const resumenGeneral: ResumenGeneral = {
-      deudaTotal: deudaAcumulativa,
-      diasDisponiblesActuales: detalles.reduce((sum, d) => sum + (d.diasDisponibles || 0), 0),
-      gestionesConDeuda,
-      gestionesSinDeuda,
-      promedioDeudaPorGestion: promedioDeuda,
-      primeraGestion: detalles[0]?.startDate || null,
-      ultimaGestion: detalles[detalles.length - 1]?.endDate || null,
-
-    };
-
-    return {
-      deudaAcumulativa,
-      detalles,
-      resumenGeneral
-    };
-  }
-
-
   async calculateDebtSinceDate(
     carnetIdentidad: string,
     startDate: Date,

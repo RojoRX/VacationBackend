@@ -30,6 +30,7 @@ import { SystemConfigModule } from 'src/config/system-config.module';
 import { UserConfigModule } from './user-config.module';
 import { LicenseUtilsService } from 'src/services/license-utils.service';
 import { AdministrativeHolidayPeriodModule } from './admin-holiday-period.module';
+import { EmployeeContractHistoryModule } from './employee-contract-history.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AdministrativeHolidayPeriodModule } from './admin-holiday-period.module
     SystemConfigModule,
     UserConfigModule,
     AdministrativeHolidayPeriodModule,
+    EmployeeContractHistoryModule,
     forwardRef(() => VacationModule),
   ],
   controllers: [VacationRequestController],
