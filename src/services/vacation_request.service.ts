@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, forwardRef, Inject, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { VacationRequest } from 'src/entities/vacation_request.entity';
@@ -1641,5 +1641,51 @@ export class VacationRequestService {
     console.log('[forceSoftDelete] Solicitud eliminada correctamente');
 
     return { message: 'La solicitud fue eliminada correctamente (forzado)' };
+  }
+
+   async updateObservation(
+    requestId: number,
+    userId: number,
+    userRole: string,
+    observation: string,
+  ): Promise<VacationRequest> {
+
+    const request = await this.vacationRequestRepository.findOne({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+
+    // === VALIDACIÓN DE PERMISOS === //
+    const isAdmin = userRole === 'ADMIN';
+    const isSupervisorAssigned = request.supervisorId === userId;
+
+    if (!isAdmin && !isSupervisorAssigned) {
+      throw new ForbiddenException(
+        'No tienes permiso para agregar observaciones a esta solicitud.'
+      );
+    }
+
+    // === ACTUALIZAR === //
+    request.postponedReason = observation?.trim() || null;
+    request.reviewDate = new Date().toISOString().slice(0, 10);
+    request.approvedBy = { id: userId } as any;
+
+    return await this.vacationRequestRepository.save(request);
+  }
+
+  async getObservation(requestId: number): Promise<string | null> {
+    const req = await this.vacationRequestRepository.findOne({
+      where: { id: requestId },
+      select: ['id', 'postponedReason'],
+    });
+
+    if (!req) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+
+    return req.postponedReason ?? null;
   }
 }

@@ -55,68 +55,97 @@ export class VacationRequestController {
     }
   }
   // Endpoint para actualizar una solicitud de vacaciones
-@Put(':id')
-@ApiOperation({ summary: 'Actualizar una solicitud de vacaciones existente' })
-@ApiBody({
-  schema: {
-    type: 'object',
-    properties: {
-      startDate: { 
-        type: 'string', 
-        example: '2025-11-03', 
-        description: 'Nueva fecha de inicio (opcional)' 
+  // === NUEVA RUTA PARA EDITAR / CREAR OBSERVACIONES === //
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Actualizar una solicitud de vacaciones existente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        startDate: {
+          type: 'string',
+          example: '2025-11-03',
+          description: 'Nueva fecha de inicio (opcional)'
+        },
+        endDate: {
+          type: 'string',
+          example: '2025-11-07',
+          description: 'Nueva fecha de fin (opcional, si no se manda se recalcula)'
+        },
+        status: {
+          type: 'string',
+          enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'],
+          example: 'AUTHORIZED',
+          description: 'Nuevo estado de la solicitud (opcional)'
+        },
+        postponedReason: {
+          type: 'string',
+          example: 'Postergado por necesidades operativas',
+          description: 'Razón de postergación (obligatorio si status es POSTPONED)'
+        },
+        approvedByHR: {
+          type: 'boolean',
+          nullable: true,
+          example: true,
+          description: 'Aprobación por RRHH (true, false o null)'
+        },
+        deleted: {
+          type: 'boolean',
+          example: false,
+          description: 'Marcar como eliminado (opcional)'
+        }
       },
-      endDate: { 
-        type: 'string', 
-        example: '2025-11-07', 
-        description: 'Nueva fecha de fin (opcional, si no se manda se recalcula)' 
-      },
-      status: {
-        type: 'string',
-        enum: ['PENDING', 'AUTHORIZED', 'POSTPONED', 'DENIED', 'SUSPENDED'],
-        example: 'AUTHORIZED',
-        description: 'Nuevo estado de la solicitud (opcional)'
-      },
-      postponedReason: {
-        type: 'string',
-        example: 'Postergado por necesidades operativas',
-        description: 'Razón de postergación (obligatorio si status es POSTPONED)'
-      },
-      approvedByHR: {
-        type: 'boolean',
-        nullable: true,
-        example: true,
-        description: 'Aprobación por RRHH (true, false o null)'
-      },
-      deleted: {
-        type: 'boolean',
-        example: false,
-        description: 'Marcar como eliminado (opcional)'
-      }
     },
-  },
-})
-@ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada exitosamente' })
-@ApiResponse({ status: 400, description: 'Error al actualizar la solicitud de vacaciones' })
-@ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
-async updateVacationRequest(
-  @Param('id') id: number,
-  @Body() updates: { 
-    startDate?: string; 
-    endDate?: string; 
-    status?: 'PENDING' | 'AUTHORIZED' | 'POSTPONED' | 'DENIED' | 'SUSPENDED';
-    postponedReason?: string;
-    approvedByHR?: boolean | null;
-    deleted?: boolean;
-  },
-) {
-  try {
-    const vacationRequest = await this.vacationRequestService.updateVacationRequest(id, updates);
-    return vacationRequest;
-  } catch (error) {
-    throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+  })
+  @ApiResponse({ status: 200, description: 'Solicitud de vacaciones actualizada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error al actualizar la solicitud de vacaciones' })
+  @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
+  async updateVacationRequest(
+    @Param('id') id: number,
+    @Body() updates: {
+      startDate?: string;
+      endDate?: string;
+      status?: 'PENDING' | 'AUTHORIZED' | 'POSTPONED' | 'DENIED' | 'SUSPENDED';
+      postponedReason?: string;
+      approvedByHR?: boolean | null;
+      deleted?: boolean;
+    },
+  ) {
+    try {
+      const vacationRequest = await this.vacationRequestService.updateVacationRequest(id, updates);
+      return vacationRequest;
+    } catch (error) {
+      throw new HttpException(error.message, error.status || HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
-}
+
+
+  @Put(':id/observation')
+  @Roles(RoleEnum.ADMIN, RoleEnum.SUPERVISOR)
+  async updateObservation(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('observation') observation: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user.id;
+
+    // Normalizamos el rol a mayúsculas
+    const userRole = String(req.user.role).toUpperCase() as RoleEnum;
+
+    console.log('ID recibido:', id);
+    console.log('Observación recibida:', observation);
+    console.log('Rol del usuario (normalizado):', userRole);
+
+    return await this.vacationRequestService.updateObservation(
+      id,
+      userId,
+      userRole,
+      observation,
+    );
+  }
+
+
 
 
   // Endpoint para obtener todas las solicitudes de vacaciones de un usuario
