@@ -28,7 +28,7 @@ export class LicenseValidationService {
    * @returns Promise<{ canRequest: boolean; reason?: string }>
    */
 
-  async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
+async checkPermissionToRequest(ci: string): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> {
     console.log(`[LicenseValidationService] Iniciando verificación de permiso para CI: ${ci}`);
     try {
       const user = await this.userRepository.findOne({ where: { ci: ci } });
@@ -49,8 +49,8 @@ export class LicenseValidationService {
 
       if (!lastVacationRequest) {
         console.log(`[LicenseValidationService] No se encontraron solicitudes de VACACION previas para el usuario ${user.fullName}.`);
-        // Llama a checkAvailableVacationDays y devuelve su resultado, que ahora incluirá availableDays
-        return this.checkAvailableVacationDays(user.ci, 1);
+        // MODIFICACIÓN: Llamar al nuevo método que solo verifica disponibilidad sin días solicitados
+        return this.checkVacationDaysAvailability(user.ci);
       }
 
       console.log(`[LicenseValidationService] Última solicitud de VACACION encontrada (ID: ${lastVacationRequest.id}) para el usuario ${user.fullName}.`);
@@ -62,7 +62,7 @@ export class LicenseValidationService {
       // Bloqueamos solo si alguna aprobación sigue pendiente (null)
       if (supApproval === null || deptApproval === null) {
         console.log(`[LicenseValidationService] La última solicitud de VACACION del usuario ${user.fullName} (ID: ${lastVacationRequest.id}) NO ha sido completamente aprobada.`);
-        const { availableDays } = await this.checkAvailableVacationDays(user.ci, 1);
+        const { availableDays } = await this.checkVacationDaysAvailability(user.ci);
         return {
           canRequest: false,
           reason: `Tienes una solicitud de vacaciones anterior (ID: ${lastVacationRequest.id}) que aún no ha sido completamente aprobada`,
@@ -73,10 +73,9 @@ export class LicenseValidationService {
       // Si están en otros estados como SUSPENDED, REJECTED, etc., ya no se bloquea
       console.log(`[LicenseValidationService] Última solicitud de VACACION no está pendiente, estado sup: ${supApproval}, dept: ${deptApproval}`);
 
-
       console.log(`[LicenseValidationService] La última solicitud de VACACION del usuario ${user.fullName} (ID: ${lastVacationRequest.id}) está completamente aprobada.`);
-      // Si está aprobada, llama a checkAvailableVacationDays y devuelve su resultado completo
-      return this.checkAvailableVacationDays(user.ci, 1);
+      // MODIFICACIÓN: Llamar al nuevo método que solo verifica disponibilidad sin días solicitados
+      return this.checkVacationDaysAvailability(user.ci);
     } catch (error) {
       console.error(`[LicenseValidationService] ERROR inesperado en checkPermissionToRequest para CI ${ci}:`, error);
       return {
@@ -86,12 +85,15 @@ export class LicenseValidationService {
     }
   }
 
-
-  private async checkAvailableVacationDays(ci: string, requestedDays: number): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> { // MODIFICADO
-    console.log(`[LicenseValidationService] Iniciando verificación de días de vacaciones para CI: ${ci}`);
+  /**
+   * NUEVO MÉTODO: Solo verifica la disponibilidad de días sin validar días solicitados
+   * Para uso del frontend en la sección informativa
+   */
+  private async checkVacationDaysAvailability(ci: string): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> {
+    console.log(`[LicenseValidationService] Iniciando verificación de disponibilidad de días para CI: ${ci}`);
     const user = await this.userRepository.findOne({ where: { ci: ci } });
     if (!user) {
-      console.log(`[LicenseValidationService] Error interno: Usuario con CI ${ci} no encontrado en checkAvailableVacationDays.`);
+      console.log(`[LicenseValidationService] Error interno: Usuario con CI ${ci} no encontrado en checkVacationDaysAvailability.`);
       return { canRequest: false, reason: 'Usuario no encontrado para verificar días de vacaciones.' };
     }
 
@@ -107,7 +109,7 @@ export class LicenseValidationService {
       if (endDateForDebtCalculation < today) {
         endDateForDebtCalculation = setYear(fechaIngresoUser, currentYear + 1);
       }
-      // Formatear la fecha a ISO string (YYYY-MM-DD)
+      
       const formattedDate = format(endDateForDebtCalculation, 'yyyy-MM-dd');
 
       console.log(`[LicenseValidationService] Fecha de ingreso del usuario (original): ${user.fecha_ingreso}`);
@@ -116,14 +118,14 @@ export class LicenseValidationService {
       console.log(`[LicenseValidationService] Llamando a vacationService.calculateAccumulatedDebt con CI: ${ci} y fecha: ${formattedDate}`);
       const debtCalculationResult = await this.vacationService.calculateAccumulatedDebt(
         user.ci,
-        formattedDate // Enviamos el string formateado en lugar del objeto Date
+        formattedDate
       );
       console.log(`[LicenseValidationService] Resultado de calculateAccumulatedDebt recibido.`);
 
       const detalles = debtCalculationResult.detalles;
       if (!detalles || detalles.length === 0) {
         console.log(`[LicenseValidationService] Detalles de deuda vacíos para CI ${ci}.`);
-        return { canRequest: false, reason: 'No se pudo calcular los días de vacaciones disponibles. Detalles vacíos.', availableDays: 0 }; // Añade 0 días disponibles
+        return { canRequest: false, reason: 'No se pudo calcular los días de vacaciones disponibles. Detalles vacíos.', availableDays: 0 };
       }
 
       const lastGestion: DetalleGestion = detalles[detalles.length - 1];
@@ -131,102 +133,64 @@ export class LicenseValidationService {
 
       console.log(`[LicenseValidationService] Última gestión de vacaciones analizada (endDate: ${lastGestion.endDate}). Días disponibles proyectados: ${availableDays}`);
 
+      // MODIFICACIÓN: Solo verificar si hay días disponibles, sin comparar con días solicitados
       if (availableDays <= 0) {
         console.log(`[LicenseValidationService] Usuario ${user.fullName} no tiene días disponibles (${availableDays} <= 0).`);
         return {
           canRequest: false,
           reason: `No tienes días de vacaciones disponibles para solicitar. Saldo actual proyectado: ${availableDays} día(s).`,
-          availableDays: availableDays, // Devuelve los días disponibles
+          availableDays: availableDays,
         };
       }
 
-      if (requestedDays > availableDays) {
-        console.log(`[LicenseValidationService] Días solicitados (${requestedDays}) exceden los disponibles (${availableDays}) para el usuario ${user.fullName}.`);
-        return {
-          canRequest: false,
-          reason: `Has solicitado ${requestedDays} día(s), pero solo tienes ${availableDays} día(s) de vacaciones disponibles proyectados.`,
-          availableDays: availableDays, // Devuelve los días disponibles
-        };
-      }
-
-      console.log(`[LicenseValidationService] Validación de días de vacaciones exitosa para el usuario ${user.fullName}. Días disponibles: ${availableDays}.`);
-      return { canRequest: true, availableDays: availableDays }; // Devuelve los días disponibles
+      // MODIFICACIÓN: Si hay días disponibles (> 0), permitir la solicitud
+      console.log(`[LicenseValidationService] Usuario ${user.fullName} tiene días disponibles: ${availableDays}. Permitiendo solicitud.`);
+      return { 
+        canRequest: true, 
+        reason: `Tienes ${availableDays} día(s) de vacaciones disponibles proyectados.`,
+        availableDays: availableDays 
+      };
     } catch (debtError) {
       console.error(`[LicenseValidationService] ERROR al calcular la deuda de vacaciones para CI ${ci}:`, debtError);
       return {
         canRequest: false,
         reason: 'Error al consultar la disponibilidad de días de vacaciones. Intente de nuevo más tarde.',
-        availableDays: 0 // En caso de error, puedes devolver 0 días disponibles
+        availableDays: 0
       };
     }
   }
 
   /**
-   * Método de validación final para cuando se intenta crear una licencia.
-   * Lanza excepciones si no se cumplen las condiciones.
-   * Este método sería llamado por el controlador al recibir una solicitud `POST /licenses`.
-   *
-   * @param userId ID del usuario que solicita la licencia.
-   * @param licenseType Tipo de licencia solicitada.
-   * @param requestedDays Días totales solicitados (solo relevante para VACACION).
+   * MÉTODO ORIGINAL: Para validación específica al crear una licencia
+   * Este SÍ recibe los días solicitados y hace la comparación
    */
-  async validateLicenseCreation(
-    userId: number,
-    licenseType: LicenseType,
-    requestedDays: number,
-  ): Promise<void> {
-    console.log(`[LicenseValidationService] Iniciando validación para creación de licencia. Usuario ID: ${userId}, Tipo: ${licenseType}, Días: ${requestedDays}`);
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      console.log(`[LicenseValidationService] Usuario con ID ${userId} no encontrado para validación de creación.`);
-      throw new NotFoundException(`Usuario con ID ${userId} no encontrado.`);
+  private async checkAvailableVacationDays(ci: string, requestedDays: number): Promise<{ canRequest: boolean; reason?: string; availableDays?: number }> {
+    console.log(`[LicenseValidationService] Validación específica para creación - CI: ${ci}, Días solicitados: ${requestedDays}`);
+    
+    // Primero obtenemos la disponibilidad general
+    const availabilityResult = await this.checkVacationDaysAvailability(ci);
+    
+    // Si no hay disponibilidad general, retornamos el resultado
+    if (!availabilityResult.canRequest) {
+      return availabilityResult;
     }
-    console.log(`[LicenseValidationService] Usuario encontrado para validación de creación: ${user.fullName}`);
-
-    // Si la licencia es de tipo VACACION, aplicamos las validaciones específicas
-    if (licenseType === LicenseType.VACATION) {
-      console.log(`[LicenseValidationService] Tipo de licencia es VACACION. Aplicando validaciones específicas.`);
-      // 1. Validar última solicitud de VACACION pendiente
-      const lastVacationRequest = await this.licenseRepository.findOne({
-        where: {
-          user: { id: userId },
-          licenseType: LicenseType.VACATION,
-          deleted: false,
-        },
-        order: { issuedDate: 'DESC' },
-      });
-
-      if (lastVacationRequest) {
-        const supApproval = lastVacationRequest.immediateSupervisorApproval;
-        const deptApproval = lastVacationRequest.personalDepartmentApproval;
-
-        // Bloqueamos solo si alguna aprobación sigue pendiente
-        if (supApproval === null || deptApproval === null) {
-          throw new BadRequestException(
-            `No puedes solicitar una nueva licencia de vacaciones. Tienes una solicitud anterior (ID: ${lastVacationRequest.id}) que aún no ha sido completamente aprobada.`,
-          );
-        }
-
-        console.log(`[LicenseValidationService] Última solicitud de VACACION está en estado no pendiente (sup: ${supApproval}, dept: ${deptApproval}).`);
-      }
-
-
-      // 2. Validar días disponibles
-      console.log(`[LicenseValidationService] Verificando días disponibles para el usuario ${user.fullName} para ${requestedDays} días.`);
-      const { canRequest, reason } = await this.checkAvailableVacationDays(user.ci, requestedDays);
-      if (!canRequest) {
-        console.log(`[LicenseValidationService] Fallo en la validación de días disponibles. Motivo: ${reason}`);
-        throw new BadRequestException(reason || 'No se puede crear la licencia de vacaciones por días insuficientes o un error de cálculo.');
-      }
-      console.log(`[LicenseValidationService] Validación de días disponibles OK.`);
-    } else {
-      console.log(`[LicenseValidationService] Tipo de licencia ${licenseType}. No se aplican validaciones específicas de VACACION.`);
+    
+    // Si hay disponibilidad, verificamos que los días solicitados no excedan los disponibles
+    const availableDays = availabilityResult.availableDays || 0;
+    
+    if (requestedDays > availableDays) {
+      console.log(`[LicenseValidationService] Días solicitados (${requestedDays}) exceden los disponibles (${availableDays}) para el usuario.`);
+      return {
+        canRequest: false,
+        reason: `Has solicitado ${requestedDays} día(s), pero solo tienes ${availableDays} día(s) de vacaciones disponibles proyectados.`,
+        availableDays: availableDays,
+      };
     }
-
-    // Aquí puedes añadir validaciones para otros tipos de licencia si es necesario
-    // else if (licenseType === LicenseType.LICENCIA_MEDICA) { /* ... */ }
-
-    console.log(`[LicenseValidationService] Validación exitosa para la creación de licencia de tipo ${licenseType} para el usuario ${user.fullName}.`);
+    
+    console.log(`[LicenseValidationService] Validación específica exitosa. Días solicitados: ${requestedDays}, Disponibles: ${availableDays}`);
+    return { 
+      canRequest: true, 
+      availableDays: availableDays 
+    };
   }
 }

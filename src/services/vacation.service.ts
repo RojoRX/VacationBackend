@@ -47,8 +47,8 @@ export class VacationService {
     const startDateTime = DateTime.fromJSDate(startDate, { zone: "utc" });
     const endDateTime = DateTime.fromJSDate(endDate, { zone: "utc" });
 
-    console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
-    console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
+    //console.log(`[calculateVacationDays] Calculando para CI: ${carnetIdentidad}`);
+    //console.log(`[calculateVacationDays] Rango de cálculo: ${startDateTime.toISODate()} a ${endDateTime.toISODate()}`);
 
     // Calcular antigüedad
     const yearsOfService = this.vacationCalculatorService.calculateYearsOfService(userDate, endDateTime);
@@ -60,10 +60,10 @@ export class VacationService {
     let holidayPeriods = [];
     if (userData.tipoEmpleado === 'DOCENTE') {
       holidayPeriods = await this.recesoService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
-      console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
+      //console.log(`[calculateVacationDays] Recesos generales aplicados (${holidayPeriods.length})`);
     } else if (userData.tipoEmpleado === 'ADMINISTRATIVO') {
       holidayPeriods = await this.administrativeHolidayService.getHolidayPeriodsForPersonalYear(startDate, endDateTime.toJSDate());
-      console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
+      //console.log(`[calculateVacationDays] Recesos administrativos aplicados (${holidayPeriods.length})`);
     }
 
     const nonHolidayDays = await this.nonHolidayService.getNonHolidayDaysForRange(startDate, endDateTime.toJSDate());
@@ -73,7 +73,7 @@ export class VacationService {
       endDateTime.toJSDate()
     );
 
-    console.log(`[calculateVacationDays] Recesos personalizados: ${personalizedRecesses.length}`);
+    //console.log(`[calculateVacationDays] Recesos personalizados: ${personalizedRecesses.length}`);
 
     // 🔹 Combinar recesos sin eliminar parciales
     // 🔹 Construcción de finalRecesses con reemplazo estricto por año y tipo

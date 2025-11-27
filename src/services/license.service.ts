@@ -1,4 +1,4 @@
-import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Brackets, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { HalfDayType, License, LicenseType, TimeRequest } from 'src/entities/license.entity';
@@ -36,7 +36,11 @@ export class LicenseService {
     private readonly licenseUtilsService: LicenseUtilsService,
 
   ) { }
+
   async createLicense(userId: number, licenseData: Partial<License>): Promise<LicenseResponseDto> {
+    const logger = new Logger('LicensesService'); // o el nombre del servicio/class
+
+
     // Validaciones básicas de usuario y datos requeridos
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -132,27 +136,43 @@ export class LicenseService {
       const fechaIngreso = parseISO(user.fecha_ingreso);
       const solicitudDate = parseISO(licenseData.startDate);
 
-      // Fecha del aniversario en el año de la solicitud
-      const gestionStart = setYear(fechaIngreso, solicitudDate.getFullYear());
+      // OPCIÓN SIMPLIFICADA: usar el AÑO ACTUAL + 1 con el mismo mes/día de la fecha de ingreso.
+      // Ej: fecha_ingreso = 1991-10-16, añoActual = 2025 -> endDateForDebtCalculation = 2026-10-16
+      const yearNow = new Date().getFullYear();
+      const endDateForDebtCalculation = setYear(fechaIngreso, yearNow + 1);
 
-      // Si la solicitud es antes del aniversario, la gestión aún no se completó → usamos el año siguiente
-      let endDateForDebtCalculation: Date;
-      if (solicitudDate < gestionStart) {
-        endDateForDebtCalculation = setYear(fechaIngreso, solicitudDate.getFullYear() + 1);
-      } else {
-        endDateForDebtCalculation = setYear(fechaIngreso, solicitudDate.getFullYear() + 1);
-      }
-
+      // Formatear a 'yyyy-MM-dd' para la llamada a calculateAccumulatedDebt
       const endDateForDebtCalculationStr = format(endDateForDebtCalculation, 'yyyy-MM-dd');
 
+      // Logs para depuración
+      logger.debug(`yearNow = ${yearNow}`);
+      logger.debug(`fechaIngreso (raw) = ${user.fecha_ingreso}`);
+      logger.debug(`endDateForDebtCalculation (Date) = ${endDateForDebtCalculation.toISOString()}`);
+      logger.debug(`endDateForDebtCalculationStr = ${endDateForDebtCalculationStr}`);
 
-      console.log(`Mandando esta fecha para licencias ${endDateForDebtCalculation}`)
+
+      // ...dentro del método
+      logger.debug(`user.ci = ${user.ci}`);
+      logger.debug(`fechaIngreso (raw) = ${user.fecha_ingreso}`);
+      logger.debug(`startDate (requested) = ${licenseData.startDate}`);
+
+      logger.debug(`endDateForDebtCalculation (Date) = ${endDateForDebtCalculation.toISOString()}`);
+      logger.debug(`endDateForDebtCalculationStr = ${endDateForDebtCalculationStr}`);
+
       // 2. Calcular días disponibles
       const debtResult = await this.vacationService.calculateAccumulatedDebt(
         user.ci,
         endDateForDebtCalculationStr
       );
-
+      logger.debug('debtResult (entero): ' + JSON.stringify(debtResult, null, 2));
+      // seguridad: validar formato
+      if (!Array.isArray(debtResult.detalles)) {
+        logger.warn('debtResult.detalles no es array', debtResult);
+      } else {
+        const lastGestion = debtResult.detalles[debtResult.detalles.length - 1];
+        logger.debug('lastGestion = ' + JSON.stringify(lastGestion, null, 2));
+        logger.debug(`diasDisponibles extraídos = ${lastGestion?.diasDisponibles}`);
+      }
 
       // 3. Obtener días disponibles de la última gestión (año actual)
       const lastGestion = debtResult.detalles[debtResult.detalles.length - 1];
@@ -169,13 +189,19 @@ export class LicenseService {
         }
       } else {
         // Calcular días totales solicitados
+        // ► Calcular días totales solicitados
         const totalRequestedDays = await this.calculateRequestedDays(licenseData);
 
-        if (totalRequestedDays > diasDisponibles) {
+        // ► Determinar el máximo permitido según disponibilidad y regla fija
+        const maxPermitidos = Math.min(5, diasDisponibles);
+
+        // ► Nueva validación combinada
+        if (totalRequestedDays > maxPermitidos) {
           throw new BadRequestException(
-            `Solicitó ${totalRequestedDays} día(s) pero solo tiene ${diasDisponibles} día(s) disponibles`
+            `No puede solicitar ${totalRequestedDays} día(s). Su máximo permitido es ${maxPermitidos} día(s) considerando su saldo disponible (${diasDisponibles}) y el límite de 5 días por solicitud.`
           );
         }
+
 
       }
     }
