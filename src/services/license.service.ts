@@ -213,30 +213,34 @@ export class LicenseService {
 
     // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
     // ALTERNATIVA: Si quieres que cada "media jornada" cuente como 0.5 días completos
+    // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
     let totalDays = 0;
-    const startHalfDay = licenseData.startHalfDay ?? HalfDayType.NONE;
-    const endHalfDay = licenseData.endHalfDay ?? HalfDayType.NONE;
-
     const zone = 'America/La_Paz';
     let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
     const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
 
+    const isHalfDay = licenseData.timeRequested === TimeRequest.HALF_DAY;
+
+    logger.debug(`[DEBUG] Calculando totalDays para ${isHalfDay ? 'HALF_DAY' : 'FULL_DAY'} de ${licenseData.startDate} a ${licenseData.endDate}`);
+
     while (cursor <= endDateLux) {
       const weekday = cursor.weekday;
-      if (weekday >= 1 && weekday <= 5) {
-        if (cursor.hasSame(DateTime.fromISO(licenseData.startDate), 'day')) {
-          // Primer día
-          totalDays += (startHalfDay === HalfDayType.NONE) ? 1 : 0.5;
-        } else if (cursor.hasSame(DateTime.fromISO(licenseData.endDate), 'day')) {
-          // Último día
-          totalDays += (endHalfDay === HalfDayType.NONE) ? 1 : 0.5;
+      if (weekday >= 1 && weekday <= 5) { // Solo días de semana
+        if (isHalfDay) {
+          totalDays += 0.5;
+          logger.debug(`[DEBUG] ${cursor.toISODate()} -> medio día, total acumulado = ${totalDays}`);
         } else {
-          // Días intermedios (siempre completos)
           totalDays += 1;
+          logger.debug(`[DEBUG] ${cursor.toISODate()} -> día completo, total acumulado = ${totalDays}`);
         }
+      } else {
+        logger.debug(`[DEBUG] ${cursor.toISODate()} -> fin de semana, no se cuenta`);
       }
       cursor = cursor.plus({ days: 1 });
     }
+
+    logger.debug(`[DEBUG] TotalDays calculados = ${totalDays}`);
+
 
     totalDays = Math.max(totalDays, 0.5);
 
@@ -268,17 +272,21 @@ export class LicenseService {
       );
     }
 
+    if (licenseData.timeRequested === TimeRequest.FULL_DAY || licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS) {
+      licenseData.startHalfDay = HalfDayType.NONE;
+      licenseData.endHalfDay = HalfDayType.NONE;
+    }
+
     // Crear y guardar la licencia
-    // 🔹 Asegurar que los valores de medios días se guarden correctamente
     const license = this.licenseRepository.create({
       ...licenseData,
       user,
       totalDays,
       issuedDate: new Date(),
 
-      // 🔹 Forzar la asignación explícita
-      startHalfDay: licenseData.startHalfDay || HalfDayType.NONE,
-      endHalfDay: licenseData.endHalfDay || HalfDayType.NONE
+      // Valores consistentes
+      startHalfDay: licenseData.startHalfDay,
+      endHalfDay: licenseData.endHalfDay
     });
 
     const savedLicense = await this.licenseRepository.manager.transaction(
@@ -1097,6 +1105,11 @@ export class LicenseService {
     const qb = this.licenseRepository.createQueryBuilder('license')
       .where('license.userId = :userId', { userId })
       .andWhere('license.deleted = false')
+      // 🔹 Solo licencias "activas" (pendientes o aprobadas)
+      .andWhere(new Brackets(qb => {
+        qb.where('license.immediateSupervisorApproval IS NULL AND license.personalDepartmentApproval IS NULL') // pendientes
+          .orWhere('license.immediateSupervisorApproval = true AND license.personalDepartmentApproval = true'); // aprobadas
+      }))
       .andWhere(new Brackets(qb => {
         qb.where('(license.startDate <= :endDate AND license.endDate >= :startDate)')
           .orWhere('license.startDate BETWEEN :startDate AND :endDate')
