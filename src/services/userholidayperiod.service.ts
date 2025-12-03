@@ -50,16 +50,17 @@ export class UserHolidayPeriodService {
     const end = new Date(endDateToStore);
 
 
-    if (start >= end) {
-      throw new BadRequestException('La fecha de inicio debe ser anterior a la fecha de fin.');
+    if (start > end) {
+      throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
     }
+
     // Validar que el receso no exceda 30 días
     const diffInMs = end.getTime() - start.getTime();
-    const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+    const diffInDays = diffInMs / (1000 * 60 * 60 * 24) + 1; // Contar ambos días
 
-    if (diffInDays > 30) {
+    if (diffInDays > 50) {
       throw new BadRequestException(
-        'El período de receso no puede exceder los 30 días.'
+        'El período de receso no puede exceder los 50 días.'
       );
     }
 
