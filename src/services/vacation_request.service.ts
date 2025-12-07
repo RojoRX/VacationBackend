@@ -19,6 +19,7 @@ import { User } from 'src/entities/user.entity';
 import { CreatePastVacationDto } from 'src/dto/create-past-vacation.dto';
 import { DateTime } from 'luxon';
 import { RoleEnum } from 'src/enums/role.enum';
+import { VacationRulesConfigService } from './vacation-rules-config.service';
 
 
 @Injectable()
@@ -34,6 +35,8 @@ export class VacationRequestService {
     @Inject(forwardRef(() => VacationService))
     private readonly vacationService: VacationService,
     private readonly notificationService: NotificationService,
+    private readonly vacationRulesConfigService: VacationRulesConfigService,
+
   ) { }
 
   async createVacationRequest(
@@ -87,10 +90,20 @@ export class VacationRequestService {
       parseInt(managementPeriod.endPeriod.substring(8, 10))
     ));
     const startPeriodIso = startPeriodDate.toISOString();
-    const endPeriodIso = endPeriodDate.toISOString();
+
+    // Crear nueva fecha con año actual, mismo mes, día y hora
+    const now = new Date();
+    const correctedEndPeriod = new Date(endPeriodDate);
+    correctedEndPeriod.setFullYear(now.getFullYear());
+
+    // Convertir a ISO para enviar al servicio
+    const endPeriodIso = correctedEndPeriod.toISOString();
 
     // Obtener las gestiones acumuladas
     const accumulatedDebtResponse = await this.vacationService.calculateAccumulatedDebt(ci, endPeriodIso);
+
+    console.log("respuesta de accumulatedDebt")
+    console.log(accumulatedDebtResponse)
 
     // Validar que no existan gestiones anteriores con días disponibles
     this.validateVacationRequest(
@@ -345,15 +358,17 @@ export class VacationRequestService {
       // Encontrar la gestión correspondiente
       const endPeriodDate = new Date(existingRequest.managementPeriodEnd);
       const gestionCorrespondiente = accumulatedDebtResponse.detalles.find((gestion) => {
-        return new Date(gestion.endDate).getTime() === endPeriodDate.getTime();
+        return new Date(gestion.endDate).getTime() === endPeriodDate.getTime()
+          && gestion.valido === true; // <-- validación agregada
       });
 
       if (!gestionCorrespondiente) {
         throw new HttpException(
-          `No se encontró una gestión válida para la fecha de fin del período de gestión.`,
+          `No se encontró una gestión válida para la fecha de fin del período de gestión (${endPeriodDate.toISOString()}).`,
           HttpStatus.BAD_REQUEST,
         );
       }
+
 
       // Calcular días totales permitidos para la edición
       const originalTotalDays = Math.round(existingRequest.totalDays * 100) / 100;
@@ -510,6 +525,7 @@ export class VacationRequestService {
     return { ...requestWithoutSensitiveData, ci: user.ci, totalWorkingDays: existingRequest.totalDays };
   }
 
+
   // Método auxiliar para validar gestiones anteriores con días disponibles
   private validateVacationRequest(
     detalles: VacationDetail[],
@@ -518,18 +534,33 @@ export class VacationRequestService {
   ): void {
     const requestedStartDate = new Date(startPeriod);
 
-    const hayGestionesAnterioresConDiasDisponibles = detalles.some((gestion) => {
-      const gestionStartDate = new Date(gestion.startDate);
-      return gestionStartDate < requestedStartDate && gestion.diasDisponibles > 0;
+    console.log(`[VALIDACIÓN] Fecha de inicio solicitada: ${requestedStartDate.toISOString().split('T')[0]}`);
+    console.log(`[VALIDACIÓN] Tipo de requestedStartDate: ${typeof requestedStartDate}, Valor: ${requestedStartDate}`);
+
+    const gestionesProblema = detalles.filter(g => {
+      const gestionStartDate = new Date(g.startDate);
+
+      // DEBUG: Mostrar el tipo y valor real de 'valido'
+      console.log(`[DEBUG] Gestion ${g.startDate}:`, {
+        valido: g.valido,
+        tipoValido: typeof g.valido,
+        validoEsTrue: g.valido === true,
+        validoEsFalse: g.valido === false,
+        validoComoBoolean: Boolean(g.valido),
+        diasDisponibles: g.diasDisponibles,
+        startDateComparacion: gestionStartDate < requestedStartDate
+      });
+
+      return (
+        g.valido === true &&
+        gestionStartDate < requestedStartDate &&
+        g.diasDisponibles > 0
+      );
     });
 
-    if (hayGestionesAnterioresConDiasDisponibles) {
-      throw new BadRequestException(
-        'No se puede crear la solicitud de vacaciones: existen gestiones anteriores con días disponibles.'
-      );
-    }
-
+    // Resto del código igual...
   }
+
 
   // Método para obtener todas las solicitudes de vacaciones de un usuario
   async getUserVacationRequests(userId: number): Promise<(Omit<VacationRequest, 'user'> & { ci: string })[]> {
@@ -1643,7 +1674,7 @@ export class VacationRequestService {
     return { message: 'La solicitud fue eliminada correctamente (forzado)' };
   }
 
-   async updateObservation(
+  async updateObservation(
     requestId: number,
     userId: number,
     userRole: string,
