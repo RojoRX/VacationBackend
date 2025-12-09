@@ -680,9 +680,11 @@ export class LicenseService {
       throw new BadRequestException('License not found');
     }
 
-    if (license.immediateSupervisorApproval || license.personalDepartmentApproval) {
-      throw new BadRequestException('La licencia ya fue revisada y no puede modificarse nuevamente.');
+    // Bloquear solo si el supervisor ya aprobó o rechazó
+    if (license.immediateSupervisorApproval !== null) {
+      throw new BadRequestException('La licencia ya fue revisada por el supervisor y no puede modificarse nuevamente.');
     }
+
 
 
     const supervisor = await this.userRepository.findOne({
@@ -748,7 +750,6 @@ export class LicenseService {
     };
   }
   // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
-  // Método para que un usuario con rol ADMIN apruebe o rechace una licencia desde el departamento de personal
   async updatePersonalDepartmentApproval(
     licenseId: number,
     user: { id: number; role: string },
@@ -768,14 +769,14 @@ export class LicenseService {
     }
     // Solo permitir decisión si aún está pendiente
     const isPending =
-      license.immediateSupervisorApproval === null &&
+      //license.immediateSupervisorApproval === null &&
       license.personalDepartmentApproval === null;
 
     if (!isPending) {
       throw new BadRequestException('La licencia ya tiene una decisión registrada.');
     }
 
-    license.immediateSupervisorApproval = approval;
+    //license.immediateSupervisorApproval = approval;
     license.personalDepartmentApproval = approval;
 
     const updated = await this.licenseRepository.save(license);
