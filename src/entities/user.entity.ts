@@ -95,4 +95,8 @@ export class User {
   @Column({ nullable: true })
   deletedBy?: number; // referencia opcional a user.id que borró el registro
 
+  @Column({ type: 'int', default: 1 })
+  tokenVersion: number;
+
+
 }

@@ -550,44 +550,41 @@ export class UserService {
     }));
   }
   async updateRole(id: number, newRole: RoleEnum): Promise<User> {
-    // 1. Iniciar una transacción para asegurar la atomicidad de las operaciones
-    //    Esto es crucial si vamos a actualizar dos usuarios diferentes (el nuevo supervisor y el antiguo)
+    // 1. Iniciar transacción
     const queryRunner = this.userRepository.manager.connection.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // 2. Verificar si el usuario a actualizar existe y cargar sus relaciones
+      // 2. Obtener usuario a actualizar con sus relaciones
       const userToUpdate = await queryRunner.manager.findOne(User, {
         where: { id },
-        relations: ['department', 'academicUnit'], // Cargar relaciones para validación de supervisor
+        relations: ['department', 'academicUnit'],
       });
 
       if (!userToUpdate) {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado.`);
       }
 
-      // Si el rol es el mismo y no es supervisor (no hay lógica de reemplazo para otros roles),
-      // no hacemos nada y devolvemos el usuario actual.
-      if (userToUpdate.role === newRole && newRole !== RoleEnum.SUPERVISOR) {
-        return userToUpdate; // Retorna el userToUpdate original si el rol no cambia y no es supervisor
+      const oldRole = userToUpdate.role;
+
+      // Si no hay cambio de rol y no es supervisor, no hacemos nada
+      if (oldRole === newRole && newRole !== RoleEnum.SUPERVISOR) {
+        return userToUpdate;
       }
 
-      const oldRole = userToUpdate.role; // Guardamos el rol actual del usuario
-
-      // 3. Aplicar lógica de validación según el nuevo rol
+      // 3. Lógica por rol
       if (newRole === RoleEnum.SUPERVISOR) {
-        // 3.1. Validar que el usuario tenga un departamento o unidad académica asignados
         if (!userToUpdate.department && !userToUpdate.academicUnit) {
           throw new BadRequestException(
-            'Para asignar el rol de Supervisor, el usuario debe tener un Departamento o una Unidad Académica asignados.',
+            'Para asignar el rol de Supervisor, el usuario debe tener un Departamento o una Unidad Académica asignados.'
           );
         }
 
-        // 3.2. Buscar un supervisor existente en la misma unidad/departamento
+        // Buscar supervisor existente en la misma unidad/departamento
         const existingSupervisorQuery = queryRunner.manager.createQueryBuilder(User, 'user')
           .where('user.role = :supervisorRole', { supervisorRole: RoleEnum.SUPERVISOR })
-          .andWhere('user.id != :currentUserId', { currentUserId: id }); // Excluir al usuario que estamos actualizando
+          .andWhere('user.id != :currentUserId', { currentUserId: id });
 
         if (userToUpdate.department) {
           existingSupervisorQuery.andWhere('user.department.id = :departmentId', {
@@ -601,54 +598,46 @@ export class UserService {
 
         const existingSupervisor = await existingSupervisorQuery.getOne();
 
-        // 3.3. Si se encontró un supervisor anterior, desasignarle el rol de Supervisor
+        // Si hay un supervisor anterior, quitarle el rol y actualizar tokenVersion
         if (existingSupervisor) {
-          existingSupervisor.role = RoleEnum.USER; // Asignar el rol 'USER' al supervisor anterior
-          await queryRunner.manager.save(existingSupervisor); // Guardar el cambio al supervisor anterior
-          console.log(`Supervisor anterior (ID: ${existingSupervisor.id}, Rol: ${oldRole}) desasignado del ${userToUpdate.department ? 'Departamento' : 'Unidad Académica'
-            } y asignado a USER.`);
+          existingSupervisor.role = RoleEnum.USER;
+          existingSupervisor.tokenVersion = (existingSupervisor.tokenVersion || 0) + 1;
+          await queryRunner.manager.save(existingSupervisor);
+          console.log(`Supervisor anterior (ID: ${existingSupervisor.id}) actualizado a USER y tokenVersion incrementado.`);
         }
 
-        // 3.4. Si el usuario que estamos actualizando ya era supervisor de la misma unidad/dpto
-        // y le estamos asignando el mismo rol de supervisor, no es un cambio.
-        // La validación anterior `userToUpdate.role === newRole` ya debería haberlo capturado si no hay reemplazo.
-        // Pero si hay reemplazo, siempre aplicamos la lógica.
-
       } else if (newRole === RoleEnum.ADMIN) {
-        // 3.5. Validar límite máximo de administradores
         const MAX_ADMINS = 10;
         const adminCount = await queryRunner.manager.count(User, {
           where: { role: RoleEnum.ADMIN },
         });
 
-        // Si el usuario actual no era admin, y al añadirlo se excede el límite
         if (oldRole !== RoleEnum.ADMIN && adminCount >= MAX_ADMINS) {
           throw new BadRequestException(
-            `No se puede asignar el rol de Administrador. Ya existen ${MAX_ADMINS} administradores (límite máximo).`,
+            `No se puede asignar el rol de Administrador. Ya existen ${MAX_ADMINS} administradores.`
           );
         }
       }
-      // Si el nuevo rol es 'USER' o cualquier otro que no sea Supervisor/Admin,
-      // no se aplican restricciones especiales aquí, solo se actualizará el rol del usuario.
 
-      // 4. Asignar el nuevo rol al usuario principal
+      // 4. Actualizar rol del usuario principal y su tokenVersion
       userToUpdate.role = newRole;
-      const updatedUser = await queryRunner.manager.save(userToUpdate); // Guardar el usuario principal
+      userToUpdate.tokenVersion = (userToUpdate.tokenVersion || 0) + 1;
 
-      // 5. Confirmar la transacción
+      const updatedUser = await queryRunner.manager.save(userToUpdate);
+
+      // 5. Confirmar transacción
       await queryRunner.commitTransaction();
 
       return updatedUser;
     } catch (error) {
-      // 6. Si ocurre un error, revertir la transacción
       await queryRunner.rollbackTransaction();
-      // Re-lanzar la excepción para que sea manejada por el controlador o la capa superior
       throw error;
     } finally {
-      // 7. Liberar el queryRunner
       await queryRunner.release();
     }
   }
+
+
   // Soft delete por id (o eliminación física si no tiene relaciones)
 
   async softDeleteById(id: number, actorId?: number): Promise<SoftDeleteUserDto> {

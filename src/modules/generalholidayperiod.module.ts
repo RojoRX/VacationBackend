@@ -4,10 +4,12 @@ import { GeneralHolidayPeriod } from 'src/entities/generalHolidayPeriod.entity';
 import { GeneralHolidayPeriodService } from 'src/services/generalHolidayPeriod.service';
 import { GeneralHolidayPeriodController } from 'src/controllers/generalholidayperiod.controller';
 import { HolidayPeriodRepository } from 'src/repositories/holiday-period.repository';
+import { UserModule } from './user.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([GeneralHolidayPeriod, HolidayPeriodRepository])],
+  imports: [TypeOrmModule.forFeature([GeneralHolidayPeriod, HolidayPeriodRepository]),
+    UserModule],
   controllers: [GeneralHolidayPeriodController],
   providers: [GeneralHolidayPeriodService],
 })
-export class GeneralHolidayPeriodModule {}
+export class GeneralHolidayPeriodModule { }

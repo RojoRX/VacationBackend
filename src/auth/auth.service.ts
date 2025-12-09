@@ -34,7 +34,13 @@ export class AuthService {
     const userRoleMapped = mapRole(user.role);
 
     // El payload ahora incluye 'sub' (ID), 'username', y 'role'
-    const payload = { sub: user.id, username: user.username, role: userRoleMapped };
+    const payload = {
+      sub: user.id,
+      username: user.username,
+      role: userRoleMapped,
+      tokenVersion: user.tokenVersion,  // 👈 IMPORTANTE
+    };
+
     const token = await this.jwtService.signAsync(payload);
 
     return {
