@@ -26,7 +26,7 @@ export class AuthGuard implements CanActivate {
             context.getClass(),
         ]);
 
-        console.log('[AuthGuard] isPublic:', isPublic);
+
 
         if (isPublic) {
             return true;
@@ -36,17 +36,17 @@ export class AuthGuard implements CanActivate {
         const token = this.extractTokenFromHeader(request);
 
         if (!token) {
-            console.log('[AuthGuard] No se encontró token en el request');
+
             throw new UnauthorizedException('Token no encontrado.');
         }
 
-        console.log('[AuthGuard] Token extraído:', token);
+
 
         try {
             const secret = this.configService.get<string>('JWT_SECRET');
 
             if (!secret) {
-                console.log('[AuthGuard] JWT_SECRET no configurado');
+
                 throw new UnauthorizedException('Configuración de JWT inválida.');
             }
 
@@ -54,11 +54,10 @@ export class AuthGuard implements CanActivate {
                 secret: secret,
             });
 
-            console.log('[AuthGuard] Payload decodificado:', payload);
+
 
             // Validación básica del payload
             if (!payload || typeof payload.sub === 'undefined') {
-                console.log('[AuthGuard] Payload inválido o sin sub');
                 throw new UnauthorizedException(
                     'Información de usuario incompleta en el token (sub).'
                 );
@@ -66,24 +65,16 @@ export class AuthGuard implements CanActivate {
 
             // 🔥 Validación de tokenVersion
             const userInDb = await this.userService.findById(payload.sub);
-            console.log('[AuthGuard] Usuario en DB:', userInDb);
 
             if (!userInDb) {
-                console.log('[AuthGuard] Usuario no encontrado en la DB');
+
                 throw new UnauthorizedException('Usuario no encontrado.');
             }
 
-            console.log(
-                '[AuthGuard] tokenVersion payload:',
-                payload.tokenVersion,
-                'tokenVersion DB:',
-                userInDb.tokenVersion
-            );
+
 
             if (Number(payload.tokenVersion) !== Number(userInDb.tokenVersion)) {
-                console.log(
-                    '[AuthGuard] Token desactualizado. Debe iniciar sesión nuevamente'
-                );
+
                 throw new UnauthorizedException(
                     'Token desactualizado. Por favor, inicie sesión nuevamente.'
                 );
@@ -96,7 +87,7 @@ export class AuthGuard implements CanActivate {
                 username: payload.username,
             };
 
-            console.log('[AuthGuard] request.user asignado:', request['user']);
+
 
         } catch (error) {
             console.error(

@@ -214,35 +214,9 @@ export class LicenseService {
     // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
     // ALTERNATIVA: Si quieres que cada "media jornada" cuente como 0.5 días completos
     // ==== CÁLCULO CORREGIDO DE DÍAS PARA MULTIPLE_DAYS ====
-    let totalDays = 0;
-    const zone = 'America/La_Paz';
-    let cursor = DateTime.fromISO(licenseData.startDate, { zone }).startOf('day');
-    const endDateLux = DateTime.fromISO(licenseData.endDate, { zone }).startOf('day');
-
-    const isHalfDay = licenseData.timeRequested === TimeRequest.HALF_DAY;
-
-    logger.debug(`[DEBUG] Calculando totalDays para ${isHalfDay ? 'HALF_DAY' : 'FULL_DAY'} de ${licenseData.startDate} a ${licenseData.endDate}`);
-
-    while (cursor <= endDateLux) {
-      const weekday = cursor.weekday;
-      if (weekday >= 1 && weekday <= 5) { // Solo días de semana
-        if (isHalfDay) {
-          totalDays += 0.5;
-          logger.debug(`[DEBUG] ${cursor.toISODate()} -> medio día, total acumulado = ${totalDays}`);
-        } else {
-          totalDays += 1;
-          logger.debug(`[DEBUG] ${cursor.toISODate()} -> día completo, total acumulado = ${totalDays}`);
-        }
-      } else {
-        logger.debug(`[DEBUG] ${cursor.toISODate()} -> fin de semana, no se cuenta`);
-      }
-      cursor = cursor.plus({ days: 1 });
-    }
-
-    logger.debug(`[DEBUG] TotalDays calculados = ${totalDays}`);
-
-
-    totalDays = Math.max(totalDays, 0.5);
+    // ==== USAR EL MISMO MÉTODO PARA AMBOS ====
+    const totalDays = await this.calculateRequestedDays(licenseData);
+    logger.debug(`[DEBUG] TotalDays calculados usando calculateRequestedDays = ${totalDays}`);
 
     // Validación de máximo de días consecutivos
     const maxDays = 5;
@@ -272,7 +246,7 @@ export class LicenseService {
       );
     }
 
-    if (licenseData.timeRequested === TimeRequest.FULL_DAY || licenseData.timeRequested === TimeRequest.MULTIPLE_DAYS) {
+    if (licenseData.timeRequested === TimeRequest.FULL_DAY) {
       licenseData.startHalfDay = HalfDayType.NONE;
       licenseData.endHalfDay = HalfDayType.NONE;
     }
@@ -1227,29 +1201,56 @@ export class LicenseService {
   }
 
   private async calculateRequestedDays(licenseData: Partial<License>): Promise<number> {
+    const logger = new Logger('LicensesService');
+
+    logger.debug(`[calculateRequestedDays] timeRequested: ${licenseData.timeRequested}`);
+    logger.debug(`[calculateRequestedDays] startDate: ${licenseData.startDate}, endDate: ${licenseData.endDate}`);
+    logger.debug(`[calculateRequestedDays] startHalfDay: ${licenseData.startHalfDay}, endHalfDay: ${licenseData.endHalfDay}`);
+
     if (licenseData.timeRequested === TimeRequest.HALF_DAY) {
+      logger.debug(`[calculateRequestedDays] Returning 0.5 for HALF_DAY`);
       return 0.5;
     }
 
     if (licenseData.timeRequested === TimeRequest.FULL_DAY) {
+      logger.debug(`[calculateRequestedDays] Returning 1 for FULL_DAY`);
       return 1;
     }
 
-    // Para MULTIPLE_DAYS calculamos la diferencia real en días hábiles
+    // Para MULTIPLE_DAYS - considerando medios días si están especificados
     const zone = 'America/La_Paz';
     let dateCursor = DateTime.fromISO(licenseData.startDate, { zone });
     const end = DateTime.fromISO(licenseData.endDate, { zone });
     let daysCount = 0;
 
+    // Verificar si es el primer y último día con medios días
+    const isFirstDayHalf = licenseData.startHalfDay &&
+      licenseData.startHalfDay !== HalfDayType.NONE;
+    const isLastDayHalf = licenseData.endHalfDay &&
+      licenseData.endHalfDay !== HalfDayType.NONE;
+
     while (dateCursor <= end) {
       const dayOfWeek = dateCursor.weekday;
       if (dayOfWeek < 6) { // Lunes a Viernes
-        daysCount++;
+        // Verificar si es día completo o medio día
+        if (dateCursor.hasSame(DateTime.fromISO(licenseData.startDate, { zone }), 'day') && isFirstDayHalf) {
+          daysCount += 0.5;
+          logger.debug(`[calculateRequestedDays] ${dateCursor.toISODate()} -> medio día (inicio)`);
+        } else if (dateCursor.hasSame(DateTime.fromISO(licenseData.endDate, { zone }), 'day') && isLastDayHalf) {
+          daysCount += 0.5;
+          logger.debug(`[calculateRequestedDays] ${dateCursor.toISODate()} -> medio día (fin)`);
+        } else {
+          daysCount += 1;
+          logger.debug(`[calculateRequestedDays] ${dateCursor.toISODate()} -> día completo`);
+        }
+      } else {
+        logger.debug(`[calculateRequestedDays] ${dateCursor.toISODate()} -> fin de semana, no se cuenta`);
       }
       dateCursor = dateCursor.plus({ days: 1 });
     }
 
+    logger.debug(`[calculateRequestedDays] Calculated ${daysCount} days for MULTIPLE_DAYS`);
+
     return daysCount;
   }
-
 }

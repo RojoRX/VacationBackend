@@ -398,17 +398,31 @@ export class UserService {
 
     const normalizedDto = normalizeUserData(updateUserDto);
 
+    // -----------------------------------------
+    // Detectar si se debe incrementar tokenVersion
+    // -----------------------------------------
+    let shouldIncrementTokenVersion = false;
+
     // Validar CI único si se cambió
     if (normalizedDto.ci && normalizedDto.ci !== user.ci) {
-      const existingUserByCi = await this.userRepository.findOne({ where: { ci: normalizedDto.ci } });
+      const existingUserByCi = await this.userRepository.findOne({
+        where: { ci: normalizedDto.ci }
+      });
+
       if (existingUserByCi && existingUserByCi.id !== user.id) {
         throw new BadRequestException('El CI ya está registrado por otro usuario');
       }
+
+      // Si se cambia el CI → invalidar sesión con tokenVersion++
+      shouldIncrementTokenVersion = true;
     }
 
     // Validar email único si se cambió
     if (normalizedDto.email && normalizedDto.email !== user.email) {
-      const existingEmail = await this.userRepository.findOne({ where: { email: normalizedDto.email } });
+      const existingEmail = await this.userRepository.findOne({
+        where: { email: normalizedDto.email }
+      });
+
       if (existingEmail && existingEmail.id !== user.id) {
         throw new BadRequestException('El email ya está registrado por otro usuario');
       }
@@ -416,7 +430,7 @@ export class UserService {
 
     // Validar fecha de ingreso
     if (normalizedDto.fecha_ingreso) {
-      const fechaIngreso = parseDatePreservingLocal(normalizedDto.fecha_ingreso); // ✅ mantiene el día
+      const fechaIngreso = parseDatePreservingLocal(normalizedDto.fecha_ingreso); // mantiene el día
       if (isNaN(fechaIngreso.getTime())) {
         throw new BadRequestException('Fecha de ingreso no válida');
       }
@@ -425,6 +439,7 @@ export class UserService {
       }
       user.fecha_ingreso = normalizedDto.fecha_ingreso;
     }
+
     // Relación: Departamento
     if (normalizedDto.departmentId === null) {
       user.department = null;
@@ -451,17 +466,18 @@ export class UserService {
       user.academicUnit = academicUnit;
     }
 
-
     // Relación: Profesión
     if (normalizedDto.professionId) {
-      const profession = await this.profesionRepository.findOne({ where: { id: normalizedDto.professionId } });
+      const profession = await this.profesionRepository.findOne({
+        where: { id: normalizedDto.professionId }
+      });
       if (!profession) {
         throw new BadRequestException('Profesión no encontrada');
       }
       user.profession = profession;
     }
 
-    // Asignar campos simples (sin modificar username ni password)
+    // Asignar campos simples
     user.fullName = normalizedDto.fullName ?? user.fullName;
     user.ci = normalizedDto.ci ?? user.ci;
     user.email = normalizedDto.email ?? user.email;
@@ -470,9 +486,17 @@ export class UserService {
     user.tipoEmpleado = normalizedDto.tipoEmpleado ?? user.tipoEmpleado;
     user.role = normalizedDto.role ?? user.role;
 
+    // ----------------------------------------------------
+    // Incrementar tokenVersion SOLO cuando cambia el CI
+    // ----------------------------------------------------
+    if (shouldIncrementTokenVersion) {
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+    }
+
     // Guardar usuario actualizado
     const updatedUser = await this.userRepository.save(user);
     const { password: _, ...userWithoutPassword } = updatedUser;
+
     return userWithoutPassword;
   }
 
